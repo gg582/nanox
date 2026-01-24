@@ -74,7 +74,9 @@ static void load_help_file(void)
 		}
 
 		if (strncmp(line, "=>", 2) == 0) {
-			dynamic_topics = realloc(dynamic_topics, sizeof(struct nanox_help_topic) * (dynamic_topic_count + 1));
+			struct nanox_help_topic *new_topics = realloc(dynamic_topics, sizeof(struct nanox_help_topic) * (dynamic_topic_count + 1));
+			if (!new_topics) break;
+			dynamic_topics = new_topics;
 			curr = &dynamic_topics[dynamic_topic_count++];
 			char *title = line + 2;
 			while (*title == ' ') title++;
@@ -85,8 +87,11 @@ static void load_help_file(void)
 			curr->line_cap = 0;
 		} else if (curr && strncmp(line, "-------", 7) != 0) {
 			if (curr->line_count >= curr->line_cap) {
-				curr->line_cap = curr->line_cap ? curr->line_cap * 2 : 16;
-				curr->lines = realloc(curr->lines, sizeof(char *) * curr->line_cap);
+				size_t new_cap = curr->line_cap ? curr->line_cap * 2 : 16;
+				char **new_lines = realloc(curr->lines, sizeof(char *) * new_cap);
+				if (!new_lines) break;
+				curr->lines = new_lines;
+				curr->line_cap = new_cap;
 			}
 			curr->lines[curr->line_count] = malloc(strlen(line) + 1);
 			if (curr->lines[curr->line_count]) {
@@ -431,21 +436,10 @@ static void help_puts(const char *text)
 		ttputc(*text++);
 }
 
-static void help_blank_line(int row)
-{
-	int col;
-
-	movecursor(row, 0);
-	for (col = 0; col < term.t_ncol; ++col)
-		ttputc(' ');
-}
-
 /* selection mode */
 int nanox_selection_mode(int f, int n)
 {
 	int c;
-	struct line *dotp;
-	int doto;
 
 	/* Reset selection */
 	nanox_sel_active = 1;
@@ -525,8 +519,6 @@ int nanox_selection_mode(int f, int n)
 }
 
 /* Help System Enhancements */
-
-static char help_msg[128];
 
 void nanox_help_render(void)
 {
@@ -640,6 +632,8 @@ int nanox_help_handle_key(int key)
 
 	case CONTROL | 'M':
 	case '\r':
+	case CONTROL | 'J':
+	case '\n':
 		if (!help_show_section) {
 			help_show_section = true;
 			help_section_scroll = 0;

@@ -191,6 +191,17 @@ int readin(char *fname, int lockfl)
 	bp->b_flag &= ~(BFINVS | BFCHG);
 	mystrscpy(bp->b_fname, fname, NFILEN);
 
+	/* Set CMODE for brace-based languages */
+	char *ext = strrchr(fname, '.');
+	if (ext && (strcasecmp(ext, ".c") == 0 || strcasecmp(ext, ".h") == 0 ||
+				strcasecmp(ext, ".cpp") == 0 || strcasecmp(ext, ".hpp") == 0 ||
+				strcasecmp(ext, ".java") == 0 || strcasecmp(ext, ".js") == 0 ||
+				strcasecmp(ext, ".ts") == 0 || strcasecmp(ext, ".rs") == 0 ||
+				strcasecmp(ext, ".go") == 0 || strcasecmp(ext, ".php") == 0 ||
+				strcasecmp(ext, ".swift") == 0)) {
+		bp->b_mode |= MDCMOD;
+	}
+
 	/* let a user macro get hold of things...if he wants */
 	execute(META | SPEC | 'R', FALSE, 1);
 

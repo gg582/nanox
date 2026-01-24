@@ -151,7 +151,7 @@ static int window_column_number(struct window *wp)
 		unicode_t c;
 		int bytes = utf8_to_unicode(lp->l_text, i, len, &c);
 		i += bytes;
-		col = next_column(col, c, tabmask);
+		col = next_column(col, c, tab_width);
 	}
 	return col + 1;
 }
@@ -253,7 +253,7 @@ static void vtputc(int c)
 	if (c == '\t') {
 		do {
 			vtputc(' ');
-		} while (((vtcol + taboff) & tabmask) != 0);
+		} while (((vtcol + taboff) & tab_width) != 0);
 		return;
 	}
 
@@ -539,21 +539,24 @@ static void updone(struct window *wp)
 {
 	struct line *lp;			/* line to update */
 	int sline;				/* physical screen line to update */
+	int rows = nanox_text_rows();
 
 	/* search down the line we want */
 	lp = wp->w_linep;
 	sline = 0;
-	while (lp != wp->w_dotp) {
+	while (lp != wp->w_dotp && sline < rows) {
 		++sline;
 		lp = lforw(lp);
 	}
 
 	/* and update the virtual line */
-	vscreen[sline]->v_flag |= VFCHG;
-	vscreen[sline]->v_flag &= ~VFREQ;
-	vtmove(sline, 0);
-	show_line(wp, lp);
-	vteeol();
+	if (sline < rows && sline < term.t_mrow) {
+		vscreen[sline]->v_flag |= VFCHG;
+		vscreen[sline]->v_flag &= ~VFREQ;
+		vtmove(sline, 0);
+		show_line(wp, lp);
+		vteeol();
+	}
 }
 
 /*
@@ -566,11 +569,12 @@ static void updall(struct window *wp)
 {
 	struct line *lp;			/* line to update */
 	int sline;				/* physical screen line to update */
+	int rows = nanox_text_rows();
 
 	/* search down the lines, updating them */
 	lp = wp->w_linep;
 	sline = 0;
-	while (sline < nanox_text_rows()) {
+	while (sline < rows && sline < term.t_mrow) {
 
 		/* and update the virtual line */
 		vscreen[sline]->v_flag |= VFCHG;
@@ -598,31 +602,38 @@ void updpos(void)
 {
 	struct line *lp;
 	int i;
+	int rows = nanox_text_rows();
 
 	/* find the current row */
 	lp = curwp->w_linep;
 	currow = 0;
-	while (lp != curwp->w_dotp) {
+	while (lp != curwp->w_dotp && currow < rows) {
 		++currow;
 		lp = lforw(lp);
 	}
 
+	if (currow >= rows || currow >= term.t_mrow)
+		currow = 0;
+
 	/* find the current column */
 	curcol = 0;
 	i = 0;
+	lp = curwp->w_dotp;
 	while (i < curwp->w_doto) {
 		unicode_t c;
 		int bytes;
 
 		bytes = utf8_to_unicode(lp->l_text, i, curwp->w_doto, &c);
 		i += bytes;
-		curcol = next_column(curcol, c, tabmask);
+		curcol = next_column(curcol, c, tab_width);
 	}
 
 	/* if extended, flag so and update the virtual line image */
 	if (curcol >= term.t_ncol - 1) {
-		vscreen[currow]->v_flag |= (VFEXT | VFCHG);
-		updext();
+		if (currow < term.t_mrow) {
+			vscreen[currow]->v_flag |= (VFEXT | VFCHG);
+			updext();
+		}
 	} else
 		lbound = 0;
 }

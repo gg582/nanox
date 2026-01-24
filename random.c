@@ -6,8 +6,8 @@
  *	Modified by Petri Kutvonen
  */
 
-#include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "estruct.h"
 #include "edef.h"
@@ -15,8 +15,256 @@
 #include "line.h"
 #include "utf8.h"
 #include "util.h"
+#include "nanox.h"
 
 int tabsize;					/* Tab size (0: use real tabs) */
+
+static int get_indent(struct line *lp) {
+	int nicol = 0;
+	int i, c;
+	for (i = 0; i < llength(lp); ++i) {
+		c = lgetc(lp, i);
+		if (c != ' ' && c != '\t')
+			break;
+		if (c == '\t')
+			nicol = nextab(nicol);
+		else
+			++nicol;
+	}
+	return nicol;
+}
+
+static void set_indent(int target) {
+	int ch;
+	int cur = get_indent(curwp->w_dotp);
+	if (cur == target) {
+		/* Already correct, just move to first non-white */
+		curwp->w_doto = 0;
+		while (curwp->w_doto < llength(curwp->w_dotp)) {
+			ch = lgetc(curwp->w_dotp, curwp->w_doto);
+			if (ch != ' ' && ch != '\t')
+				break;
+			curwp->w_doto++;
+		}
+		return;
+	}
+
+	curwp->w_doto = 0;
+	while (curwp->w_doto < llength(curwp->w_dotp)) {
+		ch = lgetc(curwp->w_dotp, curwp->w_doto);
+		if (ch != ' ' && ch != '\t')
+			break;
+		ldelchar(1, FALSE);
+	}
+
+	if (target > 0) {
+		if (nanox_cfg.soft_tab) {
+			int i;
+			for (i = 0; i < target; ++i)
+				linsert(1, ' ');
+		} else {
+			int step = tab_width + 1;
+			if (step == 0) step = 1; /* Avoid division by zero */
+			int num_tabs = target / step;
+			int num_spaces = target % step;
+			while (num_tabs--) linsert(1, '\t');
+			while (num_spaces--) linsert(1, ' ');
+		}
+	}
+	curwp->w_doto = llength(curwp->w_dotp);
+}
+
+static int is_closing_block(struct line *lp) {
+	int i, len;
+	int c;
+	char buffer[32];
+	int buf_idx = 0;
+	char *ext = strrchr(curbp->b_fname, '.');
+
+	len = llength(lp);
+	for (i = 0; i < len; ++i) {
+		c = lgetc(lp, i);
+		if (c != ' ' && c != '\t')
+			break;
+	}
+	if (i == len) return FALSE;
+
+	/* Check for single character closing pairs first */
+	c = lgetc(lp, i);
+	if (c == '}' || c == ')' || c == ']') return TRUE;
+
+	/* Otherwise extract the first word */
+	while (i < len && buf_idx < 31) {
+		c = lgetc(lp, i);
+		if (c == ' ' || c == '\t' || c == '\n' || c == '(' || c == '{' || c == '[' || c == ')' || c == '}' || c == ']')
+			break;
+		buffer[buf_idx++] = (char)c;
+		i++;
+	}
+	buffer[buf_idx] = '\0';
+
+	if (!ext) return FALSE;
+
+	if (strcasecmp(ext, ".sh") == 0 || strcasecmp(ext, ".bash") == 0) {
+		if (strcmp(buffer, "fi") == 0) return TRUE;
+		if (strcmp(buffer, "done") == 0) return TRUE;
+		if (strcmp(buffer, "esac") == 0) return TRUE;
+		if (strcmp(buffer, "else") == 0) return TRUE;
+		if (strcmp(buffer, "elif") == 0) return TRUE;
+	} else if (strcasecmp(ext, ".py") == 0) {
+		if (strcmp(buffer, "else") == 0) return TRUE;
+		if (strcmp(buffer, "elif") == 0) return TRUE;
+		if (strcmp(buffer, "except") == 0) return TRUE;
+		if (strcmp(buffer, "finally") == 0) return TRUE;
+	} else if (strcasecmp(ext, ".lua") == 0) {
+		if (strcmp(buffer, "end") == 0) return TRUE;
+		if (strcmp(buffer, "else") == 0) return TRUE;
+		if (strcmp(buffer, "elseif") == 0) return TRUE;
+		if (strcmp(buffer, "until") == 0) return TRUE;
+	}
+
+	return FALSE;
+}
+
+static void check_indent_dedent(void) {
+	struct line *lp = curwp->w_dotp;
+	int target_indent = -1;
+	struct line *scan_lp;
+
+	if (!is_closing_block(lp)) return;
+
+	/* Find the first non-white character to check for C braces */
+	int i, len = llength(lp);
+	for (i = 0; i < len; i++) {
+		int c = lgetc(lp, i);
+		if (c != ' ' && c != '\t') break;
+	}
+	int first_char = (i < len) ? lgetc(lp, i) : 0;
+
+	/* If it's a closing brace in C mode, use matching brace logic */
+	if ((curbp->b_mode & MDCMOD) && (first_char == '}' || first_char == ')' || first_char == ']')) {
+		struct line *oldlp = curwp->w_dotp;
+		int oldoff = curwp->w_doto;
+		int count = 1;
+		int oc;
+
+		if (first_char == '}') oc = '{';
+		else if (first_char == ')') oc = '(';
+		else oc = '[';
+
+		curwp->w_doto = i;
+		while (backchar(FALSE, 1)) {
+			int ch;
+			if (curwp->w_doto == llength(curwp->w_dotp)) ch = '\n';
+			else ch = lgetc(curwp->w_dotp, curwp->w_doto);
+
+			if (ch == first_char) ++count;
+			else if (ch == oc) --count;
+
+			if (count == 0) {
+				target_indent = get_indent(curwp->w_dotp);
+				break;
+			}
+			if (boundry(curwp->w_dotp, curwp->w_doto, REVERSE)) break;
+		}
+		curwp->w_dotp = oldlp;
+		curwp->w_doto = oldoff;
+	} else {
+		/* Handle keyword-based dedenting (e.g. fi, done, end) */
+		char *ext = strrchr(curbp->b_fname, '.');
+		if (ext && (strcasecmp(ext, ".sh") == 0 || strcasecmp(ext, ".bash") == 0)) {
+			char word[32];
+			int idx = 0;
+			for (int k = i; k < len && idx < 31; k++) {
+				int c = lgetc(lp, k);
+				if (isspace(c)) break;
+				word[idx++] = (char)c;
+			}
+			word[idx] = '\0';
+
+			if (strcmp(word, "fi") == 0 || strcmp(word, "done") == 0 || strcmp(word, "esac") == 0 || strcmp(word, "else") == 0 || strcmp(word, "elif") == 0) {
+				struct line *oldlp = curwp->w_dotp;
+				int oldoff = curwp->w_doto;
+				int count = 1;
+				char *open_word = NULL;
+				char *close_word = word;
+
+				if (strcmp(word, "fi") == 0) open_word = "if";
+				else if (strcmp(word, "done") == 0) open_word = "for"; /* could also be while/until */
+				else if (strcmp(word, "esac") == 0) open_word = "case";
+				else if (strcmp(word, "else") == 0 || strcmp(word, "elif") == 0) {
+					open_word = "if";
+					count = 1;
+				}
+
+				/* Simplified scan back for matching keyword */
+				struct line *scan = lback(lp);
+				while (scan != curbp->b_linep) {
+					int slen = llength(scan);
+					int si = 0;
+					while (si < slen && isspace(lgetc(scan, si))) si++;
+					if (si < slen) {
+						char sword[32];
+						int sidx = 0;
+						for (int k = si; k < slen && sidx < 31; k++) {
+							int sc = lgetc(scan, k);
+							if (isspace(sc)) break;
+							sword[sidx++] = (char)sc;
+						}
+						sword[sidx] = '\0';
+
+						if (open_word && strcmp(sword, open_word) == 0) {
+							if (--count == 0) {
+								target_indent = get_indent(scan);
+								break;
+							}
+						} else if (strcmp(sword, close_word) == 0) {
+							count++;
+						}
+					}
+					scan = lback(scan);
+				}
+				curwp->w_dotp = oldlp;
+				curwp->w_doto = oldoff;
+			}
+		}
+	}
+
+	if (target_indent < 0) {
+		/* For keywords like fi, done, esac, we scan back for matching if, do, case */
+		scan_lp = lback(lp);
+		while (scan_lp != curbp->b_linep) {
+			int is_blank = TRUE;
+			for (int k = 0; k < llength(scan_lp); k++) {
+				int c = lgetc(scan_lp, k);
+				if (c != ' ' && c != '\t') {
+					is_blank = FALSE;
+					break;
+				}
+			}
+
+			if (!is_blank) {
+				target_indent = get_indent(scan_lp);
+				break;
+			}
+			scan_lp = lback(scan_lp);
+		}
+	}
+
+	if (target_indent >= 0) {
+		int cur_indent = get_indent(lp);
+		if (cur_indent != target_indent) {
+			int old_doto = curwp->w_doto;
+			set_indent(target_indent);
+			/* Dedenting can shrink the line, so clamp the cursor to the new end. */
+			if (old_doto > llength(curwp->w_dotp))
+				old_doto = llength(curwp->w_dotp);
+			if (old_doto < 0)
+				old_doto = 0;
+			curwp->w_doto = old_doto;
+		}
+	}
+}
 
 /*
  * Set fill column to n.
@@ -140,7 +388,7 @@ int getccol(int bflg)
 		i += utf8_to_unicode(dlp->l_text, i, len, &c);
 		if (c != ' ' && c != '\t' && bflg)
 			break;
-		col = next_column(col, c, tabmask);
+		col = next_column(col, c, tab_width);
 	}
 	return col;
 }
@@ -169,7 +417,7 @@ int setccol(int pos)
 		/* advance one character */
 		c = lgetc(curwp->w_dotp, i);
 		if (c == '\t')
-			col |= tabmask;
+			col |= tab_width;
 		else if (c < 0x20 || c == 0x7F)
 			++col;
 		++col;
@@ -250,6 +498,47 @@ int insert_tab(int f, int n)
 {
 	if (n < 0)
 		return FALSE;
+
+	/* If we are in CMODE and at the beginning of the line, do smart re-indent */
+	if ((curbp->b_mode & MDCMOD) != 0 && n == 1) {
+		int i;
+		int only_white = TRUE;
+		for (i = 0; i < curwp->w_doto; i++) {
+			int ch = lgetc(curwp->w_dotp, i);
+			if (ch != ' ' && ch != '\t') {
+				only_white = FALSE;
+				break;
+			}
+		}
+		if (only_white) {
+			struct line *lp = lback(curwp->w_dotp);
+			int target = 0;
+			while (lp != curbp->b_linep) {
+				int is_blank = TRUE;
+				for (int k = 0; k < llength(lp); k++) {
+					int ch2 = lgetc(lp, k);
+					if (ch2 != ' ' && ch2 != '\t') {
+						is_blank = FALSE;
+						break;
+					}
+				}
+				if (!is_blank) {
+					target = get_indent(lp);
+					/* If previous line ends with {, increase indent */
+					int last_idx = llength(lp) - 1;
+					while (last_idx >= 0 && (lgetc(lp, last_idx) == ' ' || lgetc(lp, last_idx) == '\t'))
+						last_idx--;
+					if (last_idx >= 0 && lgetc(lp, last_idx) == '{')
+						target += (tabsize ? tabsize : (tab_width + 1));
+					break;
+				}
+				lp = lback(lp);
+			}
+			set_indent(target);
+			return TRUE;
+		}
+	}
+
 	if (n == 0 || n > 1) {
 		tabsize = n;
 		return TRUE;
@@ -284,7 +573,9 @@ int detab(int f, int n)
 			/* if we have a tab */
 			if (lgetc(curwp->w_dotp, curwp->w_doto) == '\t') {
 				ldelchar(1, FALSE);
-				insspace(TRUE, (tabmask + 1) - (curwp->w_doto & tabmask));
+						int step = tab_width + 1;
+		if (step == 0) step = 1;
+		insspace(TRUE, step - (curwp->w_doto % step));
 			}
 			forwchar(FALSE, 1);
 		}
@@ -473,175 +764,41 @@ int insert_newline(int f, int n)
 	return TRUE;
 }
 
-static int get_indent(struct line *lp) {
-	int nicol = 0;
-	int i, c;
-	for (i = 0; i < llength(lp); ++i) {
-		c = lgetc(lp, i);
-		if (c != ' ' && c != '\t')
-			break;
-		if (c == '\t')
-			nicol |= tabmask;
-		++nicol;
-	}
-	return nicol;
-}
-
-static int is_closing_block(struct line *lp) {
-	int i, len;
-	int c;
-	char buffer[32];
-	int buf_idx = 0;
-
-	len = llength(lp);
-	for (i = 0; i < len; ++i) {
-		c = lgetc(lp, i);
-		if (c != ' ' && c != '\t')
-			break;
-	}
-	if (i == len) return FALSE;
-
-	while (i < len && buf_idx < 31) {
-		c = lgetc(lp, i);
-		if (c == ' ' || c == '\t' || c == '\n')
-			break;
-		buffer[buf_idx++] = (char)c;
-		i++;
-	}
-	buffer[buf_idx] = '\0';
-
-	while (i < len) {
-		c = lgetc(lp, i);
-		if (c != ' ' && c != '\t')
-			return FALSE;
-		i++;
-	}
-
-	if (strcmp(buffer, "}") == 0) return TRUE;
-	if (strcmp(buffer, ")") == 0) return TRUE;
-	if (strcmp(buffer, "fi") == 0) return TRUE;
-	if (strcmp(buffer, "done") == 0) return TRUE;
-	if (strcmp(buffer, "esac") == 0) return TRUE;
-
-	return FALSE;
-}
-
-static void check_indent_dedent(void) {
-	struct line *lp = curwp->w_dotp;
-	int cur_indent, prev_indent, target_indent;
-	struct line *scan_lp;
-
-	if (!is_closing_block(lp)) return;
-
-	cur_indent = get_indent(lp);
-	scan_lp = lback(lp);
-
-	while (scan_lp != curbp->b_linep) {
-		int is_blank = TRUE;
-		int k, c;
-		for (k = 0; k < llength(scan_lp); k++) {
-			c = lgetc(scan_lp, k);
-			if (c != ' ' && c != '\t') {
-				is_blank = FALSE;
-				break;
-			}
-		}
-
-		if (!is_blank) {
-			prev_indent = get_indent(scan_lp);
-			if (prev_indent < cur_indent) {
-				int diff = cur_indent - prev_indent;
-				target_indent = cur_indent - diff;
-				if (target_indent < 0) target_indent = 0;
-
-				curwp->w_doto = 0;
-				while (curwp->w_doto < llength(curwp->w_dotp)) {
-					c = lgetc(curwp->w_dotp, curwp->w_doto);
-					if (c != ' ' && c != '\t') break;
-					ldelchar(1, FALSE);
-				}
-
-				if (target_indent > 0) {
-					int num_tabs = target_indent / 8;
-					int num_spaces = target_indent % 8;
-					while (num_tabs--) linsert(1, '\t');
-					while (num_spaces--) linsert(1, ' ');
-				}
-				curwp->w_doto = llength(curwp->w_dotp);
-				return;
-			}
-		}
-		scan_lp = lback(scan_lp);
-	}
-}
-
 int cinsert(void)
 {						/* insert a newline and indentation for C */
-	char *cptr;				/* string pointer into text to copy */
-	int tptr;				/* index to scan into line */
 	int bracef;				/* was there a brace at the end of line? */
-	int i;
-	char ichar[NSTRING];			/* buffer to hold indent of last line */
-	char saved_indent[NSTRING];
-	int is_paren = FALSE;
+	int target_indent;
 	struct line *lp = curwp->w_dotp;
-	int len = llength(lp);
-	int idx = 0;
+	int doto = curwp->w_doto;
 
-	/* Check for ) before dedent */
-	while (idx < len) {
-		int c = lgetc(lp, idx);
-		if (c != ' ' && c != '\t') break;
-		idx++;
-	}
-	if (idx < len && lgetc(lp, idx) == ')')
-		is_paren = TRUE;
+	/* check for a brace at the end of the line (ignoring trailing whitespace) */
+	int tptr = doto - 1;
+	while (tptr >= 0 && (lgetc(lp, tptr) == ' ' || lgetc(lp, tptr) == '\t'))
+		tptr--;
+	bracef = (tptr >= 0 && lgetc(lp, tptr) == '{');
 
-	/* Save indent */
-	if (is_paren) {
-		int si = 0;
-		for (int k = 0; k < len && k < NSTRING - 1; k++) {
-			int c = lgetc(lp, k);
-			if (c != ' ' && c != '\t') break;
-			saved_indent[si++] = (char)c;
-		}
-		saved_indent[si] = 0;
-	}
-
+	/* check for dedent if current line starts with a closing block */
 	check_indent_dedent();
 
-	/* grab a pointer to text to copy indentation from */
-	cptr = &curwp->w_dotp->l_text[0];
-
-	/* check for a brace */
-	tptr = curwp->w_doto - 1;
-	bracef = (cptr[tptr] == '{');
-
-	/* save the indent of the previous line */
-	i = 0;
-	while ((i < tptr) && (cptr[i] == ' ' || cptr[i] == '\t')
-	       && (i < NSTRING - 1)) {
-		ichar[i] = cptr[i];
-		++i;
-	}
-	ichar[i] = 0;				/* terminate it */
-
-	if (is_paren)
-		strcpy(ichar, saved_indent);
+	/* recapture lp and target_indent after possible dedent */
+	lp = curwp->w_dotp;
+	target_indent = get_indent(lp);
 
 	/* put in the newline */
 	if (lnewline() == FALSE)
 		return FALSE;
 
 	/* and the saved indentation */
-	linstr(ichar);
+	set_indent(target_indent);
 
-	/* and double indentation for a brace */
+	/* and one level of indentation for an open brace */
 	if (bracef) {
-		if (ichar[0] == '\0')
-			insert_tab(FALSE, 1);
-		else
-			linstr(ichar);
+		int step = (tabsize ? tabsize : (tab_width + 1));
+		if (step == 8 && !nanox_cfg.soft_tab) linsert(1, '\t');
+		else {
+			for (int i = 0; i < step; i++) linsert(1, ' ');
+		}
+		curwp->w_doto = llength(curwp->w_dotp);
 	}
 
 	return TRUE;
@@ -662,48 +819,31 @@ int insbrace(int n, int c)
 	struct line *oldlp;
 	int oldoff;
 
+	/* if the character at the cursor is already the same brace, skip insertion/re-indent */
+	if (curwp->w_doto < llength(curwp->w_dotp) && lgetc(curwp->w_dotp, curwp->w_doto) == c) {
+		curwp->w_doto++;
+		return TRUE;
+	}
+
 	/* if we aren't at the beginning of the line... */
-	if (curwp->w_doto != 0)
+	if (curwp->w_doto != 0) {
 		/* scan to see if all space before this is white space */
 		for (i = curwp->w_doto - 1; i >= 0; --i) {
 			ch = lgetc(curwp->w_dotp, i);
 			if (ch != ' ' && ch != '\t')
 				return linsert(n, c);
 		}
+	}
 
-	if (c == '}') {
-		char ichar[NSTRING];
-		struct line *prevlp;
-		int len;
-
-		prevlp = lback(curwp->w_dotp);
-		i = 0;
-		if (prevlp != curbp->b_linep) {
-			len = llength(prevlp);
-			while (i < len && i < NSTRING - 1) {
-				ch = lgetc(prevlp, i);
-				if (ch != ' ' && ch != '\t')
-					break;
-				ichar[i++] = (char)ch;
-			}
-		}
-		ichar[i] = 0;
-
-		/* halve the indentation */
-		ichar[i / 2] = 0;
-
-		/* delete current indentation */
-		curwp->w_doto = 0;
-		while (curwp->w_doto < llength(curwp->w_dotp)) {
-			ch = lgetc(curwp->w_dotp, curwp->w_doto);
+	/* if there is content AFTER the cursor, skip auto-indentation */
+	if (curwp->w_doto < llength(curwp->w_dotp)) {
+		/* if the same character is already there, just move forward? 
+		   Actually, the user said "disable indentation alignment", so we just insert. */
+		for (i = curwp->w_doto; i < llength(curwp->w_dotp); i++) {
+			ch = lgetc(curwp->w_dotp, i);
 			if (ch != ' ' && ch != '\t')
-				break;
-			ldelchar(1, FALSE);
+				return linsert(n, c);
 		}
-
-		/* insert new indentation */
-		linstr(ichar);
-		return linsert(n, c);
 	}
 
 	/* chercher le caractere oppose correspondant */
@@ -718,16 +858,16 @@ int insbrace(int n, int c)
 		oc = '(';
 		break;
 	default:
-		return FALSE;
+		return linsert(n, c);
 	}
 
 	oldlp = curwp->w_dotp;
 	oldoff = curwp->w_doto;
 
 	count = 1;
-	backchar(FALSE, 1);
 
-	while (count > 0) {
+	/* Scan back to find the matching open fence */
+	while (backchar(FALSE, 1)) {
 		if (curwp->w_doto == llength(curwp->w_dotp))
 			ch = '\n';
 		else
@@ -735,40 +875,48 @@ int insbrace(int n, int c)
 
 		if (ch == c)
 			++count;
-		if (ch == oc)
+		else if (ch == oc)
 			--count;
 
-		backchar(FALSE, 1);
+		if (count == 0) break;
+
 		if (boundry(curwp->w_dotp, curwp->w_doto, REVERSE))
 			break;
 	}
 
 	if (count != 0) {			/* no match */
+		/* If pairs don't match, recalculate based on previous line's indent */
+		struct line *lp = lback(oldlp);
+		target = 0;
+		while (lp != curbp->b_linep) {
+			int is_blank = TRUE;
+			for (int k = 0; k < llength(lp); k++) {
+				int ch2 = lgetc(lp, k);
+				if (ch2 != ' ' && ch2 != '\t') {
+					is_blank = FALSE;
+					break;
+				}
+			}
+			if (!is_blank) {
+				target = get_indent(lp);
+				break;
+			}
+			lp = lback(lp);
+		}
 		curwp->w_dotp = oldlp;
 		curwp->w_doto = oldoff;
-		return linsert(n, c);
+	} else {
+		/* Match found! Use the indentation of the line with the open fence */
+		target = get_indent(curwp->w_dotp);
+		curwp->w_dotp = oldlp;
+		curwp->w_doto = oldoff;
 	}
 
-	curwp->w_doto = 0;			/* debut de ligne */
-	/* aller au debut de la ligne apres la tabulation */
-	while ((ch = lgetc(curwp->w_dotp, curwp->w_doto)) == ' ' || ch == '\t')
-		forwchar(FALSE, 1);
+	/* Adjust indentation of the current line */
+	set_indent(target);
 
-	/* delete back first */
-	target = getccol(FALSE);		/* c'est l'indent que l'on doit avoir */
-	curwp->w_dotp = oldlp;
-	curwp->w_doto = oldoff;
-
-	while (target != getccol(FALSE)) {
-		if (target < getccol(FALSE))	/* on doit detruire des caracteres */
-			while (getccol(FALSE) > target)
-				backdel(FALSE, 1);
-		else {				/* on doit en inserer */
-			while (target - getccol(FALSE) >= 8)
-				linsert(1, '\t');
-			linsert(target - getccol(FALSE), ' ');
-		}
-	}
+	/* restore position for the actual brace insertion */
+	curwp->w_doto = llength(curwp->w_dotp);
 
 	/* and insert the required brace(s) */
 	return linsert(n, c);
@@ -838,30 +986,31 @@ int deblank(int f, int n)
  */
 int indent(int f, int n)
 {
-	int nicol;
-	int c;
-	int i;
-
-	if (curbp->b_mode & MDVIEW)		/* don't allow this command if      */
-		return rdonly();		/* we are in read only mode     */
+	if (curbp->b_mode & MDVIEW)
+		return rdonly();
 	if (n < 0)
 		return FALSE;
 
-	check_indent_dedent();
-
 	while (n--) {
-		nicol = 0;
-		for (i = 0; i < llength(curwp->w_dotp); ++i) {
-			c = lgetc(curwp->w_dotp, i);
-			if (c != ' ' && c != '\t')
-				break;
-			if (c == '\t')
-				nicol |= tabmask;
-			++nicol;
+		if (curbp->b_mode & MDCMOD)
+			check_indent_dedent();
+
+		int target_indent = get_indent(curwp->w_dotp);
+		
+		/* check if we are on a line that just opened a brace */
+		int doto = llength(curwp->w_dotp);
+		int tptr = doto - 1;
+		while (tptr >= 0 && (lgetc(curwp->w_dotp, tptr) == ' ' || lgetc(curwp->w_dotp, tptr) == '\t'))
+			tptr--;
+		
+		if (tptr >= 0 && lgetc(curwp->w_dotp, tptr) == '{') {
+			target_indent += (tabsize ? tabsize : (tab_width + 1));
 		}
-		if (lnewline() == FALSE || ((i = nicol / 8) != 0 && linsert(i, '\t') == FALSE)
-		    || ((i = nicol % 8) != 0 && linsert(i, ' ') == FALSE))
+
+		if (lnewline() == FALSE)
 			return FALSE;
+		
+		set_indent(target_indent);
 	}
 	return TRUE;
 }
@@ -1232,7 +1381,8 @@ int fmatch(int ch)
 	/* find the top line and set up for scan */
 	toplp = curwp->w_linep->l_bp;
 	count = 1;
-	backchar(FALSE, 2);
+	if (backchar(FALSE, 2) == FALSE)
+		return TRUE;
 
 	/* scan back until we find it, or reach past the top of the window */
 	while (count > 0 && curwp->w_dotp != toplp) {

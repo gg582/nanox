@@ -147,7 +147,7 @@ int isearch(int f, int n)
 	cmd_reexecute = -1;			/* We're not re-executing (yet?)      */
 	cmd_offset = 0;				/* Start at the beginning of the buff */
 	cmd_buff[0] = '\0';			/* Init the command buffer            */
-	strncpy(pat_save, pat, NPAT);		/* Save the old pattern string        */
+	strncpy(pat_save, pat, NPAT - 1);		/* Save the old pattern string        */
 	curline = curwp->w_dotp;		/* Save the current line pointer      */
 	curoff = curwp->w_doto;			/* Save the current offset            */
 	init_direction = n;			/* Save the initial search direction  */
@@ -209,13 +209,14 @@ int isearch(int f, int n)
 			continue;		/* Go continue with the search */
 
 		case IS_NEWLINE:		/* Carriage return            */
+		case '\n':			/* Line feed                  */
 			return TRUE;		/* Exit search and stay here  */
 
 		case IS_QUOTE:			/* Quote character            */
 			c = ectoc(expc = get_char());	/* Get the next char          */
+			/* fall through to add the character to the pattern */
 
 		case IS_TAB:			/* Generically allowed        */
-		case '\n':			/*  controlled characters     */
 			break;			/* Make sure we use it        */
 
 		case IS_BACKSP:		/* If a backspace:            */

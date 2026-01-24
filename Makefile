@@ -44,7 +44,7 @@ CC=gcc
 WARNINGS=-Wall -Wstrict-prototypes
 DEFINES=-DPOSIX -D_GNU_SOURCE
 
-CFLAGS=-O2 $(WARNINGS) $(DEFINES)
+CFLAGS=-Ofast $(WARNINGS) $(DEFINES)
 
 LIBS=ncurses hunspell
 BINDIR=$(HOME)/bin

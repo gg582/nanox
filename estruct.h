@@ -10,8 +10,8 @@
 
 extern struct terminal term;
 
-#define MAXCOL	500
-#define MAXROW	500
+#define MAXCOL  2048
+#define MAXROW	2048
 
 #ifndef BEL
 #define BEL 0x07
@@ -28,16 +28,16 @@ extern struct terminal term;
 /* Internal constants. */
 
 #define	NBINDS	256				/* max # of bound keys          */
-#define NFILEN  256				/* # of bytes, file name        */
+#define NFILEN  1024			/* # of bytes, file name        */
 #define NBUFN   16				/* # of bytes, buffer name      */
-#define NLINE   256				/* # of bytes, input line       */
-#define	NSTRING	128				/* # of bytes, string buffers   */
+#define NLINE   1024			/* # of bytes, input line       */
+#define	NSTRING	256				/* # of bytes, string buffers   */
 #define NKBDM   256				/* # of strokes, keyboard macro */
-#define NPAT    128				/* # of bytes, pattern          */
-#define HUGE    1000				/* Huge number                  */
-#define	NLOCKS	1000				/* max # of file locks active   */
-#define	NCOLORS	8				/* number of supported colors   */
-#define	KBLOCK	250				/* sizeof kill buffer chunks    */
+#define NPAT    512				/* # of bytes, pattern          */
+#define HUGE    1000	    /* Huge number                  */
+#define	NLOCKS	1000			/* max # of file locks active   */
+#define	NCOLORS	8		    	/* number of supported colors   */
+#define	KBLOCK	1024			/* sizeof kill buffer chunks    */
 
 #define CONTROL 0x10000000			/* Control flag, or'ed in       */
 #define META    0x20000000			/* Meta flag, or'ed in          */
@@ -117,7 +117,7 @@ extern struct terminal term;
 
 /*	Internal defined functions					*/
 
-#define	nextab(a)	(a & ~tabmask) + (tabmask+1)
+#define	nextab(a)	next_tab_stop(a, tab_width)
 #ifdef	abs
 #undef	abs
 #endif

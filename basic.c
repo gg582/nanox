@@ -36,7 +36,7 @@ static int getgoal(struct line *dlp)
 		unicode_t c;
 		int width = utf8_to_unicode(dlp->l_text, dbo, len, &c);
 
-		col = next_column(col, c, tabmask);
+		col = next_column(col, c, tab_width);
 		if (col > curgoal)
 			break;
 		dbo += width;

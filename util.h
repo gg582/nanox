@@ -19,12 +19,18 @@ static inline void mystrscpy(char *dst, const char *src, int size)
 	*dst = 0;
 }
 
+static inline int next_tab_stop(int col, int tab_width_val) {
+    int step = tab_width_val + 1;
+    if (step == 0) step = 1; /* Prevent division by zero */
+    return col - (col % step) + step;
+}
+
 // Overly simplistic "how does the column number change
 // based on character 'c'" function
-static inline int next_column(int old, unicode_t c, int tabmask)
+static inline int next_column(int old, unicode_t c, int tab_width)
 {
 	if (c == '\t')
-		return (old | tabmask) + 1;
+		return next_tab_stop(old, tab_width);
 
 	if (c < 0x20 || c == 0x7F)
 		return old + 2;

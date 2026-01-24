@@ -232,6 +232,17 @@ int main(int argc, char **argv)
             /* set the modes appropriatly */
             if (viewflag)
                 bp->b_mode |= MDVIEW;
+
+            /* Set CMODE for brace-based languages */
+            char *ext = strrchr(argv[carg], '.');
+            if (ext && (strcasecmp(ext, ".c") == 0 || strcasecmp(ext, ".h") == 0 ||
+                        strcasecmp(ext, ".cpp") == 0 || strcasecmp(ext, ".hpp") == 0 ||
+                        strcasecmp(ext, ".java") == 0 || strcasecmp(ext, ".js") == 0 ||
+                        strcasecmp(ext, ".ts") == 0 || strcasecmp(ext, ".rs") == 0 ||
+                        strcasecmp(ext, ".go") == 0 || strcasecmp(ext, ".php") == 0 ||
+                        strcasecmp(ext, ".swift") == 0)) {
+                bp->b_mode |= MDCMOD;
+            }
         }
     }
 
@@ -473,11 +484,11 @@ int execute(int c, int f, int n)
            delete a char forword                        */
         if (curwp->w_bufp->b_mode & MDOVER &&
             curwp->w_doto < curwp->w_dotp->l_used &&
-            (lgetc(curwp->w_dotp, curwp->w_doto) != '\t' || (curwp->w_doto) % 8 == 7))
+            (lgetc(curwp->w_dotp, curwp->w_doto) != '\t' || ((curwp->w_doto) & tab_width) == tab_width))
             ldelchar(1, FALSE);
 
         /* do the appropriate insertion */
-        if (c == '}' && (curbp->b_mode & MDCMOD) != 0)
+        if ((c == '}' || c == ')' || c == ']') && (curbp->b_mode & MDCMOD) != 0)
             status = insbrace(n, c);
         else if (c == '#' && (curbp->b_mode & MDCMOD) != 0)
             status = inspound();

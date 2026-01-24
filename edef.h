@@ -20,7 +20,6 @@ extern void ttflush(void);
 
 int flen = 0;					/* current length of fline */
 struct kill *kbufp = NULL;			/* current kill buffer chunk pointer    */
-struct kill *kbufp;     
 int fillcol = 72;        /* Current fill column          */
 int kbdm[NKBDM];         /* Macro (Type changed to int)  */
 char *execstr = NULL;        /* Pointer to string to execute */
@@ -104,7 +103,7 @@ int mpresf = FALSE;     /* Message present flag (Duplicate fixed) */
 int gfcolor;                /* global forgrnd color (white) */
 int gbcolor;                /* global backgrnd color (black) */
 int quotec;                /* quote char during mlreply() */
-int tabmask;                /* tabulator mask */
+int tab_width;                /* tabulator width */
 int abortc;                /* abort char */
 int metac;                /* meta char */
 int ctlxc;                /* ctl-x char */
@@ -207,7 +206,7 @@ extern int mpresf;        /* Message present flag */
 extern int gfcolor;                /* global forgrnd color (white) */
 extern int gbcolor;                /* global backgrnd color (black) */
 extern int quotec;                /* quote char during mlreply() */
-extern int tabmask;                /* tabulator mask */
+extern int tab_width;                /* tabulator width */
 extern int abortc;                /* abort char */
 extern int metac;                /* meta char */
 extern int ctlxc;                /* ctl-x char */
@@ -220,6 +219,7 @@ extern int kleen;            /* Clean? */
 extern char errorm[];            /* Error literal changed to array */
 extern char truem[];            /* True literal changed to array */
 extern char falsem[];            /* False literal changed to array */
+extern struct kill *kbufp;        /* Kill buffer pointer */
 extern struct kill *kbufh;        /* Kill buffer head */
 extern int kused;                /* Kill buffer used (long -> int) */
 extern char sres[];            /* Screen resolution */

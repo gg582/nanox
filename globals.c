@@ -48,7 +48,7 @@ int reptc = CONTROL | 'U';		/* current universal repeat char */
 int abortc = CONTROL | 'G';		/* current abort command char   */
 
 int quotec = 0x11;			/* quote char during mlreply() */
-int tabmask = 0x07;			/* tabulator mask */
+int tab_width = 7;			/* tabulator width */
 struct kill *kbufp = NULL;		/* current kill buffer chunk pointer    */
 struct kill *kbufh = NULL;		/* kill buffer header pointer           */
 struct window *swindow = NULL;		/* saved window pointer                 */

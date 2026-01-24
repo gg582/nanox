@@ -41,7 +41,7 @@ struct line *lalloc(int used)
 	size = (used + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
 	if (size == 0)				/* Assume that is an empty. */
 		size = BLOCK_SIZE;		/* Line is for type-in. */
-	if ((lp = (struct line *)malloc(sizeof(struct line) + size)) == NULL) {
+	if ((lp = (struct line *)malloc(sizeof(struct line) - 1 + size)) == NULL) {
 		mlwrite("(OUT OF MEMORY)");
 		return NULL;
 	}
@@ -139,7 +139,15 @@ int linstr(char *instr)
 
 	if (instr != NULL)
 		while ((tmpc = *instr) && status == TRUE) {
-			status = (tmpc == '\n' ? lnewline() : linsert(1, tmpc));
+			if (tmpc == '\r') {
+				status = lnewline();
+				if (*(instr + 1) == '\n')
+					instr++;
+			} else if (tmpc == '\n') {
+				status = lnewline();
+			} else {
+				status = linsert(1, tmpc);
+			}
 
 			/* Insertion error? */
 			if (status != TRUE) {
@@ -261,7 +269,7 @@ int linsert(int n, int c)
 int lowrite(int c)
 {
 	if (curwp->w_doto < curwp->w_dotp->l_used &&
-	    (lgetc(curwp->w_dotp, curwp->w_doto) != '\t' || ((curwp->w_doto) & tabmask) == tabmask))
+	    (lgetc(curwp->w_dotp, curwp->w_doto) != '\t' || ((curwp->w_doto) & tab_width) == tab_width))
 		ldelchar(1, FALSE);
 	return linsert(1, c);
 }
@@ -276,7 +284,15 @@ int lover(char *ostr)
 
 	if (ostr != NULL)
 		while ((tmpc = *ostr) && status == TRUE) {
-			status = (tmpc == '\n' ? lnewline() : lowrite(tmpc));
+			if (tmpc == '\r') {
+				status = lnewline();
+				if (*(ostr + 1) == '\n')
+					ostr++;
+			} else if (tmpc == '\n') {
+				status = lnewline();
+			} else {
+				status = lowrite(tmpc);
+			}
 
 			/* Insertion error? */
 			if (status != TRUE) {
@@ -310,34 +326,35 @@ int lnewline(void)
 	lchange(WFHARD);
 	lp1 = curwp->w_dotp;			/* Get the address and  */
 	doto = curwp->w_doto;			/* offset of "."        */
-	if ((lp2 = lalloc(doto)) == NULL)	/* New first half line      */
+
+	/* Allocate a new line for the second half */
+	if ((lp2 = lalloc(lp1->l_used - doto)) == NULL)
 		return FALSE;
-	cp1 = &lp1->l_text[0];			/* Shuffle text around  */
+
+	cp1 = &lp1->l_text[doto];
 	cp2 = &lp2->l_text[0];
-	while (cp1 != &lp1->l_text[doto])
-		*cp2++ = *cp1++;
-	cp2 = &lp1->l_text[0];
 	while (cp1 != &lp1->l_text[lp1->l_used])
 		*cp2++ = *cp1++;
-	lp1->l_used -= doto;
-	lp2->l_bp = lp1->l_bp;
-	lp1->l_bp = lp2;
-	lp2->l_bp->l_fp = lp2;
-	lp2->l_fp = lp1;
-	wp = curwp;				/* Window               */
-	if (wp->w_linep == lp1)
-		wp->w_linep = lp2;
+
+	lp2->l_fp = lp1->l_fp;		/* Link in new line */
+	lp1->l_fp = lp2;
+	lp2->l_fp->l_bp = lp2;
+	lp2->l_bp = lp1;
+	lp1->l_used = doto;
+
+	/* Update window pointers */
+	wp = curwp;
 	if (wp->w_dotp == lp1) {
-		if (wp->w_doto < doto)
+		if (wp->w_doto >= doto) {
 			wp->w_dotp = lp2;
-		else
 			wp->w_doto -= doto;
+		}
 	}
 	if (wp->w_markp == lp1) {
-		if (wp->w_marko < doto)
+		if (wp->w_marko > doto) {
 			wp->w_markp = lp2;
-		else
 			wp->w_marko -= doto;
+		}
 	}
 	return TRUE;
 }
@@ -646,7 +663,15 @@ int yank(int f, int n)
 				i = KBLOCK;
 			sp = kp->d_chunk;
 			while (i--) {
-				if ((c = *sp++) == '\n') {
+				c = *sp++;
+				if (c == '\r') {
+					if (lnewline() == FALSE)
+						return FALSE;
+					if (i > 0 && *sp == '\n') {
+						sp++;
+						i--;
+					}
+				} else if (c == '\n') {
 					if (lnewline() == FALSE)
 						return FALSE;
 				} else {

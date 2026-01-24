@@ -128,7 +128,7 @@ int ffgetline(void)
 		c = fgetc(ffp);
 	}
 	while (c != EOF && c != '\n') {
-		if (c) {
+		if (c && c != '\r') {
 			fline[i++] = c;
 			/* if it's longer, get more room */
 			if (i >= flen) {

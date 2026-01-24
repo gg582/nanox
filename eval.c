@@ -304,7 +304,7 @@ char *gtenv(char *vname)
 	case EVRVAL:
 		return itoa(rval);
 	case EVTAB:
-		return itoa(tabmask + 1);
+		return itoa(tab_width + 1);
 	case EVOVERLAP:
 		return itoa(overlap);
 	case EVSCROLLCOUNT:
@@ -587,9 +587,9 @@ int svar(struct variable_description *var, char *value)
 		case EVRVAL:
 			break;
 		case EVTAB:
-			tabmask = atoi(value) - 1;
-			if (tabmask != 0x07 && tabmask != 0x03)
-				tabmask = 0x07;
+			tab_width = atoi(value) - 1;
+			if (tab_width != 0x07 && tab_width != 0x03)
+				tab_width = 0x07;
 			curwp->w_flag |= WFHARD;
 			break;
 		case EVOVERLAP:
