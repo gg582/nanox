@@ -11,10 +11,11 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
-#include <ctype.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <string.h>
+#include <ctype.h>
+#include <unistd.h>
 
 #include "estruct.h"
 #include "edef.h"

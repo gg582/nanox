@@ -437,10 +437,11 @@ void nanox_message_prefix(const char *input, char *output, size_t outsz)
 		return;
 	}
 
-	if (strncmp(temp, "[File Mode]", 11) == 0)
-		mystrscpy(output, temp, outsz);
-	else
-		snprintf(output, outsz, "[File Mode] %s", temp);
+//	if (strncmp(temp, "[File Mode]", 11) == 0)
+//		mystrscpy(output, temp, outsz);
+//	else
+//		snprintf(output, outsz, "[File Mode] %s", temp);
+    snprintf(output, outsz, "%s", temp);
 }
 
 void nanox_notify_message(const char *text)

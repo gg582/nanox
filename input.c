@@ -61,11 +61,16 @@ int mlyesno(char *prompt)
 
 int mlreply(char *prompt, char *buf, int nbuf)
 {
+  movecursor(term.t_nrow, 0);
+  TTputc('\x1b'); TTputc('['); TTputc('K');
+  write(1, "\033[K", 3);
 	return nextarg(prompt, buf, nbuf, ctoec('\n'));
 }
 
 int mlreplyt(char *prompt, char *buf, int nbuf, int eolchar)
 {
+  movecursor(term.t_nrow, 0);
+  write(1, "\033[K", 3);
 	return nextarg(prompt, buf, nbuf, eolchar);
 }
 

@@ -2,6 +2,7 @@
  *
  *	locking routines as modified by Petri Kutvonen
  */
+#define _GNU_SOURCE
 
 #include "estruct.h"
 #include "edef.h"
