@@ -1,0 +1,8 @@
+[styles]
+normal   = fg=#111111 bg=#dddbd5
+comment  = fg=#926f1f italic=true
+string   = fg=#2b4cc2
+number   = fg=#1b9c62
+bracket  = fg=#818199
+operator = fg=#4c4943
+error    = fg=#d32f2f bold=true

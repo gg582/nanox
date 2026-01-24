@@ -33,6 +33,8 @@ typedef struct {
 	unicode_t ch;
 	int fg;
 	int bg;
+	bool bold;
+	bool underline;
 } video_cell;
 
 struct video {
@@ -48,6 +50,8 @@ struct video {
 static struct video **vscreen;			/* Virtual screen. */
 static int current_color_fg = -1;
 static int current_color_bg = -1;
+static bool current_color_bold = false;
+static bool current_color_underline = false;
 
 static int displaying = TRUE;
 #include <signal.h>
@@ -178,6 +182,11 @@ void vtinit(void)
 	TTrev(FALSE);
 	vscreen = xmalloc(term.t_mrow * sizeof(struct video *));
 
+	current_color_fg = -1;
+	current_color_bg = -1;
+	current_color_bold = false;
+	current_color_underline = false;
+
 	for (i = 0; i < term.t_mrow; ++i) {
 		vp = xmalloc(sizeof(struct video) + term.t_mcol * sizeof(video_cell));
 		vp->v_flag = 0;
@@ -247,6 +256,8 @@ static void vtputc(int c)
 		vp->v_text[term.t_ncol - 1].ch = '$';
 		vp->v_text[term.t_ncol - 1].fg = current_color_fg;
 		vp->v_text[term.t_ncol - 1].bg = current_color_bg;
+		vp->v_text[term.t_ncol - 1].bold = current_color_bold;
+		vp->v_text[term.t_ncol - 1].underline = current_color_underline;
 		return;
 	}
 
@@ -281,6 +292,8 @@ static void vtputc(int c)
 		vp->v_text[vtcol].ch = c;
 		vp->v_text[vtcol].fg = current_color_fg;
 		vp->v_text[vtcol].bg = current_color_bg;
+		vp->v_text[vtcol].bold = current_color_bold;
+		vp->v_text[vtcol].underline = current_color_underline;
 	}
 	++vtcol;
 }
@@ -297,6 +310,8 @@ static void vteeol(void)
 		vcp[vtcol].ch = ' ';
 		vcp[vtcol].fg = current_color_fg;
 		vcp[vtcol].bg = current_color_bg;
+		vcp[vtcol].bold = current_color_bold;
+		vcp[vtcol].underline = current_color_underline;
 		vtcol++;
 	}
 }
@@ -329,6 +344,13 @@ int update(int force)
 		return TRUE;
 
 	displaying = TRUE;
+
+	/* Sync default colors from colorscheme */
+	HighlightStyle normal = colorscheme_get(HL_NORMAL);
+	current_color_fg = normal.fg;
+	current_color_bg = normal.bg;
+	current_color_bold = normal.bold;
+	current_color_underline = normal.underline;
 
 	/* update any windows that need refreshing */
 	wp = curwp;
@@ -472,13 +494,19 @@ static void show_line(struct window *wp, struct line *lp)
 		/* Selection marker logic */
 		if (nanox_sel_active) {
 			if (lp == nanox_sel_start_lp && char_idx == nanox_sel_start_off) {
-				current_color_fg = colorscheme_get(HL_NOTICE).fg;
-				current_color_bg = colorscheme_get(HL_NOTICE).bg;
+				HighlightStyle notice = colorscheme_get(HL_NOTICE);
+				current_color_fg = notice.fg;
+				current_color_bg = notice.bg;
+				current_color_bold = notice.bold;
+				current_color_underline = notice.underline;
 				vtputc('['); vtputc('v'); vtputc(']');
 			}
 			if (lp == nanox_sel_end_lp && char_idx == nanox_sel_end_off) {
-				current_color_fg = colorscheme_get(HL_NOTICE).fg;
-				current_color_bg = colorscheme_get(HL_NOTICE).bg;
+				HighlightStyle notice = colorscheme_get(HL_NOTICE);
+				current_color_fg = notice.fg;
+				current_color_bg = notice.bg;
+				current_color_bold = notice.bold;
+				current_color_underline = notice.underline;
 				vtputc('['); vtputc('x'); vtputc(']');
 			}
 		}
@@ -499,8 +527,11 @@ static void show_line(struct window *wp, struct line *lp)
 		unicode_t c;
 		int bytes = utf8_to_unicode(lp->l_text, char_idx, len, &c);
 
-		current_color_fg = colorscheme_get(style).fg;
-		current_color_bg = colorscheme_get(style).bg;
+		HighlightStyle style_def = colorscheme_get(style);
+		current_color_fg = style_def.fg;
+		current_color_bg = style_def.bg;
+		current_color_bold = style_def.bold;
+		current_color_underline = style_def.underline;
 
 		vtputc(c);
 		char_idx += bytes;
@@ -508,13 +539,19 @@ static void show_line(struct window *wp, struct line *lp)
 
 	if (nanox_sel_active) {
 		if (lp == nanox_sel_start_lp && char_idx == nanox_sel_start_off) {
-			current_color_fg = colorscheme_get(HL_NOTICE).fg;
-			current_color_bg = colorscheme_get(HL_NOTICE).bg;
+			HighlightStyle notice = colorscheme_get(HL_NOTICE);
+			current_color_fg = notice.fg;
+			current_color_bg = notice.bg;
+			current_color_bold = notice.bold;
+			current_color_underline = notice.underline;
 			vtputc('['); vtputc('v'); vtputc(']');
 		}
 		if (lp == nanox_sel_end_lp && char_idx == nanox_sel_end_off) {
-			current_color_fg = colorscheme_get(HL_NOTICE).fg;
-			current_color_bg = colorscheme_get(HL_NOTICE).bg;
+			HighlightStyle notice = colorscheme_get(HL_NOTICE);
+			current_color_fg = notice.fg;
+			current_color_bg = notice.bg;
+			current_color_bold = notice.bold;
+			current_color_underline = notice.underline;
 			vtputc('['); vtputc('x'); vtputc(']');
 		}
 	}
@@ -526,6 +563,8 @@ static void show_line(struct window *wp, struct line *lp)
 		HighlightStyle normal = colorscheme_get(HL_NORMAL);
 		current_color_fg = normal.fg;
 		current_color_bg = normal.bg;
+		current_color_bold = normal.bold;
+		current_color_underline = normal.underline;
 	}
 }
 
@@ -671,9 +710,18 @@ void upddex(void)
 }
 
 /*
+ * Send a string to the terminal.
+ */
+void TTputs(const char *s)
+{
+	for (char c; (c = *s) != 0; s++)
+		TTputc(c);
+}
+
+/*
  * updgar:
  *	if the screen is garbage, clear the physical screen and
- *	the virtual screen and force a full update
+ *	the virtual screen images
  */
 void updgar(void)
 {
@@ -682,8 +730,29 @@ void updgar(void)
 	for (i = 0; i < term.t_nrow; ++i)
 		vscreen[i]->v_flag |= VFCHG;
 
+	HighlightStyle normal = colorscheme_get(HL_NORMAL);
+	if (normal.bg != -1) {
+		if (normal.bg & 0x01000000) {
+			char buf[32];
+			snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
+				(normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
+			TTputs(buf);
+		} else if (normal.bg >= 8 && normal.bg < 16) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
+			TTputs(buf);
+		} else {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
+			TTputs(buf);
+		}
+	}
+
 	movecursor(0, 0);			/* Erase the screen. */
 	(*term.t_eeop) ();
+	TTputs("\033[0m");          /* Reset colors immediately after erase */
+	TTflush();                  /* Force the clear to happen */
+
 	sgarbf = FALSE;				/* Erase-page clears */
 	mpresf = FALSE;				/* the message area. */
 }
@@ -738,12 +807,6 @@ static void updext(void)
 
 	/* and put a '$' in column 1 */
 	vscreen[currow]->v_text[0].ch = '$';
-}
-
-static void TTputs(const char *s)
-{
-	for (char c; (c = *s) != 0; s++)
-		TTputc(c);
 }
 
 static bool is_letter(unicode_t ch)
@@ -849,12 +912,14 @@ static int updateline(int row, struct video *vp)
 	TTputs("\033[0m");          /* Reset attributes */
 	int phys_fg = -1;
 	int phys_bg = -1;
+	bool phys_bold = false;
+	bool phys_underline = false;
 
 	/* scan through the line and dump it to the the
 	   virtual screen array, finding where the last non-space is  */
 	for (int i = 0; i < term.t_ncol; i++) {
 		text_buf[i] = vp->v_text[i].ch;
-		if (text_buf[i] != ' ' || vp->v_text[i].bg != -1)
+		if (text_buf[i] != ' ' || vp->v_text[i].bg != -1 || vp->v_text[i].underline)
 			maxchar = i + 1;
 	}
 
@@ -874,6 +939,21 @@ static int updateline(int row, struct video *vp)
 	int started = 0;
 	for (int i = 0; i < maxchar; i++) {
 		video_cell *cell = &vp->v_text[i];
+
+		/* Attribute Handling */
+		if (cell->bold != phys_bold || cell->underline != phys_underline) {
+			if (!cell->bold && !cell->underline) {
+				TTputs("\033[0m");
+				phys_fg = -1; phys_bg = -1;
+			} else {
+				if (cell->bold && !phys_bold) TTputs("\033[1m");
+				if (!cell->bold && phys_bold) TTputs("\033[22m");
+				if (cell->underline && !phys_underline) TTputs("\033[4m");
+				if (!cell->underline && phys_underline) TTputs("\033[24m");
+			}
+			phys_bold = cell->bold;
+			phys_underline = cell->underline;
+		}
 
 		/* Color Handling */
 		if (cell->fg != phys_fg) {
@@ -931,7 +1011,28 @@ static int updateline(int row, struct video *vp)
 	ttcol = maxchar;
 
 	TTputs("\033[0m"); /* Reset */
+
+	HighlightStyle normal = colorscheme_get(HL_NORMAL);
+	if (normal.bg != -1) {
+		if (normal.bg & 0x01000000) {
+			char buf[32];
+			snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
+				(normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
+			TTputs(buf);
+		} else if (normal.bg >= 8 && normal.bg < 16) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
+			TTputs(buf);
+		} else {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
+			TTputs(buf);
+		}
+	}
+
 	TTeeol();
+	TTputs("\033[0m"); /* Final Reset */
+
 	/* turn rev video off */
 	TTrev(FALSE);
 
@@ -1003,8 +1104,28 @@ void mlerase(void)
 	int i;
 
 	movecursor(term.t_nrow, 0);
-	if (discmd == FALSE)
-		return;
+	HighlightStyle normal = colorscheme_get(HL_NORMAL);
+	current_color_fg = normal.fg;
+	current_color_bg = normal.bg;
+	current_color_bold = normal.bold;
+	current_color_underline = normal.underline;
+
+	if (normal.bg != -1) {
+		if (normal.bg & 0x01000000) {
+			char buf[32];
+			snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
+				(normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
+			TTputs(buf);
+		} else if (normal.bg >= 8 && normal.bg < 16) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
+			TTputs(buf);
+		} else {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
+			TTputs(buf);
+		}
+	}
 
 	if (eolexist == TRUE)
 		TTeeol();
@@ -1014,6 +1135,11 @@ void mlerase(void)
 		movecursor(term.t_nrow, 1);	/* force the move! */
 		movecursor(term.t_nrow, 0);
 	}
+
+	if (normal.bg != -1) {
+		TTputs("\033[0m");
+	}
+
 	TTflush();
 	mpresf = FALSE;
 }
@@ -1048,6 +1174,25 @@ void mlwrite(const char *fmt, ...)
 	}
 
 	movecursor(term.t_nrow, 0);
+
+	HighlightStyle normal = colorscheme_get(HL_NORMAL);
+	if (normal.bg != -1) {
+		if (normal.bg & 0x01000000) {
+			char buf[32];
+			snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
+				(normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
+			TTputs(buf);
+		} else if (normal.bg >= 8 && normal.bg < 16) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
+			TTputs(buf);
+		} else {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
+			TTputs(buf);
+		}
+	}
+
 	mlbuf_init(&dest, raw, sizeof(raw));
 	va_start(ap, fmt);
 	while ((c = *fmt++) != 0) {
@@ -1095,6 +1240,11 @@ void mlwrite(const char *fmt, ...)
 	/* if we can, erase to the end of screen */
 	if (eolexist == TRUE)
 		TTeeol();
+	
+	if (normal.bg != -1) {
+		TTputs("\033[0m");
+	}
+
 	TTflush();
 	mpresf = TRUE;
 	nanox_notify_message(final);

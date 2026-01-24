@@ -32,6 +32,12 @@ typedef struct {
     
     char keywords[MAX_TOKENS * 8][MAX_TOKEN_LEN];
     int keyword_count;
+    char type_keywords[MAX_TOKENS * 8][MAX_TOKEN_LEN];
+    int type_keyword_count;
+    char flow_keywords[MAX_TOKENS * 8][MAX_TOKEN_LEN];
+    int flow_keyword_count;
+    char preproc_keywords[MAX_TOKENS * 4][MAX_TOKEN_LEN];
+    int preproc_keyword_count;
     char return_keywords[MAX_TOKENS][MAX_TOKEN_LEN];
     int return_keyword_count;
 

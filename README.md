@@ -2,22 +2,18 @@
 
 **Minimalist, Nano-inspired UI Layer for the Legendary MicroEmacs**
 
-Nanox is a modern, feature-rich fork of **uEmacs/PK** that brings the intuitive user experience of `nano` to the professional power of `MicroEmacs`. It's designed to be ultra-fast, lightweight, and fully UTF-8 aware, making it the perfect choice for terminal-based editing on any system.
+Nanox(/na.noks/) is a modern, feature-rich fork of **uEmacs/PK** that brings the intuitive user experience of `nano` to the professional power of `MicroEmacs`. It's designed to be ultra-fast, lightweight, and fully UTF-8 aware, making it the perfect choice for terminal-based editing on any system.
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
 [![License](https://img.shields.io/badge/license-Custom-blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/yourusername/nanox?style=social)](https://github.com/yourusername/nanox)
 
 ---
-### Fun Fact
-
-Pronunciation: /na.noks/                                                                                                     │
-Incorrect: /neɪ.noks/, /nɛ.noks/
 
 ## Key Features
 
 - **Ultra-Fast Performance**: Built on the highly optimized MicroEmacs/PK core.
-- **Syntax Highlighting**: Real-time highlighting for multiple languages via `syntax.ini`.
+- **Syntax Highlighting**: 32 built-in language profiles plus pluggable `.ini` files for anything else.
 - **Nano-Style UI**: Familiar hint bars and function key shortcuts (F1-F12).
 - **File Reservation Slots**: "Bookmark" up to 4 files and jump between them instantly with `F9`-`F12`.
 - **Powerful Search/Replace**: Support for regular expressions.
@@ -76,6 +72,30 @@ soft_tab_width=4
 [search]
 case_sensitive_default=false
 ```
+
+### Syntax Highlighting Profiles
+
+Nanox now ships with first-class syntax rules for **32 widely used languages** (C/C++, Python, Ruby, Rust, Go, Java/Kotlin/Scala, JavaScript/TypeScript, SQL, HTML/CSS/JSON/YAML, etc.). These definitions live in `syntax.ini` and cover accurate flow/type/keyword lists plus bracket, triple-quote, and numeric highlighting where languages support them.
+
+You can extend or override the built-ins without recompiling:
+
+1. Create `~/.config/nanox/langs` (or `~/.local/share/nanox/langs`).
+2. Drop one or more `.ini` files there. Each file can hold a single language section using the same keys found in `syntax.ini`.
+3. Restart Nanox. The editor will automatically merge everything under the `langs/` directory after loading the base profiles.
+
+Example (`~/.config/nanox/langs/futhark.ini`):
+
+```ini
+[futhark]
+extensions = fth
+line_comment_tokens = --
+string_delims = ",'
+flow = if,then,else,loop,for,while
+keywords = let,entry,fn,module,open,import,include
+return_keywords = in
+```
+
+Sample profiles for rarer but still relevant languages (Ada, COBOL, Elixir, Erlang, Fortran) are bundled under `configs/nanox/langs` and installed alongside the default configuration via `make configs-install`.
 
 ---
 

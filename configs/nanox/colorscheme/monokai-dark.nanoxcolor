@@ -6,6 +6,12 @@ number  = fg=#ae81ff
 bracket = fg=#f8f8f2
 operator= fg=#f92672
 keyword = fg=#f92672 bold=true
+type    = fg=#66d9ef
+function= fg=#a6e22e
+flow    = fg=#f92672 bold=true
+preproc = fg=#fd971f
 return  = fg=#f92672 bold=true
+escape  = fg=#ae81ff
+control = fg=#f92672 underline=true
 ternary = fg=#f92672 bold=true
 error   = fg=#f92672 underline=true

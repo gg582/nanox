@@ -28,8 +28,20 @@ static void set_default_scheme(void) {
     styles[HL_OPERATOR] = (HighlightStyle){6, -1, false, false};
     /* Keyword: Yellow */
     styles[HL_KEYWORD] = (HighlightStyle){3, -1, true, false};
+    /* Type: Cyan */
+    styles[HL_TYPE] = (HighlightStyle){6, -1, false, false};
+    /* Function: Blue */
+    styles[HL_FUNCTION] = (HighlightStyle){4, -1, false, false};
+    /* Flow: Yellow */
+    styles[HL_FLOW] = (HighlightStyle){3, -1, true, false};
+    /* Preproc: Red */
+    styles[HL_PREPROC] = (HighlightStyle){1, -1, false, false};
     /* Return: Bright Red */
     styles[HL_RETURN] = (HighlightStyle){9, -1, true, false};
+    /* Escape: Bright Cyan */
+    styles[HL_ESCAPE] = (HighlightStyle){14, -1, false, false};
+    /* Control: Bright Red */
+    styles[HL_CONTROL] = (HighlightStyle){9, -1, false, true};
     /* Ternary: Yellow */
     styles[HL_TERNARY] = (HighlightStyle){3, -1, true, false};
     /* Error: Bright Red */
@@ -130,7 +142,13 @@ static void load_scheme_file(const char *path) {
             else if (strcmp(key, "bracket") == 0) id = HL_BRACKET;
             else if (strcmp(key, "operator") == 0) id = HL_OPERATOR;
             else if (strcmp(key, "keyword") == 0) id = HL_KEYWORD;
+            else if (strcmp(key, "type") == 0) id = HL_TYPE;
+            else if (strcmp(key, "function") == 0) id = HL_FUNCTION;
+            else if (strcmp(key, "flow") == 0) id = HL_FLOW;
+            else if (strcmp(key, "preproc") == 0) id = HL_PREPROC;
             else if (strcmp(key, "return") == 0) id = HL_RETURN;
+            else if (strcmp(key, "escape") == 0) id = HL_ESCAPE;
+            else if (strcmp(key, "control") == 0) id = HL_CONTROL;
             else if (strcmp(key, "ternary") == 0) id = HL_TERNARY;
             else if (strcmp(key, "error") == 0) id = HL_ERROR;
             else if (strcmp(key, "notice") == 0) id = HL_NOTICE;

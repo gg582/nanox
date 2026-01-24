@@ -1,11 +1,19 @@
 #include "highlight.h"
 #include "colorscheme.h"
+#include "platform.h"
 #include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <strings.h>
+#include <limits.h>
+
+#ifdef USE_WINDOWS
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
 
 typedef struct {
 	bool enable_colorscheme;
@@ -27,6 +35,22 @@ static void profile_init(HighlightProfile *p, const char *name)
 	/* Defaults could be more extensive, but usually config overrides */
 }
 
+static HighlightProfile *prepare_profile(const char *name)
+{
+	for (int i = 0; i < profile_count; i++) {
+		if (strcasecmp(profiles[i].name, name) == 0) {
+			profile_init(&profiles[i], name);
+			return &profiles[i];
+		}
+	}
+	if (profile_count < MAX_PROFILES) {
+		HighlightProfile *slot = &profiles[profile_count++];
+		profile_init(slot, name);
+		return slot;
+	}
+	return NULL;
+}
+
 /* Helper to trim whitespace */
 static char *trim(char *s)
 {
@@ -41,126 +65,265 @@ static char *trim(char *s)
 	return p;
 }
 
+static bool load_config_file(const char *path, bool allow_global)
+{
+	if (!path || !*path)
+		return false;
+
+	FILE *f = fopen(path, "r");
+	if (!f)
+		return false;
+
+	char line[512];
+	HighlightProfile *curr = NULL;
+	bool ignore_section = false;
+	bool added = false;
+
+	while (fgets(line, sizeof(line), f)) {
+		char *p = trim(line);
+		if (*p == 0 || *p == ';' || *p == '#')
+			continue;
+
+		if (*p == '[') {
+			char *end = strchr(p, ']');
+			if (!end)
+				continue;
+			*end = 0;
+			char *sect = p + 1;
+
+			if (strcasecmp(sect, "highlight") == 0) {
+				if (allow_global) {
+					curr = NULL;
+					ignore_section = false;
+				} else {
+					ignore_section = true;
+				}
+			} else {
+				curr = prepare_profile(sect);
+				if (curr) {
+					ignore_section = false;
+					added = true;
+				} else {
+					ignore_section = true;
+				}
+			}
+			continue;
+		}
+
+		if (ignore_section)
+			continue;
+
+		char *eq = strchr(p, '=');
+		if (!eq)
+			continue;
+		*eq = 0;
+		char *key = trim(p);
+		char *val = trim(eq + 1);
+
+		if (!curr) {
+			if (!allow_global)
+				continue;
+
+			if (strcmp(key, "enable_colorscheme") == 0)
+				global_config.enable_colorscheme = (strcasecmp(val, "true") == 0);
+			else if (strcmp(key, "colorscheme") == 0)
+				mystrscpy(global_config.colorscheme_name, val, sizeof(global_config.colorscheme_name));
+			continue;
+		}
+
+		if (strcmp(key, "extensions") == 0) {
+			char *tok = strtok(val, ",");
+			curr->ext_count = 0;
+			while (tok && curr->ext_count < MAX_EXTS) {
+				mystrscpy(curr->extensions[curr->ext_count++], trim(tok), MAX_EXT_LEN);
+				tok = strtok(NULL, ",");
+			}
+		} else if (strcmp(key, "line_comment_tokens") == 0) {
+			char *tok = strtok(val, ",");
+			curr->line_comment_count = 0;
+			while (tok && curr->line_comment_count < MAX_TOKENS) {
+				mystrscpy(curr->line_comments[curr->line_comment_count++], trim(tok), MAX_TOKEN_LEN);
+				tok = strtok(NULL, ",");
+			}
+		} else if (strcmp(key, "block_comment_pairs") == 0) {
+			char *tok = strtok(val, ",");
+			curr->block_comment_count = 0;
+			while (tok && curr->block_comment_count < MAX_TOKENS) {
+				tok = trim(tok);
+				char *sp = strchr(tok, ' ');
+				if (sp) {
+					*sp = 0;
+					mystrscpy(curr->block_comments[curr->block_comment_count].start, tok, MAX_TOKEN_LEN);
+					mystrscpy(curr->block_comments[curr->block_comment_count].end, trim(sp + 1), MAX_TOKEN_LEN);
+					curr->block_comment_count++;
+				}
+				tok = strtok(NULL, ",");
+			}
+		} else if (strcmp(key, "string_delims") == 0) {
+			int j = 0;
+			for (int i = 0; val[i]; i++) {
+				if (val[i] != ',' && !isspace((unsigned char)val[i]) && j < MAX_TOKENS - 1)
+					curr->string_delims[j++] = val[i];
+			}
+			curr->string_delims[j] = 0;
+		} else if (strcmp(key, "keywords") == 0) {
+			char *tok = strtok(val, ",");
+			curr->keyword_count = 0;
+			while (tok && curr->keyword_count < MAX_TOKENS * 8) {
+				mystrscpy(curr->keywords[curr->keyword_count++], trim(tok), MAX_TOKEN_LEN);
+				tok = strtok(NULL, ",");
+			}
+		} else if (strcmp(key, "types") == 0) {
+			char *tok = strtok(val, ",");
+			curr->type_keyword_count = 0;
+			while (tok && curr->type_keyword_count < MAX_TOKENS * 8) {
+				mystrscpy(curr->type_keywords[curr->type_keyword_count++], trim(tok), MAX_TOKEN_LEN);
+				tok = strtok(NULL, ",");
+			}
+		} else if (strcmp(key, "flow") == 0) {
+			char *tok = strtok(val, ",");
+			curr->flow_keyword_count = 0;
+			while (tok && curr->flow_keyword_count < MAX_TOKENS * 8) {
+				mystrscpy(curr->flow_keywords[curr->flow_keyword_count++], trim(tok), MAX_TOKEN_LEN);
+				tok = strtok(NULL, ",");
+			}
+		} else if (strcmp(key, "preproc") == 0) {
+			char *tok = strtok(val, ",");
+			curr->preproc_keyword_count = 0;
+			while (tok && curr->preproc_keyword_count < MAX_TOKENS * 4) {
+				mystrscpy(curr->preproc_keywords[curr->preproc_keyword_count++], trim(tok), MAX_TOKEN_LEN);
+				tok = strtok(NULL, ",");
+			}
+		} else if (strcmp(key, "return_keywords") == 0) {
+			char *tok = strtok(val, ",");
+			curr->return_keyword_count = 0;
+			while (tok && curr->return_keyword_count < MAX_TOKENS) {
+				mystrscpy(curr->return_keywords[curr->return_keyword_count++], trim(tok), MAX_TOKEN_LEN);
+				tok = strtok(NULL, ",");
+			}
+		} else if (strcmp(key, "enable_triple_quotes") == 0) {
+			curr->enable_triple_quotes = (strcasecmp(val, "true") == 0);
+		} else if (strcmp(key, "enable_number_highlight") == 0) {
+			curr->enable_number_highlight = (strcasecmp(val, "true") == 0);
+		} else if (strcmp(key, "enable_bracket_highlight") == 0) {
+			curr->enable_bracket_highlight = (strcasecmp(val, "true") == 0);
+		}
+	}
+
+	fclose(f);
+	return added;
+}
+
+static bool load_lang_dir(const char *dir)
+{
+	if (!dir || !*dir)
+		return false;
+
+	bool loaded = false;
+#ifdef USE_WINDOWS
+	char pattern[PATH_MAX];
+	snprintf(pattern, sizeof(pattern), "%s\\*.ini", dir);
+	WIN32_FIND_DATAA data;
+	HANDLE handle = FindFirstFileA(pattern, &data);
+	if (handle == INVALID_HANDLE_VALUE)
+		return false;
+
+	do {
+		if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			continue;
+		const char *ext = strrchr(data.cFileName, '.');
+		if (!ext || strcasecmp(ext + 1, "ini") != 0)
+			continue;
+		char path[PATH_MAX];
+		nanox_path_join(path, sizeof(path), dir, data.cFileName);
+		if (load_config_file(path, false))
+			loaded = true;
+	} while (FindNextFileA(handle, &data));
+	FindClose(handle);
+#else
+	DIR *dp = opendir(dir);
+	if (!dp)
+		return false;
+	struct dirent *entry;
+	while ((entry = readdir(dp)) != NULL) {
+		if (entry->d_name[0] == '.')
+			continue;
+		const char *ext = strrchr(entry->d_name, '.');
+		if (!ext || strcasecmp(ext + 1, "ini") != 0)
+			continue;
+		char path[PATH_MAX];
+		nanox_path_join(path, sizeof(path), dir, entry->d_name);
+		if (!path[0])
+			continue;
+		if (load_config_file(path, false))
+			loaded = true;
+	}
+	closedir(dp);
+#endif
+	return loaded;
+}
+
+static bool load_external_langs(const char *rule_config_path)
+{
+	bool loaded = false;
+	char dir[PATH_MAX];
+	char lang_path[PATH_MAX];
+	bool tried_repo_langs = false;
+
+	if (rule_config_path && *rule_config_path) {
+		char base[PATH_MAX];
+		mystrscpy(base, rule_config_path, sizeof(base));
+		char *sep = strrchr(base, '/');
+#ifdef USE_WINDOWS
+		char *bsep = strrchr(base, '\\');
+		if (!sep || (bsep && bsep > sep))
+			sep = bsep;
+#endif
+		if (sep) {
+			*sep = 0;
+			nanox_path_join(lang_path, sizeof(lang_path), base, "langs");
+			if (lang_path[0]) {
+				loaded |= load_lang_dir(lang_path);
+				if (strcmp(lang_path, "configs/nanox/langs") == 0)
+					tried_repo_langs = true;
+			}
+		}
+	}
+
+	nanox_get_user_config_dir(dir, sizeof(dir));
+	if (dir[0]) {
+		nanox_path_join(lang_path, sizeof(lang_path), dir, "langs");
+		loaded |= load_lang_dir(lang_path);
+	}
+
+	nanox_get_user_data_dir(dir, sizeof(dir));
+	if (dir[0]) {
+		nanox_path_join(lang_path, sizeof(lang_path), dir, "langs");
+		loaded |= load_lang_dir(lang_path);
+	}
+
+	if (!tried_repo_langs)
+		loaded |= load_lang_dir("configs/nanox/langs");
+	return loaded;
+}
+
 void highlight_init(const char *rule_config_path)
 {
 	profile_count = 0;
 	global_config.enable_colorscheme = true;
 	mystrscpy(global_config.colorscheme_name, "nanox-dark", sizeof(global_config.colorscheme_name));
 
-	bool loaded = false;
-	FILE *f = NULL;
+	bool loaded_any = false;
 
 	if (rule_config_path && *rule_config_path)
-		f = fopen(rule_config_path, "r");
+		loaded_any |= load_config_file(rule_config_path, true);
 
-	if (f) {
-		char line[512];
-		HighlightProfile *curr = NULL;
-
-		while (fgets(line, sizeof(line), f)) {
-			char *p = trim(line);
-			if (*p == 0 || *p == ';' || *p == '#')
-				continue;
-
-			if (*p == '[') {
-				char *end = strchr(p, ']');
-				if (end) {
-					*end = 0;
-					char *sect = p + 1;
-					if (strcasecmp(sect, "highlight") == 0) {
-						curr = NULL; /* Switch to global context */
-					} else {
-						if (profile_count < MAX_PROFILES) {
-							curr = &profiles[profile_count++];
-							profile_init(curr, sect);
-						} else {
-							curr = NULL; /* Overflow */
-						}
-					}
-				}
-				continue;
-			}
-
-			char *eq = strchr(p, '=');
-			if (!eq)
-				continue;
-			*eq = 0;
-			char *key = trim(p);
-			char *val = trim(eq + 1);
-
-			if (!curr) {
-				/* Global Config */
-				if (strcmp(key, "enable_colorscheme") == 0)
-					global_config.enable_colorscheme = (strcasecmp(val, "true") == 0);
-				else if (strcmp(key, "colorscheme") == 0)
-					mystrscpy(global_config.colorscheme_name, val, sizeof(global_config.colorscheme_name));
-				continue;
-			}
-
-			/* Profile Config */
-			if (strcmp(key, "extensions") == 0) {
-				char *tok = strtok(val, ",");
-				while (tok && curr->ext_count < MAX_EXTS) {
-					mystrscpy(curr->extensions[curr->ext_count++], trim(tok), MAX_EXT_LEN);
-					tok = strtok(NULL, ",");
-				}
-			} else if (strcmp(key, "line_comment_tokens") == 0) {
-				char *tok = strtok(val, ",");
-				while (tok && curr->line_comment_count < MAX_TOKENS) {
-					mystrscpy(curr->line_comments[curr->line_comment_count++], trim(tok), MAX_TOKEN_LEN);
-					tok = strtok(NULL, ",");
-				}
-			} else if (strcmp(key, "block_comment_pairs") == 0) {
-				/* START END, START END */
-				char *tok = strtok(val, ",");
-				while (tok && curr->block_comment_count < MAX_TOKENS) {
-					tok = trim(tok);
-					char *sp = strchr(tok, ' ');
-					if (sp) {
-						*sp = 0;
-						mystrscpy(curr->block_comments[curr->block_comment_count].start, tok, MAX_TOKEN_LEN);
-						mystrscpy(curr->block_comments[curr->block_comment_count].end, trim(sp + 1), MAX_TOKEN_LEN);
-						curr->block_comment_count++;
-					}
-					tok = strtok(NULL, ",");
-				}
-			} else if (strcmp(key, "string_delims") == 0) {
-				/* val is like ",',` */
-				int j = 0;
-				for (int i = 0; val[i]; i++) {
-					if (val[i] != ',' && !isspace(val[i]) && j < MAX_TOKENS - 1) {
-						curr->string_delims[j++] = val[i];
-					}
-				}
-				curr->string_delims[j] = 0;
-			} else if (strcmp(key, "keywords") == 0) {
-				char *tok = strtok(val, ",");
-				while (tok && curr->keyword_count < MAX_TOKENS * 8) {
-					mystrscpy(curr->keywords[curr->keyword_count++], trim(tok), MAX_TOKEN_LEN);
-					tok = strtok(NULL, ",");
-				}
-			} else if (strcmp(key, "return_keywords") == 0) {
-				char *tok = strtok(val, ",");
-				while (tok && curr->return_keyword_count < MAX_TOKENS) {
-					mystrscpy(curr->return_keywords[curr->return_keyword_count++], trim(tok), MAX_TOKEN_LEN);
-					tok = strtok(NULL, ",");
-				}
-			} else if (strcmp(key, "enable_triple_quotes") == 0) {
-				curr->enable_triple_quotes = (strcasecmp(val, "true") == 0);
-			} else if (strcmp(key, "enable_number_highlight") == 0) {
-				curr->enable_number_highlight = (strcasecmp(val, "true") == 0);
-			} else if (strcmp(key, "enable_bracket_highlight") == 0) {
-				curr->enable_bracket_highlight = (strcasecmp(val, "true") == 0);
-			}
-		}
-		fclose(f);
-		loaded = profile_count > 0;
-	}
+	loaded_any |= load_external_langs(rule_config_path);
 
 	if (global_config.enable_colorscheme) {
 		colorscheme_init(global_config.colorscheme_name);
 	}
-	initialized = loaded;
+	initialized = (profile_count > 0) && loaded_any;
 }
 
 bool highlight_is_enabled(void)
@@ -236,6 +399,11 @@ static bool starts_with(const char *text, const char *prefix)
 	return strncmp(text, prefix, strlen(prefix)) == 0;
 }
 
+static bool is_control(unsigned char c)
+{
+	return (c < 32 && c != '\t' && c != '\n' && c != '\r') || c == 127;
+}
+
 void highlight_line(const char *text, int len, HighlightState start, const HighlightProfile *profile, SpanVec *out, HighlightState *end)
 {
 	out->count = 0;
@@ -246,14 +414,38 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
 	if (!text) len = 0;
 	if (len < 0 && text) len = strlen(text);
 	
-	if (!profile) return; /* No highlighting if no profile */
+	if (!profile) return;
 
 	HighlightState state = start;
 	int pos = 0;
 
 	while (pos < len) {
+		unsigned char c = (unsigned char)text[pos];
+
 		if (state.state == HS_NORMAL) {
-			
+			/* 0. Control characters */
+			if (is_control(c)) {
+				add_span(out, pos, pos + 1, HL_CONTROL);
+				pos++;
+				continue;
+			}
+
+			/* 0b. Trailing whitespace */
+			if (isspace(c)) {
+				bool trailing = true;
+				for (int i = pos; i < len; i++) {
+					if (!isspace((unsigned char)text[i])) {
+						trailing = false;
+						break;
+					}
+				}
+				if (trailing) {
+					add_span(out, pos, len, HL_CONTROL);
+					pos = len;
+					continue;
+				}
+			}
+
 			/* 1. Check Block Comments */
 			bool matched_block = false;
 			for (int i = 0; i < profile->block_comment_count; i++) {
@@ -302,233 +494,216 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
 			}
 			if (matched_line) continue;
 
-			/* 3. Check Strings */
+			/* 3. Preprocessor (C-style starting with #) */
+			if (c == '#' && (pos == 0 || isspace((unsigned char)text[pos-1]))) {
+				int search = pos + 1;
+				while (search < len && (isalnum((unsigned char)text[search]) || text[search] == '_')) {
+					search++;
+				}
+				add_span(out, pos, search, HL_PREPROC);
+				pos = search;
+				continue;
+			}
+
+			/* 4. Check Strings */
 			if (profile->enable_triple_quotes && strncmp(text + pos, "\"\"\"", 3) == 0) {
-                     state.state = HS_TRIPLE_STRING;
-                     state.sub_id = '\"';
-                     int search = pos + 3;
-                     bool found = false;
-                     while (search <= len - 3) {
-                         if (strncmp(text + search, "\"\"\"", 3) == 0) {
-                             found = true;
-                             search += 3;
-                             break;
-                         }
-                         if (text[search] == '\\') search++;
-                         search++;
-                     }
-                     if (found) {
-                         add_span(out, pos, search, HL_STRING);
-                         pos = search;
-                         state.state = HS_NORMAL;
-                     } else {
-                         add_span(out, pos, len, HL_STRING);
-                         pos = len;
-                     }
-                     continue;
-            }
+				state.state = HS_TRIPLE_STRING;
+				state.sub_id = '\"';
+				add_span(out, pos, pos + 3, HL_STRING);
+				pos += 3;
+				continue;
+			}
 
-            char c = text[pos];
-            char *delim_ptr = strchr(profile->string_delims, c);
-            if (delim_ptr && *delim_ptr) {
-                state.state = HS_STRING;
-                state.sub_id = c;
-                
-                int search = pos + 1;
-                bool found = false;
-                while (search < len) {
-                    if (text[search] == '\\') {
-                        search += 2;
-                        continue;
-                    }
-                    if (text[search] == c) {
-                        found = true;
-                        search++;
-                        break;
-                    }
-                    search++;
-                }
-                
-                if (found) {
-                    add_span(out, pos, search, HL_STRING);
-                    pos = search;
-                    state.state = HS_NORMAL;
-                } else {
-                    add_span(out, pos, len, HL_STRING);
-                    pos = len;
-                }
-                continue;
-            }
+			char *delim_ptr = strchr(profile->string_delims, c);
+			if (delim_ptr && *delim_ptr) {
+				state.state = HS_STRING;
+				state.sub_id = c;
+				add_span(out, pos, pos + 1, HL_STRING);
+				pos++;
+				continue;
+			}
 
-            /* 4. Numbers */
-            if (profile->enable_number_highlight && (isdigit(c) || (c == '.' && isdigit(text[pos+1])))) {
-                int search = pos;
-                bool is_hex = false;
-                if (c == '0' && (text[pos+1] == 'x' || text[pos+1] == 'X')) {
-                    is_hex = true;
-                    search += 2;
-                }
-                while (search < len) {
-                    char nc = text[search];
-                    if (is_hex) {
-                        if (!isxdigit(nc)) break;
-                    } else {
-                        if (!isdigit(nc) && nc != '.' && nc != 'e' && nc != 'E') break;
-                    }
-                    search++;
-                }
-                add_span(out, pos, search, HL_NUMBER);
-                pos = search;
-                continue;
-            }
+			/* 5. Numbers */
+			if (profile->enable_number_highlight && (isdigit(c) || (c == '.' && isdigit((unsigned char)text[pos+1])))) {
+				int search = pos;
+				if (c == '0' && pos + 1 < len) {
+					char next = text[pos+1];
+					if (next == 'x' || next == 'X') {
+						search += 2;
+						while (search < len && isxdigit((unsigned char)text[search])) search++;
+					} else if (next == 'b' || next == 'B') {
+						search += 2;
+						while (search < len && (text[search] == '0' || text[search] == '1')) search++;
+					} else if (isdigit((unsigned char)next)) {
+						search += 1;
+						while (search < len && isdigit((unsigned char)text[search])) search++;
+					} else {
+						search++;
+					}
+				} else {
+					while (search < len && (isdigit((unsigned char)text[search]) || text[search] == '.' || 
+						text[search] == 'e' || text[search] == 'E')) {
+						if ((text[search] == 'e' || text[search] == 'E') && (text[search+1] == '+' || text[search+1] == '-'))
+							search++;
+						search++;
+					}
+				}
+				/* Suffixes */
+				while (search < len && strchr("uUlLfF", text[search])) search++;
+				
+				add_span(out, pos, search, HL_NUMBER);
+				pos = search;
+				continue;
+			}
 
-            /* 5. Punctuation and Operators */
-            if (profile->enable_bracket_highlight && (c == '?' || c == ':')) {
-                add_span(out, pos, pos + 1, HL_TERNARY);
-                pos++;
-                continue;
-            }
-            if (profile->enable_bracket_highlight && is_punct(c)) {
-                add_span(out, pos, pos + 1, HL_BRACKET);
-                pos++;
-                continue;
-            }
-            if (profile->enable_bracket_highlight && is_operator(c)) {
-                add_span(out, pos, pos + 1, HL_OPERATOR);
-                pos++;
-                continue;
-            }
+			/* 6. Punctuation and Operators */
+			if (profile->enable_bracket_highlight && (c == '?' || c == ':')) {
+				add_span(out, pos, pos + 1, HL_TERNARY);
+				pos++;
+				continue;
+			}
+			if (profile->enable_bracket_highlight && is_punct(c)) {
+				add_span(out, pos, pos + 1, HL_BRACKET);
+				pos++;
+				continue;
+			}
+			if (profile->enable_bracket_highlight && is_operator(c)) {
+				add_span(out, pos, pos + 1, HL_OPERATOR);
+				pos++;
+				continue;
+			}
 
-            /* Scan to next token */
-            int next_stop = pos;
-            while (next_stop < len && (isalnum(text[next_stop]) || text[next_stop] == '_')) {
-                next_stop++;
-            }
+			/* 7. Words (Keywords, Types, Flow, Functions) */
+			int next_stop = pos;
+			while (next_stop < len && (isalnum((unsigned char)text[next_stop]) || text[next_stop] == '_')) {
+				next_stop++;
+			}
 
-            if (next_stop > pos) {
-                /* Potential keyword */
-                char word[MAX_TOKEN_LEN];
-                int word_len = next_stop - pos;
-                if (word_len < MAX_TOKEN_LEN) {
-                    memcpy(word, text + pos, word_len);
-                    word[word_len] = 0;
+			if (next_stop > pos) {
+				char word[MAX_TOKEN_LEN];
+				int word_len = next_stop - pos;
+				HighlightStyleID style = HL_NORMAL;
 
-                    bool is_kw = false;
-                    for (int i = 0; i < profile->return_keyword_count; i++) {
-                        if (strcmp(word, profile->return_keywords[i]) == 0) {
-                            add_span(out, pos, next_stop, HL_RETURN);
-                            is_kw = true;
-                            break;
-                        }
-                    }
-                    if (!is_kw) {
-                        for (int i = 0; i < profile->keyword_count; i++) {
-                            if (strcmp(word, profile->keywords[i]) == 0) {
-                                add_span(out, pos, next_stop, HL_KEYWORD);
-                                is_kw = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (is_kw) {
-                        pos = next_stop;
-                        continue;
-                    }
-                }
-                add_span(out, pos, next_stop, HL_NORMAL);
-                pos = next_stop;
-                continue;
-            }
+				if (word_len < MAX_TOKEN_LEN) {
+					memcpy(word, text + pos, word_len);
+					word[word_len] = 0;
 
-            next_stop = pos + 1;
-            while (next_stop < len) {
-                char nc = text[next_stop];
-                if (isspace(nc)) { next_stop++; continue; }
-                
-                bool is_comment = false;
-                for (int i=0; i<profile->line_comment_count; i++) 
-                   if (starts_with(text + next_stop, profile->line_comments[i])) is_comment=true;
-                for (int i=0; i<profile->block_comment_count; i++) 
-                   if (starts_with(text + next_stop, profile->block_comments[i].start)) is_comment=true;
-                if (is_comment) break;
-                
-                if (strchr(profile->string_delims, nc)) break;
-                if (isdigit(nc)) break;
-                if (isalnum(nc) || nc == '_') break;
-                if (profile->enable_bracket_highlight && (is_punct(nc) || is_operator(nc) || nc == '?' || nc == ':')) break;
-                
-                next_stop++;
-            }
-            add_span(out, pos, next_stop, HL_NORMAL);
-            pos = next_stop;
+					bool found = false;
+					/* Order of precedence: Return > Flow > Preproc > Type > Keyword */
+					for (int i = 0; i < profile->return_keyword_count; i++) {
+						if (strcmp(word, profile->return_keywords[i]) == 0) {
+							style = HL_RETURN; found = true; break;
+						}
+					}
+					if (!found) {
+						for (int i = 0; i < profile->flow_keyword_count; i++) {
+							if (strcmp(word, profile->flow_keywords[i]) == 0) {
+								style = HL_FLOW; found = true; break;
+							}
+						}
+					}
+					if (!found) {
+						for (int i = 0; i < profile->preproc_keyword_count; i++) {
+							if (strcmp(word, profile->preproc_keywords[i]) == 0) {
+								style = HL_PREPROC; found = true; break;
+							}
+						}
+					}
+					if (!found) {
+						for (int i = 0; i < profile->type_keyword_count; i++) {
+							if (strcmp(word, profile->type_keywords[i]) == 0) {
+								style = HL_TYPE; found = true; break;
+							}
+						}
+					}
+					if (!found) {
+						for (int i = 0; i < profile->keyword_count; i++) {
+							if (strcmp(word, profile->keywords[i]) == 0) {
+								style = HL_KEYWORD; found = true; break;
+							}
+						}
+					}
+					
+					/* Function detection: identifier followed by '(' */
+					if (!found) {
+						int s = next_stop;
+						while (s < len && isspace((unsigned char)text[s])) s++;
+						if (s < len && text[s] == '(') {
+							style = HL_FUNCTION;
+						}
+					}
+				}
+				add_span(out, pos, next_stop, style);
+				pos = next_stop;
+				continue;
+			}
+
+			/* Fallback for other characters */
+			add_span(out, pos, pos + 1, HL_NORMAL);
+			pos++;
 
 		} else if (state.state == HS_BLOCK_COMMENT) {
-             int idx = state.sub_id;
-             const char *end_str = profile->block_comments[idx].end;
-             int end_len = strlen(end_str);
-             int search = pos;
-             bool found = false;
-             while (search <= len - end_len) {
-                 if (strncmp(text + search, end_str, end_len) == 0) {
-                     found = true;
-                     search += end_len;
-                     break;
-                 }
-                 search++;
-             }
-             if (found) {
-                 add_span(out, pos, search, HL_COMMENT);
-                 pos = search;
-                 state.state = HS_NORMAL;
-             } else {
-                 add_span(out, pos, len, HL_COMMENT);
-                 pos = len;
-             }
-        } else if (state.state == HS_STRING) {
-             char delim = (char)state.sub_id;
-             int search = pos;
-             bool found = false;
-             while (search < len) {
-                 if (text[search] == '\\') {
-                     search += 2;
-                     continue;
-                 }
-                 if (text[search] == delim) {
-                     found = true;
-                     search++;
-                     break;
-                 }
-                 search++;
-             }
-             if (found) {
-                 add_span(out, pos, search, HL_STRING);
-                 pos = search;
-                 state.state = HS_NORMAL;
-             } else {
-                 add_span(out, pos, len, HL_STRING);
-                 pos = len;
-             }
-        } else if (state.state == HS_TRIPLE_STRING) {
-             int search = pos;
-             bool found = false;
-             while (search <= len - 3) {
-                 if (strncmp(text + search, "\"\"\"", 3) == 0) {
-                     found = true;
-                     search += 3;
-                     break;
-                 }
-                 if (text[search] == '\\') search++;
-                 search++;
-             }
-             if (found) {
-                 add_span(out, pos, search, HL_STRING);
-                 pos = search;
-                 state.state = HS_NORMAL;
-             } else {
-                 add_span(out, pos, len, HL_STRING);
-                 pos = len;
-             }
-        }
+			int idx = state.sub_id;
+			const char *end_str = profile->block_comments[idx].end;
+			int end_len = strlen(end_str);
+			int search = pos;
+			bool found_end = false;
+			while (search <= len - end_len) {
+				if (strncmp(text + search, end_str, end_len) == 0) {
+					found_end = true;
+					search += end_len;
+					break;
+				}
+				search++;
+			}
+			if (found_end) {
+				add_span(out, pos, search, HL_COMMENT);
+				pos = search;
+				state.state = HS_NORMAL;
+			} else {
+				add_span(out, pos, len, HL_COMMENT);
+				pos = len;
+			}
+		} else if (state.state == HS_STRING || state.state == HS_TRIPLE_STRING) {
+			char delim = (char)state.sub_id;
+			bool is_triple = (state.state == HS_TRIPLE_STRING);
+			
+			if (text[pos] == '\\') {
+				int esc_len = 2;
+				if (pos + 1 < len) {
+					if (text[pos+1] == 'x') {
+						esc_len = 2;
+						while (pos + esc_len < len && isxdigit((unsigned char)text[pos+esc_len]) && esc_len < 4) esc_len++;
+					} else if (isdigit((unsigned char)text[pos+1])) {
+						esc_len = 2;
+						while (pos + esc_len < len && isdigit((unsigned char)text[pos+esc_len]) && esc_len < 4) esc_len++;
+					}
+				}
+				add_span(out, pos, pos + esc_len, HL_ESCAPE);
+				pos += esc_len;
+				continue;
+			}
+			
+			if (is_triple) {
+				if (starts_with(text + pos, "\"\"\"")) {
+					add_span(out, pos, pos + 3, HL_STRING);
+					pos += 3;
+					state.state = HS_NORMAL;
+					continue;
+				}
+			} else {
+				if (text[pos] == delim) {
+					add_span(out, pos, pos + 1, HL_STRING);
+					pos++;
+					state.state = HS_NORMAL;
+					continue;
+				}
+			}
+			
+			/* Just normal string character */
+			add_span(out, pos, pos + 1, HL_STRING);
+			pos++;
+		}
 	}
 	*end = state;
 }
