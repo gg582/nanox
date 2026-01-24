@@ -17,7 +17,7 @@
 .. File name completion
 -------------------------------------------------------------------------------
 =>                      THE VERY BASICS
-Notations: ^X means <Ctrl> and X. The <Meta> key is <Esc> on most systems.
+Notations: ^X means <Ctrl> and X. The <Alt> key is <Esc> on most systems.
 Exiting:   ^G aborts almost any operation. F4 or ^X ^C will get you out.
 
 A BUFFER is a named area containing a FILE being edited. Many buffers may
@@ -27,15 +27,15 @@ different one.
 -------------------------------------------------------------------------------
 =>                      CURSOR MOVEMENT
 Backward character ....      ^B         Forward character .....      ^F
-Previous word ......... Meta  B         Next word ............. Meta  F
+Previous word ......... Alt  B         Next word ............. Meta  F
 Beginning of line .....      ^A         End of line ...........      ^E
 Previous line .........      ^P         Next line .............      ^N
-Previous paragraph .... Meta  P         Next paragraph ........ Meta  N
+Previous paragraph .... Alt  P         Next paragraph ........ Meta  N
 Previous page .........      ^Z         Next page .............      ^V
 Beginning of file ..... Ctrl  ,         End of file ........... Ctrl  .
 -------------------------------------------------------------------------------
 =>                      FILE COMMANDS
-Open file .............   F3 / Alt-O    Quick exit ............ Meta  Z
+Open file .............   F3 / Alt-O    Quick exit ............ Alt  Z
 Save file .............   F2 / Alt-S    Exit emacs ............   F4 / ^X ^C
 Insert file ...........   ^X ^I
 Change file name ......   ^X  N         Filter buffer .........   ^X  #
@@ -44,36 +44,37 @@ Write file ............   ^X ^W         Execute file .......... not bound
 -------------------------------------------------------------------------------
 =>                      DELETING AND INSERTING
 Delete previous character    ^H         Delete next character .      ^D
-Delete previous word .. Meta ^H         Delete next word ...... Meta  D
-Kill line .............   F7 / ^K       Set mark .............. Meta Space
+Delete previous word .. Alt ^H         Delete next word ...... Meta  D
+Kill line .............   F7 / ^K       Kill paragraph ........ Alt ^W
+Delete blank lines ....   ^X ^O         Kill region ...........      ^W
+Copy region ........... Alt ^Y         Set mark .............. Meta Space
 Yank (Paste) ..........   F8 / ^Y       Exchange point and mark   ^X ^X
-Kill paragraph ........ Meta ^W         
-Delete blank lines ....   ^X ^O     ::  A region is defined as the area between
-Copy region ........... Meta  W     ::  the mark and the current position.
+                                    ::  A region is defined as the area between
+                                    ::  the mark and the current position.
 -------------------------------------------------------------------------------
 =>                      SEARCHING AND REPLACING
-Search forward ........   F5 / Meta W   ::  End string with Meta or Enter.
+Search forward ........   F5 / Alt W   ::  End string with Meta or Enter.
 Incremental search ....   ^X  S         ::  Search next ESC or ^X, stop Enter, cancel ^G.
 Search reverse ........      ^R  
 Reverse incremental search              Hunt forward ..........  Alt-W
 .......................   ^X  R         Hunt backward .........  not bound
-Query replace .........   F6 / Meta R
+Query replace .........   F6 / Alt R
 -------------------------------------------------------------------------------
 =>                      WINDOW COMMANDS
 Split current window ..   ^X  2         Next window ...........   ^X  O
 Delete other windows ..   ^X  1         Previous window .......   ^X  P
-Delete window .........   ^X  0         Scroll next up ........ Meta ^Z
-Grow window ...........   ^X  Z         Scroll next down ...... Meta ^V
+Delete window .........   ^X  0         Scroll next up ........ Alt ^Z
+Grow window ...........   ^X  Z         Scroll next down ...... Alt ^V
 Shrink window .........   ^X ^Z         Resize window .........   ^X  W
 Move window up ........   ^X ^P         Save window ........... not bound  
 Move window down ......   ^X ^N         Restore window ........ not bound  
 -------------------------------------------------------------------------------
 =>                      BUFFER COMMANDS
 Next buffer ...........   ^X  X         Buffer position .......   ^X  = 
-Select buffer .........   ^X  B         Unmark buffer ......... Meta  ~
+Select buffer .........   ^X  B         Unmark buffer ......... Alt  ~
 List buffers ..........   ^X ^B
 Delete buffer .........   ^X  K         Write message ......... not bound  
-Name buffer ........... Meta ^N         Clear message line .... not bound  
+Name buffer ........... Alt ^N         Clear message line .... not bound  
 Filter buffer .........   ^X  #
 Pipe command ..........   ^X  @         Execute buffer ........ not bound  
 -------------------------------------------------------------------------------
@@ -84,16 +85,20 @@ F5 .................... Search Forward  F6 .................... Query Replace
 F7 .................... Kill Line       F8 .................... Yank (Paste)
 F9..F12 ............... Jump to Slot    Ctrl+F9..F12 .......... Set Slot
 
-Selection Mode ........ Alt+X selection-mode
-  Ctrl+,  Start Mark                    Ctrl+.  End Mark
-  Esc     Cut Region                    Enter   Copy Region
+Modal Selection (Hold modifiers while moving cursor):
+  Ctrl+Super/Ctrl+Alt + Arrows .... Start Select   +Shift  Cut Selection
+  (Ctrl+Super default, Ctrl+Alt available if Super is missing)
+  
+  Once you release the modifiers:
+  - Select mode copies the region to the kill buffer.
+  - Cut mode removes the region and moves it to the kill buffer.
 
 File reservation slots can be used to quickly switch between frequently 
 accessed files. Alt+9,0,-,= are also bound to slots 1-4.
 -------------------------------------------------------------------------------
 =>                      MODE COMMANDS
-Add mode ..............   ^X  M         Add global mode	....... Meta  M
-Delete mode ...........   ^X ^M         Delete global mode .... Meta ^M
+Add mode ..............   ^X  M         Add global mode	....... Alt  M
+Delete mode ...........   ^X ^M         Delete global mode .... Alt ^M
 OVER   :: Overwrite, don't insert       MAGIC  :: Match patterns in search
 WRAP   :: Automatic carriage return     ^ $  Beginning and end of line
 VIEW   :: View only, don't change       .    Any character   \c   Character c
@@ -101,16 +106,16 @@ CMODE  :: C program indenting           c*   Any number of character c
 EXACT  :: Match case in search          [ ]  Character class
 -------------------------------------------------------------------------------
 =>                      FORMATTING
-Case word upper ....... Meta  U         Case word lower ....... Meta  L
+Case word upper ....... Alt  U         Case word lower ....... Meta  L
 Case region upper .....   ^X ^U         Case region lower .....   ^X ^L
-Case word capitalize .. Meta  C         Trim line .............   ^X ^T
+Case word capitalize .. Alt  C         Trim line .............   ^X ^T
                                         Detab line ............   ^X  A
 Set fill column .......   ^X  F         Entab line ............   ^X  E
-Fill paragraph ........ Meta ^P         Change screen size .... Meta ^D
-Justify paragraph ..... Meta  J         Change screen width ... Meta ^T
+Fill paragraph ........ Alt ^P         Change screen size .... Meta ^D
+Justify paragraph ..... Alt  J         Change screen width ... Meta ^T
 -------------------------------------------------------------------------------
 =>                      ACCESSING THE OPERATING SYSTEM
-Quick exit ............ Meta  Z     ::  Write out all changed buffers and exit.
+Quick exit ............ Alt  Z     ::  Write out all changed buffers and exit.
 Exit emacs ............   F4 / ^X ^C    ::  Exit without automatic save.
 I shell ...............   ^X  C         ::  Start a new command processor.
 Shell command .........   ^X  !         ::  Execute one operating system command.
@@ -125,19 +130,18 @@ Execute macro .........   ^X  E
 Store macro ........... not bound    
 Execute macro nn ...... not bound  
 Store procedure ....... not bound  
-Execute procedure ..... Meta ^E
+Execute procedure ..... Alt ^E
 -------------------------------------------------------------------------------
 =>                      MISCELLANEOUS
-Universal argument ....      ^U         Set mark .............. Meta Space
+Universal argument ....      ^U         Set mark .............. Alt Space
 Clear and redraw ......      ^L         Exchange point and mark   ^X ^X
-Redraw display ........ Meta ^L
-Execute named command . Meta  X         Insert string ......... not bound  
-Execute command line .. not bound       Overwrite string ...... not bound
-Set encryption key .... Meta  E         Wrap word ............. not bound
-Count words ........... Meta ^C         Update screen ......... not bound
+Redraw display ........ Alt ^L
+Execute named command . Alt  X         Word count ............ Meta ^C
+Insert string ......... not bound       
+Overwrite string ...... not bound
 -------------------------------------------------------------------------------
 =>                      SYSTEM VARIABLES
-Set ................... Meta ^A         Current buffer name ... $cbufname
+Set ................... Alt ^A         Current buffer name ... $cbufname
 Tabulator (4, 8)....... $tab            Current file name ..... $cfname
 Screen resolution ..... $sres       ::  NORMAL, CGA, EGA, VGA
 Display commands ...... $discmd     ::  TRUE, FALSE

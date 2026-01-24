@@ -23,6 +23,7 @@ struct nanox_config {
 	char warning_format[8];
 	char error_format[8];
 	int help_key;
+	char help_language[8];
 	bool soft_tab;
 	int soft_tab_width;
 	bool case_sensitive_default;
@@ -61,6 +62,5 @@ int reserve_jump_4(int f, int n);
 void nanox_message_prefix(const char *input, char *output, size_t outsz);
 void help_close(void);
 void nanox_cleanup(void);
-int nanox_selection_mode(int f, int n);
 
 #endif /* NANOX_H_ */

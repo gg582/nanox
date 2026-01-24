@@ -125,12 +125,6 @@ int mstore = FALSE;            /* storing macro */
 struct buffer *bstore = NULL;        /* buffer to store macro */
 char *fline = NULL;            /* dynamic file reading buffer */
 
-/* nanox selection mode globals */
-int nanox_sel_active = 0;
-struct line *nanox_sel_start_lp = NULL;
-int nanox_sel_start_off = 0;
-struct line *nanox_sel_end_lp = NULL;
-int nanox_sel_end_off = 0;
 struct line *matchline = NULL;      /* match line pointer */
 int matchoff = 0;                  /* match offset */
 
@@ -229,12 +223,6 @@ extern int mstore;            /* storing macro */
 extern struct buffer *bstore;        /* buffer to store macro */
 extern char *fline;            /* dynamic file reading buffer */
 
-/* nanox selection mode globals */
-extern int nanox_sel_active;
-extern struct line *nanox_sel_start_lp;
-extern int nanox_sel_start_off;
-extern struct line *nanox_sel_end_lp;
-extern int nanox_sel_end_off;
 extern struct line *matchline;
 extern int matchoff;
 

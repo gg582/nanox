@@ -116,7 +116,6 @@ struct name_bind names[] = {
 	{ "kill-to-end-of-line", killtext },
 	{ "meta-prefix", metafn },
 	{ "name-buffer", namebuffer },
-	{ "nanox-selection-mode", nanox_selection_mode },
 	{ "newline", insert_newline },
 	{ "newline-and-indent", indent },
 	{ "next-buffer", nextbuffer },

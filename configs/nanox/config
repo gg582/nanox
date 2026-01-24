@@ -4,6 +4,7 @@ warning_lamp=true
 warning_format=[WARN]
 error_format=[ERR!]
 help_key=F1
+help_language=en
 
 [edit]
 soft_tab=true

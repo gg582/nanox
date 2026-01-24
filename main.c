@@ -74,6 +74,15 @@ extern void sizesignal(int);
 /* Nanox help active flag */
 int nanox_help_active_flag = 0;
 
+static void nanox_refresh_ui(void)
+{
+    if (nanox_help_is_active()) {
+        nanox_help_render();
+    } else {
+        update(FALSE);
+    }
+}
+
 void usage(int status)
 {
     printf("Usage: %s filename\n", PROGRAM_NAME);
@@ -296,7 +305,7 @@ int main(int argc, char **argv)
 
             if (typahead()) {
                 newc = getcmd();
-                update(FALSE);
+                nanox_refresh_ui();
                 do {
                     fn_t execfunc;
     
@@ -308,16 +317,12 @@ int main(int argc, char **argv)
                 } while (typahead());
                 c = newc;
             } else {
-                if (nanox_help_is_active()) {
-                    nanox_help_render();
-                } else {
-                    update(FALSE);
-                }
+                nanox_refresh_ui();
                 c = getcmd();
             }    /* if there is something on the command line, clear it */
     if (mpresf != FALSE) {
         mlerase();
-        update(FALSE);
+        nanox_refresh_ui();
     }
 
     /* Nanox help system handling */
@@ -409,7 +414,6 @@ int main(int argc, char **argv)
         }
     }
 
-    /* and execute the command */
     execute(c, f, n);
     goto loop;
 }

@@ -122,12 +122,6 @@ char errorm[] = "ERROR";      /* Error message string */
 char truem[] = "TRUE";        /* True boolean string */
 char falsem[] = "FALSE";      /* False boolean string */
 
-/* 4. Selection & Meta-patterns */
-int nanox_sel_active = 0;
-struct line *nanox_sel_start_lp = NULL;
-int nanox_sel_start_off = 0;
-struct line *nanox_sel_end_lp = NULL;
-int nanox_sel_end_off = 0;
 struct magic mcpat[NPAT];
 struct magic tapcm[NPAT];
 

@@ -23,6 +23,7 @@ typedef enum {
     HL_TERNARY,
     HL_ERROR,
     HL_NOTICE,
+    HL_SELECTION,
     HL_COUNT
 } HighlightStyleID;
 

@@ -163,7 +163,7 @@ static int window_column_number(struct window *wp)
 static void mlputi(int i, int r, struct mlbuf *dest);
 static void mlputli(long l, int r, struct mlbuf *dest);
 static void mlputf(int s, struct mlbuf *dest);
-static int newscreensize(int h, int w);
+int newscreensize(int h, int w);
 
 /*
  * Initialize the data structures used by the display code. The edge vectors
@@ -357,6 +357,7 @@ int update(int force)
 	if (wp->w_flag) {
 		/* if the window has changed, service it */
 		reframe(wp);		/* check the framing */
+
 		if ((wp->w_flag & ~WFMODE) == WFEDIT)
 			updone(wp);	/* update EDITed line */
 		else if (wp->w_flag & ~WFMOVE)
@@ -491,26 +492,6 @@ static void show_line(struct window *wp, struct line *lp)
 	int char_idx = 0; /* byte index */
 
 	while (char_idx < len) {
-		/* Selection marker logic */
-		if (nanox_sel_active) {
-			if (lp == nanox_sel_start_lp && char_idx == nanox_sel_start_off) {
-				HighlightStyle notice = colorscheme_get(HL_NOTICE);
-				current_color_fg = notice.fg;
-				current_color_bg = notice.bg;
-				current_color_bold = notice.bold;
-				current_color_underline = notice.underline;
-				vtputc('['); vtputc('v'); vtputc(']');
-			}
-			if (lp == nanox_sel_end_lp && char_idx == nanox_sel_end_off) {
-				HighlightStyle notice = colorscheme_get(HL_NOTICE);
-				current_color_fg = notice.fg;
-				current_color_bg = notice.bg;
-				current_color_bold = notice.bold;
-				current_color_underline = notice.underline;
-				vtputc('['); vtputc('x'); vtputc(']');
-			}
-		}
-
 		int style = HL_NORMAL;
 		while (current_span_idx < spans.count) {
 			Span *s = (spans.heap_spans) ? &spans.heap_spans[current_span_idx] : &spans.spans[current_span_idx];
@@ -528,6 +509,7 @@ static void show_line(struct window *wp, struct line *lp)
 		int bytes = utf8_to_unicode(lp->l_text, char_idx, len, &c);
 
 		HighlightStyle style_def = colorscheme_get(style);
+
 		current_color_fg = style_def.fg;
 		current_color_bg = style_def.bg;
 		current_color_bold = style_def.bold;
@@ -535,25 +517,6 @@ static void show_line(struct window *wp, struct line *lp)
 
 		vtputc(c);
 		char_idx += bytes;
-	}
-
-	if (nanox_sel_active) {
-		if (lp == nanox_sel_start_lp && char_idx == nanox_sel_start_off) {
-			HighlightStyle notice = colorscheme_get(HL_NOTICE);
-			current_color_fg = notice.fg;
-			current_color_bg = notice.bg;
-			current_color_bold = notice.bold;
-			current_color_underline = notice.underline;
-			vtputc('['); vtputc('v'); vtputc(']');
-		}
-		if (lp == nanox_sel_end_lp && char_idx == nanox_sel_end_off) {
-			HighlightStyle notice = colorscheme_get(HL_NOTICE);
-			current_color_fg = notice.fg;
-			current_color_bg = notice.bg;
-			current_color_bold = notice.bold;
-			current_color_underline = notice.underline;
-			vtputc('['); vtputc('x'); vtputc(']');
-		}
 	}
 
 	span_vec_free(&spans);
@@ -1065,12 +1028,12 @@ static void modeline(struct window *wp)
 		 fname, line, col, mark, (*lamp ? " " : ""), (*lamp ? lamp : ""));
 
 	if (top >= 0 && top < term.t_nrow) {
-		vscreen[top]->v_flag |= VFCHG | VFREQ | VFCOL;
+		vscreen[top]->v_flag |= VFCHG | VFCOL;
 		draw_hint_row(top, row1, status);
 	}
 
 	if (bottom >= 0 && bottom < term.t_nrow) {
-		vscreen[bottom]->v_flag |= VFCHG | VFREQ | VFCOL;
+		vscreen[bottom]->v_flag |= VFCHG | VFCOL;
 		draw_hint_row(bottom, row2, "");
 	}
 }
@@ -1110,6 +1073,25 @@ void mlerase(void)
 	current_color_bold = normal.bold;
 	current_color_underline = normal.underline;
 
+	/* Set foreground */
+	if (normal.fg != -1) {
+		if (normal.fg & 0x01000000) {
+			char buf[32];
+			snprintf(buf, sizeof(buf), "\033[38;2;%d;%d;%dm",
+				(normal.fg >> 16) & 0xFF, (normal.fg >> 8) & 0xFF, normal.fg & 0xFF);
+			TTputs(buf);
+		} else if (normal.fg >= 8 && normal.fg < 16) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 90 + (normal.fg - 8));
+			TTputs(buf);
+		} else {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 30 + normal.fg);
+			TTputs(buf);
+		}
+	}
+
+	/* Set background */
 	if (normal.bg != -1) {
 		if (normal.bg & 0x01000000) {
 			char buf[32];
@@ -1176,6 +1158,26 @@ void mlwrite(const char *fmt, ...)
 	movecursor(term.t_nrow, 0);
 
 	HighlightStyle normal = colorscheme_get(HL_NORMAL);
+
+	/* Set foreground */
+	if (normal.fg != -1) {
+		if (normal.fg & 0x01000000) {
+			char buf[32];
+			snprintf(buf, sizeof(buf), "\033[38;2;%d;%d;%dm",
+				(normal.fg >> 16) & 0xFF, (normal.fg >> 8) & 0xFF, normal.fg & 0xFF);
+			TTputs(buf);
+		} else if (normal.fg >= 8 && normal.fg < 16) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 90 + (normal.fg - 8));
+			TTputs(buf);
+		} else {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 30 + normal.fg);
+			TTputs(buf);
+		}
+	}
+
+	/* Set background */
 	if (normal.bg != -1) {
 		if (normal.bg & 0x01000000) {
 			char buf[32];
@@ -1241,10 +1243,6 @@ void mlwrite(const char *fmt, ...)
 	if (eolexist == TRUE)
 		TTeeol();
 	
-	if (normal.bg != -1) {
-		TTputs("\033[0m");
-	}
-
 	TTflush();
 	mpresf = TRUE;
 	nanox_notify_message(final);
@@ -1381,7 +1379,7 @@ void sizesignal(int signr)
 	errno = old_errno;
 }
 
-static int newscreensize(int h, int w)
+int newscreensize(int h, int w)
 {
 	/* do the change later */
 	if (displaying) {

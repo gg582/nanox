@@ -2,37 +2,36 @@
 name = seoulism-dark
 variant = dark
 
-[colors]
-bg = #111116
-fg = #a6a598
-fg_sub = #b7b6b2
-fg_bright = #efeeea
-
-vermilion = #e05a55
-jade = #3aa39a
-emerald = #3abf86
-ochre = #e5c15a
-sky = #6f8ee6
-muted_blue = #7f85ac
-charcoal = #5f6770
-error_red = #e77e79
-
-selection_bg = #2f4fa3
-
 [styles]
-; Syntax-ish (nanox highlighter styles)
+; Seoulism-dark: A Korean palette, made readable.
+; Derived from 'Five Directional Color Model' (Obangsaek) and Pine Ink Black.
+
+; Base: Pine Ink Black (Subtle blue-matte black)
 normal   = fg=#a6a598 bg=#111116
-comment  = fg=#7f85ac italic=true
+
+; WATER: receded, non-competing documentation/comments
+comment  = fg=#5f6770
+
+; EARTH: Hardcoded literals and data
 string   = fg=#e5c15a
 number   = fg=#e5c15a
-bracket  = fg=#5f6770
+
+; METAL: Structural rigidity and types
+type     = fg=#efeeea
+bracket  = fg=#6a737d
 operator = fg=#a6a598
-error    = fg=#e77e79 bold=true
 
-; Optional extra names if your renderer wants more granularity
-preproc  = fg=#6f8ee6
-special  = fg=#3aa39a
-type     = fg=#efeeea italic=true
+; WOOD: Declarative birth (Functions, Preprocessors)
+function = fg=#3aa39a
+preproc  = fg=#3abf86
 
-[ui]
-selection = bg=#2f4fa3 fg=#efeeea bold=true
+; FIRE: Operational heat (Control flow, Keywords)
+keyword  = fg=#e05a55 bold=true
+flow     = fg=#e05a55 bold=true
+return   = fg=#e05a55 bold=true
+
+; ERROR: Safflower red dye (warm and vivid)
+error    = fg=#e77e79 underline=true
+
+; UI: Reflective selection (bright paper-like canvas spotlight)
+selection = fg=#111116 bg=#efeeea

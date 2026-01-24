@@ -48,6 +48,8 @@ static void set_default_scheme(void) {
     styles[HL_ERROR] = (HighlightStyle){9, -1, false, false};
     /* Notice: Orange/Gold */
     styles[HL_NOTICE] = (HighlightStyle){208, -1, true, false};
+    /* Selection: Black on Bright Yellow */
+    styles[HL_SELECTION] = (HighlightStyle){0, 11, false, false};
 }
 
 static int parse_color(const char *val) {
@@ -152,6 +154,7 @@ static void load_scheme_file(const char *path) {
             else if (strcmp(key, "ternary") == 0) id = HL_TERNARY;
             else if (strcmp(key, "error") == 0) id = HL_ERROR;
             else if (strcmp(key, "notice") == 0) id = HL_NOTICE;
+            else if (strcmp(key, "selection") == 0) id = HL_SELECTION;
             
                     if (id != HL_COUNT) {                parse_attributes(val, &styles[id]);
             }
@@ -162,7 +165,7 @@ static void load_scheme_file(const char *path) {
     /* Propagate normal background to other styles if they are unset */
     if (styles[HL_NORMAL].bg != -1) {
         for (int i = 0; i < HL_COUNT; i++) {
-            if (i == HL_NORMAL) continue;
+            if (i == HL_NORMAL || i == HL_SELECTION) continue;
             if (styles[i].bg == -1) {
                 styles[i].bg = styles[HL_NORMAL].bg;
             }

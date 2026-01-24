@@ -20,6 +20,7 @@
 #include "version.h"
 #include "highlight.h"
 #include "platform.h"
+#include "colorscheme.h"
 
 extern struct terminal term;
 
@@ -29,6 +30,7 @@ struct nanox_config nanox_cfg = {
 	.warning_format = "--W",
 	.error_format = "--E",
 	.help_key = SPEC | 'P',
+	.help_language = "en",
 	.soft_tab = false,
 	.soft_tab_width = 8,
 	.case_sensitive_default = false,
@@ -58,7 +60,15 @@ static void load_help_file(void)
 {
 	if (dynamic_topics) return;
 
-	char *path = flook("emacs.hlp", TRUE);
+	static char localized_name[32];
+	char *path = NULL;
+
+	if (nanox_cfg.help_language[0]) {
+		snprintf(localized_name, sizeof(localized_name), "emacs-%s.hlp", nanox_cfg.help_language);
+		path = flook(localized_name, TRUE);
+	}
+	if (!path)
+		path = flook("emacs.hlp", TRUE);
 	if (!path) return;
 
 	FILE *fp = fopen(path, "r");
@@ -110,6 +120,7 @@ static void config_defaults(void)
 	mystrscpy(nanox_cfg.warning_format, "--W", sizeof(nanox_cfg.warning_format));
 	mystrscpy(nanox_cfg.error_format, "--E", sizeof(nanox_cfg.error_format));
 	nanox_cfg.help_key = SPEC | 'P';
+	mystrscpy(nanox_cfg.help_language, "en", sizeof(nanox_cfg.help_language));
 	nanox_cfg.soft_tab = false;
 	nanox_cfg.soft_tab_width = 8;
 	nanox_cfg.case_sensitive_default = false;
@@ -152,6 +163,14 @@ static void parse_ui_option(const char *key, const char *value)
 			nanox_cfg.help_key = SPEC | 'P';
 		else
 			mark_config_error();
+	} else if (strcasecmp(key, "help_language") == 0) {
+		if (!*value) {
+			mark_config_error();
+		} else {
+			mystrscpy(nanox_cfg.help_language, value, sizeof(nanox_cfg.help_language));
+			for (char *p = nanox_cfg.help_language; *p; ++p)
+				*p = tolower((unsigned char)*p);
+		}
 	}
 }
 
@@ -436,94 +455,60 @@ static void help_puts(const char *text)
 		ttputc(*text++);
 }
 
-/* selection mode */
-int nanox_selection_mode(int f, int n)
-{
-	int c;
-
-	/* Reset selection */
-	nanox_sel_active = 1;
-	nanox_sel_start_lp = curwp->w_dotp;
-	nanox_sel_start_off = curwp->w_doto;
-	nanox_sel_end_lp = NULL;
-	nanox_sel_end_off = 0;
-
-	mlwrite("SELECT: Ctrl-, Start, Ctrl-. End, Esc Cut, Ent Copy");
-
-	while (1) {
-		update(FALSE);
-		c = getcmd();
-
-		if (c == (CONTROL | '[')) { /* Esc - CUT */
-			if (nanox_sel_start_lp && nanox_sel_end_lp) {
-				/* Set region pointers */
-				curwp->w_dotp = nanox_sel_end_lp;
-				curwp->w_doto = nanox_sel_end_off;
-				curwp->w_markp = nanox_sel_start_lp;
-				curwp->w_marko = nanox_sel_start_off;
-				killregion(FALSE, 1);
-				nanox_sel_active = 0;
-				mlwrite("Region Cut");
-				break;
-			}
-			/* If no region fully defined, just exit or treat current as end? */
-			/* Let's assume Esc cancels if no region, or cuts if region. */
-			/* Actually prompt said "Esc cuts". */
-			nanox_sel_active = 0;
-			mlwrite("Selection Cancelled");
-			break;
-		}
-
-		if (c == (CONTROL | 'M')) { /* Enter - COPY */
-			if (nanox_sel_start_lp && nanox_sel_end_lp) {
-				curwp->w_dotp = nanox_sel_end_lp;
-				curwp->w_doto = nanox_sel_end_off;
-				curwp->w_markp = nanox_sel_start_lp;
-				curwp->w_marko = nanox_sel_start_off;
-				copyregion(FALSE, 1);
-				nanox_sel_active = 0;
-				mlwrite("Region Copied");
-				break;
-			}
-			nanox_sel_active = 0;
-			mlwrite("Selection Cancelled");
-			break;
-		}
-
-		if (c == (CONTROL | ',') || c == ',') { /* Start Mark */
-			nanox_sel_start_lp = curwp->w_dotp;
-			nanox_sel_start_off = curwp->w_doto;
-			mlwrite("Start set. Move to end and press Ctrl-.");
-		}
-		else if (c == (CONTROL | '.') || c == '.') { /* End Mark */
-			nanox_sel_end_lp = curwp->w_dotp;
-			nanox_sel_end_off = curwp->w_doto;
-			mlwrite("End set. Esc to Cut, Enter to Copy");
-		}
-		else if (c == (CONTROL | 'G')) {
-			nanox_sel_active = 0;
-			mlwrite("Selection Cancelled");
-			break;
-		}
-		else if (c != (CONTROL | 'G') && c != (CONTROL | '[')) {
-			/* Only execute bound commands if they are not potentially harmful in this mode */
-			if (c < 0 || (c & SPEC && (c & 0xFF) > 0x7F)) {
-				/* Ignore invalid special keys */
-			} else {
-				execute(c, FALSE, 1);
-			}
-		}
-	}
-	nanox_sel_active = 0;
-	return TRUE;
-}
-
 /* Help System Enhancements */
 
 void nanox_help_render(void)
 {
 	load_help_file();
 	if (!dynamic_topics) return;
+
+	/* Handle screen resize while help is active */
+	extern int chg_width, chg_height;
+	if (chg_width || chg_height) {
+		extern int newscreensize(int h, int w);
+		newscreensize(chg_height, chg_width);
+	}
+
+	HighlightStyle normal = colorscheme_get(HL_NORMAL);
+
+	/* Reset all attributes first */
+	help_puts("\033[0m");
+
+	/* Set foreground */
+	if (normal.fg != -1) {
+		if (normal.fg & 0x01000000) {
+			char buf[32];
+			snprintf(buf, sizeof(buf), "\033[38;2;%d;%d;%dm",
+				(normal.fg >> 16) & 0xFF, (normal.fg >> 8) & 0xFF, normal.fg & 0xFF);
+			help_puts(buf);
+		} else if (normal.fg >= 8 && normal.fg < 16) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 90 + (normal.fg - 8));
+			help_puts(buf);
+		} else {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 30 + normal.fg);
+			help_puts(buf);
+		}
+	}
+
+	/* Set background */
+	if (normal.bg != -1) {
+		if (normal.bg & 0x01000000) {
+			char buf[32];
+			snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
+				(normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
+			help_puts(buf);
+		} else if (normal.bg >= 8 && normal.bg < 16) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
+			help_puts(buf);
+		} else {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
+			help_puts(buf);
+		}
+	}
 
 	int visible_rows = nanox_hint_top_row() - 3;
 	if (visible_rows < 1) visible_rows = 1;
@@ -555,7 +540,7 @@ void nanox_help_render(void)
 		movecursor(nanox_hint_top_row() - 1, 0);
 		for (int i = 0; i < term.t_ncol; i++) help_puts("-");
 		movecursor(nanox_hint_top_row() - 1, 2);
-		help_puts(" i/k: Scroll, Backspace: Back, F1: Close ");
+		help_puts(" i/k to Scroll Up/Down, Backspace: Back, F1: Close ");
 	} else {
 		/* Header */
 		help_puts(" [ NanoX Help System ]");
@@ -581,7 +566,7 @@ void nanox_help_render(void)
 		movecursor(nanox_hint_top_row() - 1, 0);
 		for (int i = 0; i < term.t_ncol; i++) help_puts("-");
 		movecursor(nanox_hint_top_row() - 1, 2);
-		help_puts(" i: Up, k: Down, Enter: View, F1/Esc: Exit ");
+		help_puts(" Up: i, Down: k, Enter: View, F1/Esc: Exit ");
 	}
 	ttflush();
 }
@@ -592,6 +577,7 @@ int nanox_help_command(int f, int n)
 	help_scroll = 0;
 	help_show_section = false;
 	help_section_scroll = 0;
+	sgarbf = TRUE;
 	nanox_help_render();
 	return TRUE;
 }
@@ -609,10 +595,16 @@ int nanox_help_handle_key(int key)
 
 	if (key < 0) return TRUE;
 
+	/* Normalize key for navigation (ignore modifiers) */
+	int base_key = key;
+	if (key & SPEC) {
+		base_key = SPEC | (key & 0xFF);
+	}
+
 	int visible_rows = nanox_hint_top_row() - 3;
 	if (visible_rows < 1) visible_rows = 1;
 
-	switch (key) {
+	switch (base_key) {
 	case CONTROL | 'G':
 	case CONTROL | '[':
 	case 27:
@@ -640,9 +632,7 @@ int nanox_help_handle_key(int key)
 		}
 		break;
 
-	case 'i':
-	case 'I':
-	case SPEC | 'A': /* Up */
+	case 'i': /* Up */
 		if (help_show_section) {
 			if (help_section_scroll > 0) help_section_scroll--;
 		} else {
@@ -653,11 +643,7 @@ int nanox_help_handle_key(int key)
 		}
 		break;
 
-	case 'j':
-	case 'J':
-	case 'k':
-	case 'K':
-	case SPEC | 'B': /* Down */
+	case 'k': /* Down */
 		if (help_show_section) {
 			struct nanox_help_topic *topic = &dynamic_topics[help_selected];
 			if (help_section_scroll + visible_rows < (int)topic->line_count)

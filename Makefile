@@ -119,7 +119,19 @@ install: $(PROGRAM)
 configs-install:
 	$(E) "  CONFIG  " "configs/nanox -> " $(INSTALL_CONF)
 	$(Q) install -d "$(INSTALL_CONF)"
-	$(Q) cp -r configs/nanox/* "$(INSTALL_CONF)/"
+	$(Q) find configs/nanox -type f | while read f; do \
+		rel=$${f#configs/nanox/}; \
+		dir=$(INSTALL_CONF)/$$(dirname $$rel); \
+		install -d "$$dir"; \
+		if [ -f "$(INSTALL_CONF)/$$rel" ]; then \
+			cp "$(INSTALL_CONF)/$$rel" "$(INSTALL_CONF)/$$rel.bak"; \
+		fi; \
+		cp "$$f" "$(INSTALL_CONF)/$$rel"; \
+	done
+
+backups-clean:
+	$(E) "  CLEAN BACKUPS"
+	$(Q) find "$(INSTALL_CONF)" -name "*.bak" -delete
 
 install-all: install configs-install
 

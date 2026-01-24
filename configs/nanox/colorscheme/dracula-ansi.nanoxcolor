@@ -9,3 +9,4 @@ keyword = fg=magenta bold=true
 return  = fg=bright_red bold=true
 ternary = fg=magenta bold=true
 error   = fg=red underline=true
+selection=bg=bright_black

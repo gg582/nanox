@@ -1,8 +1,37 @@
+[meta]
+name = seoulism-light
+variant = light
+
 [styles]
-normal   = fg=#111111 bg=#dddbd5
-comment  = fg=#926f1f italic=true
-string   = fg=#2b4cc2
-number   = fg=#1b9c62
-bracket  = fg=#818199
-operator = fg=#4c4943
-error    = fg=#d32f2f bold=true
+; Seoulism-light: Hanji Paper & Pine Soot Ink.
+; High-key UI palette where opposition drives clarity.
+
+; Base: White Paper (Hanji tone) / Black Ink
+normal   = fg=#111111 bg=#fdfbf5
+
+; WATER: Graphite (seeps into the earthy store)
+comment  = fg=#4c4943
+
+; EARTH: Honey literal (pins the navigation layer)
+string   = fg=#c0841a
+number   = fg=#c0841a
+
+; METAL: Paper field (bleaches ritual flame - diagnostics must punch through)
+bracket  = fg=#4c4943
+operator = fg=#111111
+type     = fg=#111111 bold=true
+
+; WOOD: Jade (cuts into the metal lattice)
+function = fg=#147a72
+preproc  = fg=#2b4cc2
+
+; FIRE: Vermilion (ignites before ink records)
+keyword  = fg=#b0231b bold=true
+flow     = fg=#b0231b bold=true
+return   = fg=#b0231b bold=true
+
+; ERROR: Saturated Cinnabar
+error    = fg=#e4252c bold=true underline=true
+
+; UI: Burnished Hanji (chalk dust over paper)
+selection = fg=#111111 bg=#f0eadd

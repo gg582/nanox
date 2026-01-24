@@ -14,27 +14,71 @@
 #include "efunc.h"
 #include "line.h"
 
-/*
- * Kill the region. Ask "getregion"
- * to figure out the bounds of the region.
- * Move "." to the start, and kill the characters.
- * Bound to "C-W".
- */
-int killregion(int f, int n)
+static int nanox_resolve_region(struct region *region)
 {
-	int s;
+	if (curwp->w_markp == NULL) {
+		mlwrite("No mark set in this window");
+		return FALSE;
+	}
+	return getregion(region);
+}
+
+static void nanox_prime_kill_buffer(void)
+{
+	if ((lastflag & CFKILL) == 0)
+		kdelete();
+	thisflag |= CFKILL;
+}
+
+static int nanox_copy_region_to_kill(const struct region *region)
+{
+	struct line *linep = region->r_linep;
+	int loffs = region->r_offset;
+	long remaining = region->r_size;
+
+	while (remaining-- > 0) {
+		if (linep == curbp->b_linep)
+			return FALSE;
+		if (loffs == llength(linep)) {
+			if (kinsert('\n') != TRUE)
+				return FALSE;
+			linep = lforw(linep);
+			loffs = 0;
+		} else {
+			if (kinsert(lgetc(linep, loffs)) != TRUE)
+				return FALSE;
+			++loffs;
+		}
+	}
+	return TRUE;
+}
+
+int kill_region_nanox(int f, int n)
+{
 	struct region region;
 
-	if (curbp->b_mode & MDVIEW)		/* don't allow this command if      */
-		return rdonly();		/* we are in read only mode     */
-	if ((s = getregion(&region)) != TRUE)
-		return s;
-	if ((lastflag & CFKILL) == 0)		/* This is a kill type  */
-		kdelete();			/* command, so do magic */
-	thisflag |= CFKILL;			/* kill buffer stuff.   */
+	if (curbp->b_mode & MDVIEW)
+		return rdonly();
+	if (nanox_resolve_region(&region) != TRUE)
+		return FALSE;
+
+	nanox_prime_kill_buffer();
+	if (nanox_copy_region_to_kill(&region) != TRUE)
+		return FALSE;
+
 	curwp->w_dotp = region.r_linep;
 	curwp->w_doto = region.r_offset;
-	return ldelete(region.r_size, TRUE);
+
+	if (ldelete(region.r_size, FALSE) != TRUE)
+		return FALSE;
+
+	curwp->w_flag |= WFHARD;
+	return TRUE;
+}
+
+int killregion(int f, int n)
+{
+	return kill_region_nanox(f, n);
 }
 
 /*
@@ -43,34 +87,24 @@ int killregion(int f, int n)
  * at all. This is a bit like a kill region followed
  * by a yank. Bound to "M-W".
  */
-int copyregion(int f, int n)
+int copy_region_nanox(int f, int n)
 {
-	struct line *linep;
-	int loffs;
-	int s;
 	struct region region;
 
-	if ((s = getregion(&region)) != TRUE)
-		return s;
-	if ((lastflag & CFKILL) == 0)		/* Kill type command.   */
-		kdelete();
-	thisflag |= CFKILL;
-	linep = region.r_linep;			/* Current line.        */
-	loffs = region.r_offset;		/* Current offset.      */
-	while (region.r_size--) {
-		if (loffs == llength(linep)) {	/* End of line.         */
-			if ((s = kinsert('\n')) != TRUE)
-				return s;
-			linep = lforw(linep);
-			loffs = 0;
-		} else {			/* Middle of line.      */
-			if ((s = kinsert(lgetc(linep, loffs))) != TRUE)
-				return s;
-			++loffs;
-		}
-	}
+	if (nanox_resolve_region(&region) != TRUE)
+		return FALSE;
+
+	nanox_prime_kill_buffer();
+	if (nanox_copy_region_to_kill(&region) != TRUE)
+		return FALSE;
+
 	mlwrite("(region copied)");
 	return TRUE;
+}
+
+int copyregion(int f, int n)
+{
+	return copy_region_nanox(f, n);
 }
 
 /*

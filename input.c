@@ -293,18 +293,41 @@ int get1key(void)
 	return c;
 }
 
-static int apply_modifier_bits(int modifier, int cmask)
+static int apply_modifier_bits(int modifier, int cmask, int kitty_style)
 {
+	if (kitty_style) {
+		if (modifier & 1)
+			cmask |= SHIFT;
+		if (modifier & 2)
+			cmask |= META;
+		if (modifier & 4)
+			cmask |= CONTROL;
+		if (modifier & 8)
+			cmask |= SUPER;
+		if (modifier & 32)
+			cmask |= META;
+		return cmask;
+	}
 	if (modifier == 3 || modifier == 4 || modifier == 7 || modifier == 8)
 		cmask |= META;
 	if (modifier == 5 || modifier == 6 || modifier == 7 || modifier == 8)
 		cmask |= CONTROL;
+	if (modifier == 2 || modifier == 4 || modifier == 6 || modifier == 8)
+		cmask |= SHIFT;
 	return cmask;
 }
 
 static int map_csi_function(int code)
 {
 	switch (code) {
+	case 11:
+		return 'P';
+	case 12:
+		return 'Q';
+	case 13:
+		return 'R';
+	case 14:
+		return 'S';
 	case 15:
 		return 'U';
 	case 17:
@@ -367,26 +390,29 @@ static int decode_csi_sequence(int cmask)
 		spec = map_csi_function(params[0]);
 		if (!spec)
 			return 0;
-		return SPEC | spec | apply_modifier_bits(modifier, cmask);
+		return SPEC | spec | apply_modifier_bits(modifier, cmask, 0);
 	}
 
 	if (ch >= 'A' && ch <= 'D') {
 		int modifier = (count > 0) ? params[count - 1] : 1;
-		return SPEC | ch | apply_modifier_bits(modifier, cmask);
+		return SPEC | ch | apply_modifier_bits(modifier, cmask, 0);
 	}
 
 	if (ch >= 'E' && ch <= 'z' && ch != 'i' && ch != 'c') {
 		int modifier = (count > 0) ? params[count - 1] : 1;
 		if (ch == 'u') {
+			if (count == 0)
+				return 0;
 			int key = params[0];
 			if (key < 128) {
 				int code = key;
 				if (code >= 'a' && code <= 'z')
 					code -= 0x20;
-				return code | apply_modifier_bits(modifier, cmask);
+				modifier = (count > 1) ? params[count - 1] : 0;
+				return code | apply_modifier_bits(modifier, cmask, 1);
 			}
 		}
-		return SPEC | ch | apply_modifier_bits(modifier, cmask);
+		return SPEC | ch | apply_modifier_bits(modifier, cmask, 0);
 	}
 
 	return 0;
@@ -410,37 +436,38 @@ proc_metac:
 	}
 	/* process META prefix */
 	if (c == (CONTROL | '[')) {
-		c = get1key();
-		if (c == '[') {
+		int nextc = get1key();
+		if (nextc == '[') {
 			int code = decode_csi_sequence(cmask);
 			if (code)
 				return code;
 			c = get1key();
-		}
-		if (c == 'O') {
+		} else if (nextc == 'O') {
 			int code = get1key();
-			return SPEC | code | cmask;
+			return cmask | SPEC | code;
+		} else {
+			c = nextc;
 		}
+		cmask |= META;
 		if (c == (CONTROL | '[')) {
-			cmask = META;
 			goto proc_metac;
 		}
 		if (islower(c))			/* Force to upper */
 			c ^= DIFCASE;
 		if (c >= 0x00 && c <= 0x1F)	/* control key */
 			c = CONTROL | (c + '@');
-		return META | c;
+		return cmask | c;
 	} else if (c == metac) {
+		cmask |= META;
 		c = get1key();
 		if (c == (CONTROL | '[')) {
-			cmask = META;
 			goto proc_metac;
 		}
 		if (islower(c))			/* Force to upper */
 			c ^= DIFCASE;
 		if (c >= 0x00 && c <= 0x1F)	/* control key */
 			c = CONTROL | (c + '@');
-		return META | c;
+		return cmask | c;
 	}
 
 	/* process CTLX prefix */
