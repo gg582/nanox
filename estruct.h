@@ -1,21 +1,15 @@
-/*      ESTRUCT.H
+/* ESTRUCT.H
  *
- *      Structure and preprocessor defines
+ * Structure and preprocessor defines
  *
  *	written by Dave G. Conroy
  *	modified by Steve Wilhite, George Jones
- *      substantially modified by Daniel Lawrence
+ * substantially modified by Daniel Lawrence
  *	modified by Petri Kutvonen
  */
 
-extern struct terminal term;
-
-#define MAXCOL  2048
-#define MAXROW	2048
-
-#ifndef BEL
-#define BEL 0x07
-#endif
+#define MAXCOL	500
+#define MAXROW	500
 
 /* System dependant library redefinitions, structures and includes. */
 
@@ -28,16 +22,16 @@ extern struct terminal term;
 /* Internal constants. */
 
 #define	NBINDS	256				/* max # of bound keys          */
-#define NFILEN  1024			/* # of bytes, file name        */
+#define NFILEN  256				/* # of bytes, file name        */
 #define NBUFN   16				/* # of bytes, buffer name      */
-#define NLINE   1024			/* # of bytes, input line       */
-#define	NSTRING	256				/* # of bytes, string buffers   */
+#define NLINE   256				/* # of bytes, input line       */
+#define	NSTRING	128				/* # of bytes, string buffers   */
 #define NKBDM   256				/* # of strokes, keyboard macro */
-#define NPAT    512				/* # of bytes, pattern          */
-#define HUGE    1000	    /* Huge number                  */
-#define	NLOCKS	1000			/* max # of file locks active   */
-#define	NCOLORS	8		    	/* number of supported colors   */
-#define	KBLOCK	1024			/* sizeof kill buffer chunks    */
+#define NPAT    128				/* # of bytes, pattern          */
+#define HUGE    1000				/* Huge number                  */
+#define	NLOCKS	1000				/* max # of file locks active   */
+#define	NCOLORS	8				/* number of supported colors   */
+#define	KBLOCK	250				/* sizeof kill buffer chunks    */
 
 #define CONTROL 0x10000000			/* Control flag, or'ed in       */
 #define META    0x20000000			/* Meta flag, or'ed in          */
@@ -45,6 +39,11 @@ extern struct terminal term;
 #define SUPER   0x04000000			/* Super/Win flag, or'ed in     */
 #define CTLX    0x40000000			/* ^X flag, or'ed in            */
 #define	SPEC	0x80000000			/* special key (function keys)  */
+
+extern struct terminal term;
+
+extern int tab_width;				        /* Defined in globals.c / edef.h */
+#define tabmask (tab_width - 1)			/* Dynamic mask for bitwise ops  */
 
 #ifdef	FALSE
 #undef	FALSE
@@ -59,8 +58,8 @@ extern struct terminal term;
 #define	FAILED	3				/* not-quite fatal false return */
 
 #define	STOP	0				/* keyboard macro not in use    */
-#define	PLAY	1				/*                playing       */
-#define	RECORD	2				/*                recording     */
+#define	PLAY	1				/* playing       */
+#define	RECORD	2				/* recording     */
 
 /*	Directive definitions	*/
 
@@ -119,16 +118,18 @@ extern struct terminal term;
 
 /*	Internal defined functions					*/
 
-#define	nextab(a)	next_tab_stop(a, tab_width)
+/* Surgical Update: Use tab_width for nextab calculation */
+#define	nextab(a)	(((a) / tab_width + 1) * tab_width)
+
 #ifdef	abs
 #undef	abs
 #endif
 
 /* DIFCASE represents the integer difference between upper
-   and lower case letters.  It is an xor-able value, which is
-   fortunate, since the relative positions of upper to lower
-   case letters is the opposite of ascii in ebcdic.
-*/
+ * and lower case letters.  It is an xor-able value, which is
+ * fortunate, since the relative positions of upper to lower
+ * case letters is the opposite of ascii in ebcdic.
+ */
 
 #ifdef	islower
 #undef	islower
@@ -182,7 +183,7 @@ struct window {
  * the buffer is not being displayed (that is, if "b_nwnd" is 0). The text for
  * the buffer is kept in a circularly linked list of lines, with a pointer to
  * the header line in "b_linep".
- * 	Buffers may be "Inactive" which means the files associated with them
+ * Buffers may be "Inactive" which means the files associated with them
  * have not been read in yet. These get read in at "use buffer" time.
  */
 struct buffer {
@@ -259,7 +260,7 @@ struct terminal {
 };
 
 /*	TEMPORARY macros for terminal I/O  (to be placed in a machine
-					    dependant place later)	*/
+ *			    dependant place later)	*/
 
 #define	TTopen		(*term.t_open)
 #define	TTclose		(*term.t_close)
@@ -311,7 +312,7 @@ struct variable_description {
  * stack references to pending whiles. These are stored linked
  * to each currently open procedure via a linked list of
  * the following structure.
-*/
+ */
 struct while_block {
 	struct line *w_begin;			/* ptr to !while statement */
 	struct line *w_end;			/* ptr to the !endwhile statement */
