@@ -19,3 +19,13 @@ kind of working, but only kind of.
 So this is a simplistic editor, written for an age when you had 64kB
 limits and 300 or 1200 baud terminals were common.  It was not a better
 age, and this is not a better editor. 
+
+### Help Viewer Usage
+
+Press `F1` to open the built-in help viewer. Once open:
+
+- `i` moves up through topics or scrolls upward within a topic.
+- `k` moves down through topics or scrolls downward within a topic.
+- `Enter` opens the currently highlighted topic.
+- `Backspace` goes back to the topic list (or closes help if already there).
+- `Esc` immediately closes the help viewer.

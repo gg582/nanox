@@ -286,56 +286,124 @@ int get1key(void)
 	return c;
 }
 
+static int apply_modifier_bits(int modifier, int cmask)
+{
+	if (modifier == 3 || modifier == 4 || modifier == 7 || modifier == 8)
+		cmask |= META;
+	if (modifier == 5 || modifier == 6 || modifier == 7 || modifier == 8)
+		cmask |= CONTROL;
+	return cmask;
+}
+
+static int map_csi_function(int code)
+{
+	switch (code) {
+	case 15:
+		return 'U';
+	case 17:
+		return 'W';
+	case 18:
+		return 'X';
+	case 19:
+		return 'Y';
+	case 20:
+		return '`';
+	case 21:
+		return 'a';
+	case 23:
+		return '{';
+	case 24:
+		return '}';
+	case 5:
+		return '5';
+	case 6:
+		return '6';
+	default:
+		return 0;
+	}
+}
+
+static int decode_csi_sequence(int cmask)
+{
+	int params[3] = { 0, 0, 0 };
+	int count = 0;
+	int value = 0;
+	int have_value = 0;
+	int ch;
+
+	while (1) {
+		ch = get1key();
+		if (ch >= '0' && ch <= '9') {
+			value = value * 10 + (ch - '0');
+			have_value = 1;
+			continue;
+		}
+		if (ch == ';') {
+			if (count < 3)
+				params[count++] = have_value ? value : 0;
+			value = 0;
+			have_value = 0;
+			continue;
+		}
+		break;
+	}
+	if (have_value && count < 3)
+		params[count++] = value;
+
+	if (ch == '~') {
+		int modifier = 1;
+		int spec;
+		if (count == 0)
+			return 0;
+		if (count > 1)
+			modifier = params[1];
+		spec = map_csi_function(params[0]);
+		if (!spec)
+			return 0;
+		return SPEC | spec | apply_modifier_bits(modifier, cmask);
+	}
+
+	if (ch >= 'A' && ch <= 'D') {
+		int modifier = (count > 0) ? params[count - 1] : 1;
+		return SPEC | ch | apply_modifier_bits(modifier, cmask);
+	}
+
+	if (ch >= 'E' && ch <= 'z' && ch != 'i' && ch != 'c') {
+		int modifier = (count > 0) ? params[count - 1] : 1;
+		return SPEC | ch | apply_modifier_bits(modifier, cmask);
+	}
+
+	return 0;
+}
+
 /*	GETCMD:	Get a command from the keyboard. Process all applicable
 		prefix keys
 							*/
 int getcmd(void)
 {
 	int c;					/* fetched keystroke */
-	int d;					/* second character P.K. */
 	int cmask = 0;
 	/* get initial character */
 	c = get1key();
 
- proc_metac:
-	if (c == 128 + 27)			/* CSI */
-		goto handle_CSI;
+proc_metac:
+	if (c == 128 + 27) {			/* CSI */
+		int code = decode_csi_sequence(cmask);
+		if (code)
+			return code;
+	}
 	/* process META prefix */
 	if (c == (CONTROL | '[')) {
 		c = get1key();
-		if (c == '[' || c == 'O') {	/* CSI P.K. */
- handle_CSI:
+		if (c == '[') {
+			int code = decode_csi_sequence(cmask);
+			if (code)
+				return code;
 			c = get1key();
-			if (c >= 'A' && c <= 'D')
-				return SPEC | c | cmask;
-			if (c >= 'E' && c <= 'z' && c != 'i' && c != 'c')
-				return SPEC | c | cmask;
-			d = get1key();
-			if (d == '~')		/* ESC [ n ~   P.K. */
-				return SPEC | c | cmask;
-			switch (c) {		/* ESC [ n n ~ P.K. */
-			case '1':
-				c = d + 32;
-				break;
-			case '2':
-				c = d + 48;
-				break;
-			case '3':
-				c = d + 64;
-				break;
-			default:
-				c = '?';
-				break;
-			}
-			if (d != '~')		/* eat tilde P.K. */
-				get1key();
-			if (c == 'i') {		/* DO key    P.K. */
-				c = ctlxc;
-				goto proc_ctlxc;
-			} else if (c == 'c')	/* ESC key   P.K. */
-				c = get1key();
-			else
-				return SPEC | c | cmask;
+		}
+		if (c == 'O') {
+			int code = get1key();
+			return SPEC | code | cmask;
 		}
 		if (c == (CONTROL | '[')) {
 			cmask = META;
@@ -359,7 +427,6 @@ int getcmd(void)
 		return META | c;
 	}
 
- proc_ctlxc:
 	/* process CTLX prefix */
 	if (c == ctlxc) {
 		c = get1key();

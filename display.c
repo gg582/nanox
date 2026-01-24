@@ -13,12 +13,15 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <stdbool.h>
+#include <string.h>
 
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
 #include "line.h"
 #include "version.h"
+#include "nanox.h"
 #include "wrapper.h"
 #include "utf8.h"
 #include "util.h"
@@ -47,9 +50,104 @@ static void updall(struct window *wp);
 static void updext(void);
 static int updateline(int row, struct video *vp);
 static void modeline(struct window *wp);
-static void mlputi(int i, int r);
-static void mlputli(long l, int r);
-static void mlputf(int s);
+static void vtputc(int c);
+static void vteeol(void);
+struct mlbuf {
+	char *buf;
+	size_t len;
+	size_t cap;
+};
+
+static void mlbuf_init(struct mlbuf *dest, char *storage, size_t size)
+{
+	dest->buf = storage;
+	dest->len = 0;
+	dest->cap = size;
+	if (size)
+		dest->buf[0] = 0;
+}
+
+static void mlbuf_putc(struct mlbuf *dest, int ch)
+{
+	if (dest->len + 1 >= dest->cap)
+		return;
+	dest->buf[dest->len++] = ch;
+	dest->buf[dest->len] = 0;
+}
+
+static void mlbuf_puts(struct mlbuf *dest, const char *text)
+{
+	while (text && *text)
+		mlbuf_putc(dest, *text++);
+}
+
+static void draw_hint_row(int row, const char *left, const char *status)
+{
+	char rowbuf[MAXCOL + 1];
+	int width = term.t_ncol;
+	int i;
+
+	if (width > MAXCOL)
+		width = MAXCOL;
+	if (width <= 0)
+		return;
+	memset(rowbuf, ' ', width);
+	rowbuf[width] = 0;
+	if (left && *left) {
+		size_t llen = strlen(left);
+		if ((int)llen > width)
+			llen = width;
+		memcpy(rowbuf, left, llen);
+	}
+	if (status && *status) {
+		size_t slen = strlen(status);
+		int pos;
+		if ((int)slen > width)
+			slen = width;
+		pos = width - (int)slen;
+		if (pos < 0)
+			pos = 0;
+		memcpy(rowbuf + pos, status, slen);
+	}
+	vtmove(row, 0);
+	for (i = 0; i < width; ++i)
+		vtputc(rowbuf[i]);
+	vteeol();
+}
+
+static int window_line_number(struct window *wp)
+{
+	struct line *lp = lforw(wp->w_bufp->b_linep);
+	int count = 1;
+
+	while (lp != wp->w_bufp->b_linep) {
+		if (lp == wp->w_dotp)
+			break;
+		++count;
+		lp = lforw(lp);
+	}
+	return count;
+}
+
+static int window_column_number(struct window *wp)
+{
+	struct line *lp = wp->w_dotp;
+	int i = 0;
+	int len = llength(lp);
+	int col = 0;
+
+	while (i < wp->w_doto) {
+		unicode_t c;
+		int bytes = utf8_to_unicode(lp->l_text, i, len, &c);
+		i += bytes;
+		col = next_column(col, c);
+	}
+	return col + 1;
+}
+
+static void mlputi(int i, int r, struct mlbuf *dest);
+static void mlputli(long l, int r, struct mlbuf *dest);
+static void mlputf(int s, struct mlbuf *dest);
 static int newscreensize(int h, int w);
 
 /*
@@ -249,6 +347,7 @@ static int reframe(struct window *wp)
 {
 	struct line *lp, *lp0;
 	int i = 0;
+	int rows = nanox_text_rows();
 
 	/* if not a requested reframe, check for a needed one */
 	if ((wp->w_flag & WFFORCE) == 0) {
@@ -261,11 +360,11 @@ static int reframe(struct window *wp)
 			i = -1;
 			lp = lp0;
 		}
-		for (; i < term.t_nrow; i++) {
+		for (; i < rows; i++) {
 			/* if the line is in the window, no reframe */
 			if (lp == wp->w_dotp) {
 				/* if not _quite_ in, we'll reframe gently */
-				if (i < 0 || i == term.t_nrow - 1) {
+				if (i < 0 || i == rows - 1) {
 					break;
 				}
 				return TRUE;
@@ -281,7 +380,7 @@ static int reframe(struct window *wp)
 	}
 	if (i == -1) {				/* we're just above the window */
 		i = scrollcount;		/* put dot at first line */
-	} else if (i == term.t_nrow - 1) {	/* we're just below the window */
+	} else if (i == rows - 1) {	/* we're just below the window */
 		i = -scrollcount;		/* put dot at last line */
 	} else					/* put dot where requested */
 		i = wp->w_force;		/* (is 0, unless reposition() was called) */
@@ -290,14 +389,14 @@ static int reframe(struct window *wp)
 
 	/* how far back to reframe? */
 	if (i > 0) {				/* only one screen worth of lines max */
-		if (--i >= term.t_nrow - 1)
-			i = term.t_nrow - 2;
+		if (--i >= rows - 1)
+			i = rows - 2;
 	} else if (i < 0) {			/* negative update???? */
-		i += term.t_nrow - 1;
+		i += rows - 1;
 		if (i < 0)
 			i = 0;
 	} else
-		i = (term.t_nrow - 1) / 2;
+		i = (rows - 1) / 2;
 
 	/* backup to new line at top of window */
 	lp = wp->w_dotp;
@@ -365,7 +464,7 @@ static void updall(struct window *wp)
 	/* search down the lines, updating them */
 	lp = wp->w_linep;
 	sline = 0;
-	while (sline < term.t_nrow - 1) {
+	while (sline < nanox_text_rows()) {
 
 		/* and update the virtual line */
 		vscreen[sline]->v_flag |= VFCHG;
@@ -436,7 +535,7 @@ void upddex(void)
 	lp = wp->w_linep;
 	i = 0;
 
-	while (i < term.t_nrow - 1) {
+	while (i < nanox_text_rows()) {
 		if (vscreen[i]->v_flag & VFEXT) {
 			if ((wp != curwp) || (lp != wp->w_dotp) ||
 			    (curcol < term.t_ncol - 1)) {
@@ -684,148 +783,29 @@ static int updateline(int row, struct video *vp)
  */
 static void modeline(struct window *wp)
 {
-	char *cp;
-	int c;
-	int n;					/* cursor position count */
-	struct buffer *bp;
-	int i;					/* loop index */
-	int lchar;				/* character to draw line in buffer with */
-	int firstm;				/* is this the first mode? */
-	char tline[NLINE];			/* buffer for part of mode line */
+	struct buffer *bp = wp->w_bufp;
+	const char *row1 = nanox_cfg.hint_bar ? "F1 Help  F2 Save  F3 Open  F4 Quit  F5 Search  F6 Replace" : "";
+	const char *row2 = nanox_cfg.hint_bar ? "F7 CutLn  F8 Paste  F9 Slot1  F10 Slot2  F11 Slot3  F12 Slot4" : "";
+	char status[MAXCOL + 1];
+	const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
+	const char *lamp = nanox_lamp_label();
+	char mark = (bp->b_flag & BFCHG) ? '*' : '-';
+	int line = window_line_number(wp);
+	int col = window_column_number(wp);
+	int top = nanox_hint_top_row();
+	int bottom = nanox_hint_bottom_row();
 
-	n = term.t_nrow - 1;			/* Location. */
-	vscreen[n]->v_flag |= VFCHG | VFREQ | VFCOL;	/* Redraw next time. */
-	vtmove(n, 0);				/* Seek to right line. */
-	if (wp == curwp)			/* mark the current buffer */
-		lchar = '-';
-	else if (revexist)
-		lchar = ' ';
-	else
-		lchar = '-';
+	snprintf(status, sizeof(status), "%s L%d C%d %c%s%s",
+		 fname, line, col, mark, (*lamp ? " " : ""), (*lamp ? lamp : ""));
 
-	bp = wp->w_bufp;
-	vtputc(lchar);
-
-	if ((bp->b_flag & BFCHG) != 0)		/* "*" if changed. */
-		vtputc('*');
-	else
-		vtputc(lchar);
-
-	n = 2;
-
-	strcpy(tline, " ");
-	strcat(tline, PROGRAM_NAME_LONG);
-	strcat(tline, " ");
-	strcat(tline, VERSION);
-	strcat(tline, ": ");
-	cp = &tline[0];
-	while ((c = *cp++) != 0) {
-		vtputc(c);
-		++n;
+	if (top >= 0 && top < term.t_nrow) {
+		vscreen[top]->v_flag |= VFCHG | VFREQ | VFCOL;
+		draw_hint_row(top, row1, status);
 	}
 
-	cp = &bp->b_bname[0];
-	while ((c = *cp++) != 0) {
-		vtputc(c);
-		++n;
-	}
-
-	strcpy(tline, " (");
-
-	/* display the modes */
-
-	firstm = TRUE;
-	if ((bp->b_flag & BFTRUNC) != 0) {
-		firstm = FALSE;
-		strcat(tline, "Truncated");
-	}
-	for (i = 0; i < NUMMODES; i++)		/* add in the mode flags */
-		if (wp->w_bufp->b_mode & (1 << i)) {
-			if (firstm != TRUE)
-				strcat(tline, " ");
-			firstm = FALSE;
-			strcat(tline, mode2name[i]);
-		}
-	strcat(tline, ") ");
-
-	cp = &tline[0];
-	while ((c = *cp++) != 0) {
-		vtputc(c);
-		++n;
-	}
-
-	if (bp->b_fname[0] != 0 && strcmp(bp->b_bname, bp->b_fname) != 0) {
-		cp = &bp->b_fname[0];
-
-		while ((c = *cp++) != 0) {
-			vtputc(c);
-			++n;
-		}
-
-		vtputc(' ');
-		++n;
-	}
-
-	while (n < term.t_ncol) {		/* Pad to full width. */
-		vtputc(lchar);
-		++n;
-	}
-
-	{					/* determine if top line, bottom line, or both are visible */
-		struct line *lp = wp->w_linep;
-		int rows = term.t_nrow - 1;
-		char *msg = NULL;
-
-		vtcol = n - 7;			/* strlen(" top ") plus a couple */
-		while (rows--) {
-			lp = lforw(lp);
-			if (lp == wp->w_bufp->b_linep) {
-				msg = " Bot ";
-				break;
-			}
-		}
-		if (lback(wp->w_linep) == wp->w_bufp->b_linep) {
-			if (msg) {
-				if (wp->w_linep == wp->w_bufp->b_linep)
-					msg = " Emp ";
-				else
-					msg = " All ";
-			} else {
-				msg = " Top ";
-			}
-		}
-		if (!msg) {
-			struct line *lp;
-			int numlines, predlines, ratio;
-
-			lp = lforw(bp->b_linep);
-			numlines = 0;
-			predlines = 0;
-			while (lp != bp->b_linep) {
-				if (lp == wp->w_linep) {
-					predlines = numlines;
-				}
-				++numlines;
-				lp = lforw(lp);
-			}
-			if (wp->w_dotp == bp->b_linep) {
-				msg = " Bot ";
-			} else {
-				ratio = 0;
-				if (numlines != 0)
-					ratio = (100L * predlines) / numlines;
-				if (ratio > 99)
-					ratio = 99;
-				sprintf(tline, " %2d%% ", ratio);
-				msg = tline;
-			}
-		}
-
-		cp = msg;
-		while ((c = *cp++) != 0) {
-			vtputc(c);
-			++n;
-		}
+	if (bottom >= 0 && bottom < term.t_nrow) {
+		vscreen[bottom]->v_flag |= VFCHG | VFREQ | VFCOL;
+		draw_hint_row(bottom, row2, "");
 	}
 }
 
@@ -886,6 +866,9 @@ void mlwrite(const char *fmt, ...)
 {
 	int c;					/* current char in format string */
 	va_list ap;
+	char raw[1024];
+	char final[1200];
+	struct mlbuf dest;
 
 	/* if we are not currently echoing on the command line, abort this */
 	if (discmd == FALSE) {
@@ -900,51 +883,56 @@ void mlwrite(const char *fmt, ...)
 	}
 
 	movecursor(term.t_nrow, 0);
+	mlbuf_init(&dest, raw, sizeof(raw));
 	va_start(ap, fmt);
 	while ((c = *fmt++) != 0) {
 		if (c != '%') {
-			TTputc(c);
-			++ttcol;
+			mlbuf_putc(&dest, c);
 		} else {
 			c = *fmt++;
 			switch (c) {
 			case 'd':
-				mlputi(va_arg(ap, int), 10);
+				mlputi(va_arg(ap, int), 10, &dest);
 				break;
 
 			case 'o':
-				mlputi(va_arg(ap, int), 8);
+				mlputi(va_arg(ap, int), 8, &dest);
 				break;
 
 			case 'x':
-				mlputi(va_arg(ap, int), 16);
+				mlputi(va_arg(ap, int), 16, &dest);
 				break;
 
 			case 'D':
-				mlputli(va_arg(ap, long), 10);
+				mlputli(va_arg(ap, long), 10, &dest);
 				break;
 
 			case 's':
-				mlputs(va_arg(ap, char *));
+				mlbuf_puts(&dest, va_arg(ap, char *));
 				break;
 
 			case 'f':
-				mlputf(va_arg(ap, int));
+				mlputf(va_arg(ap, int), &dest);
 				break;
 
 			default:
-				TTputc(c);
-				++ttcol;
+				mlbuf_putc(&dest, c);
 			}
 		}
 	}
 	va_end(ap);
+	nanox_message_prefix(dest.buf, final, sizeof(final));
+	for (const char *p = final; *p; ++p) {
+		TTputc(*p);
+		++ttcol;
+	}
 
 	/* if we can, erase to the end of screen */
 	if (eolexist == TRUE)
 		TTeeol();
 	TTflush();
 	mpresf = TRUE;
+	nanox_notify_message(final);
 }
 
 /*
@@ -983,44 +971,42 @@ void mlputs(char *s)
  * Write out an integer, in the specified radix. Update the physical cursor
  * position.
  */
-static void mlputi(int i, int r)
+static void mlputi(int i, int r, struct mlbuf *dest)
 {
 	int q;
 	static char hexdigits[] = "0123456789ABCDEF";
 
 	if (i < 0) {
 		i = -i;
-		TTputc('-');
+		mlbuf_putc(dest, '-');
 	}
 
 	q = i / r;
 
 	if (q != 0)
-		mlputi(q, r);
+		mlputi(q, r, dest);
 
-	TTputc(hexdigits[i % r]);
-	++ttcol;
+	mlbuf_putc(dest, hexdigits[i % r]);
 }
 
 /*
  * do the same except as a long integer.
  */
-static void mlputli(long l, int r)
+static void mlputli(long l, int r, struct mlbuf *dest)
 {
 	long q;
 
 	if (l < 0) {
 		l = -l;
-		TTputc('-');
+		mlbuf_putc(dest, '-');
 	}
 
 	q = l / r;
 
 	if (q != 0)
-		mlputli(q, r);
+		mlputli(q, r, dest);
 
-	TTputc((int)(l % r) + '0');
-	++ttcol;
+	mlbuf_putc(dest, (int)(l % r) + '0');
 }
 
 /*
@@ -1028,7 +1014,7 @@ static void mlputli(long l, int r)
  *
  * int s;		scaled integer to output
  */
-static void mlputf(int s)
+static void mlputf(int s, struct mlbuf *dest)
 {
 	int i;					/* integer portion of number */
 	int f;					/* fractional portion of number */
@@ -1037,12 +1023,18 @@ static void mlputf(int s)
 	i = s / 100;
 	f = s % 100;
 
+	if (f < 0)
+		f = -f;
+	if (i < 0 && s > 0)
+		i = -i;
+
 	/* send out the integer portion */
-	mlputi(i, 10);
-	TTputc('.');
-	TTputc((f / 10) + '0');
-	TTputc((f % 10) + '0');
-	ttcol += 3;
+	mlputi(i, 10, dest);
+	mlbuf_putc(dest, '.');
+	if (f < 10)
+		mlbuf_putc(dest, '0');
+	mlbuf_putc(dest, (f / 10) + '0');
+	mlbuf_putc(dest, (f % 10) + '0');
 }
 
 /* Get terminal size from system.

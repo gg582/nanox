@@ -370,13 +370,13 @@ int forwpage(int f, int n)
 	struct line *lp;
 
 	if (f == FALSE) {
-		n = term.t_nrow - 3;		/* Default scroll. */
-		if (n <= 0)			/* Forget the overlap. */
-			n = 1;			/* If tiny window. */
+		n = nanox_text_rows() - 2;	/* Default scroll. */
+		if (n <= 0)
+			n = 1;
 	} else if (n < 0)
 		return backpage(f, -n);
 	else					/* Convert from pages. */
-		n *= term.t_nrow - 1;		/* To lines. */
+		n *= nanox_text_rows();		/* To lines. */
 	lp = curwp->w_linep;
 	while (n-- && lp != curbp->b_linep)
 		lp = lforw(lp);
@@ -398,13 +398,13 @@ int backpage(int f, int n)
 	struct line *lp;
 
 	if (f == FALSE) {
-		n = term.t_nrow - 3;		/* Default scroll. */
-		if (n <= 0)			/* Don't blow up if the. */
-			n = 1;			/* Window is tiny. */
+		n = nanox_text_rows() - 2;	/* Default scroll. */
+		if (n <= 0)
+			n = 1;
 	} else if (n < 0)
 		return forwpage(f, -n);
 	else					/* Convert from pages. */
-		n *= term.t_nrow - 1;		/* To lines. */
+		n *= nanox_text_rows();		/* To lines. */
 	lp = curwp->w_linep;
 	while (n-- && lback(lp) != curbp->b_linep)
 		lp = lback(lp);

@@ -146,6 +146,7 @@ int main(int argc, char **argv)
 	vtinit();				/* Display */
 	edinit("main");				/* Buffers, windows */
 	varinit();				/* user variables */
+	nanox_init();
 
 	viewflag = FALSE;			/* view mode defaults off in command line */
 	gotoflag = FALSE;			/* set to off to begin with */
@@ -297,6 +298,16 @@ int main(int argc, char **argv)
 	if (mpresf != FALSE) {
 		mlerase();
 		update(FALSE);
+	}
+
+	if (nanox_help_is_active()) {
+		nanox_help_handle_key(c);
+		goto loop;
+	}
+
+	if (c == nanox_cfg.help_key) {
+		nanox_help_command(FALSE, 0);
+		goto loop;
 	}
 	f = FALSE;
 	n = 1;
@@ -478,6 +489,7 @@ int execute(int c, int f, int n)
 		return status;
 	}
 	TTbeep();
+	nanox_set_lamp(NANOX_LAMP_WARN);
 	mlwrite("(Key not bound)");		/* complain             */
 	lastflag = 0;				/* Fake last flags.     */
 	return FALSE;

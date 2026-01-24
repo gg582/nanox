@@ -9,6 +9,8 @@
  *	modified by Petri Kutvonen
  */
 
+#include "nanox.h"
+
 /* External function declarations. */
 
 /* word.c */
@@ -198,6 +200,26 @@ extern int getfile(char *fname, int lockfl);
 extern int readin(char *fname, int lockfl);
 extern void makename(char *bname, char *fname);
 extern void unqname(char *name);
+
+/* nanox.c */
+extern void nanox_init(void);
+extern void nanox_apply_config(void);
+extern void nanox_notify_message(const char *text);
+extern int nanox_text_rows(void);
+extern int nanox_hint_top_row(void);
+extern int nanox_hint_bottom_row(void);
+extern bool nanox_help_is_active(void);
+extern int nanox_help_command(int f, int n);
+extern int nanox_help_handle_key(int key);
+extern void nanox_message_prefix(const char *input, char *output, size_t outsz);
+extern int reserve_set_1(int f, int n);
+extern int reserve_set_2(int f, int n);
+extern int reserve_set_3(int f, int n);
+extern int reserve_set_4(int f, int n);
+extern int reserve_jump_1(int f, int n);
+extern int reserve_jump_2(int f, int n);
+extern int reserve_jump_3(int f, int n);
+extern int reserve_jump_4(int f, int n);
 extern int filewrite(int f, int n);
 extern int filesave(int f, int n);
 extern int writeout(char *fn);
