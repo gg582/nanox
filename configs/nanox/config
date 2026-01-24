@@ -1,0 +1,13 @@
+[ui]
+hint_bar=true
+warning_lamp=true
+warning_format=[WARN]
+error_format=[ERR!]
+help_key=F1
+
+[edit]
+soft_tab=true
+soft_tab_width=4
+
+[search]
+case_sensitive_default=false

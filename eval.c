@@ -7,6 +7,8 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "estruct.h"
 #include "edef.h"
@@ -18,6 +20,8 @@
 
 #define	MAXVARS	255
 
+extern struct terminal term;
+
 /* User variables */
 static struct user_variable uv[MAXVARS + 1];
 
@@ -25,8 +29,21 @@ static struct user_variable uv[MAXVARS + 1];
 void varinit(void)
 {
 	int i;
-	for (i = 0; i < MAXVARS; i++)
+	for (i = 0; i < MAXVARS; i++) {
 		uv[i].u_name[0] = 0;
+		uv[i].u_value = NULL;
+	}
+}
+
+void varcleanup(void)
+{
+	int i;
+	for (i = 0; i < MAXVARS; i++) {
+		if (uv[i].u_value != NULL) {
+			free(uv[i].u_value);
+			uv[i].u_value = NULL;
+		}
+	}
 }
 
 /*

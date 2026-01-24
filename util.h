@@ -1,6 +1,8 @@
 #ifndef UTIL_H_
 #define UTIL_H_
 
+#include "utf8.h"
+
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 
 /* Safe zeroing, no complaining about overlap */
@@ -19,7 +21,7 @@ static inline void mystrscpy(char *dst, const char *src, int size)
 
 // Overly simplistic "how does the column number change
 // based on character 'c'" function
-static inline int next_column(int old, unicode_t c)
+static inline int next_column(int old, unicode_t c, int tabmask)
 {
 	if (c == '\t')
 		return (old | tabmask) + 1;

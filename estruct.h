@@ -8,8 +8,14 @@
  *	modified by Petri Kutvonen
  */
 
+extern struct terminal term;
+
 #define MAXCOL	500
 #define MAXROW	500
+
+#ifndef BEL
+#define BEL 0x07
+#endif
 
 /* System dependant library redefinitions, structures and includes. */
 

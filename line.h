@@ -2,6 +2,7 @@
 #define LINE_H_
 
 #include "utf8.h"
+#include "highlight.h"
 
 /*
  * All text is kept in circularly linked lists of "struct line" structures. These
@@ -16,6 +17,8 @@ struct line {
 	struct line *l_bp;			/* Link to the previous line    */
 	int l_size;				/* Allocated size               */
 	int l_used;				/* Used size                    */
+	HighlightState hl_start_state;
+	HighlightState hl_end_state;
 	char l_text[1];				/* A bunch of characters.       */
 };
 

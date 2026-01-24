@@ -1,4 +1,13 @@
 # makefile for emacs, updated Sun Apr 28 17:59:07 EET DST 1996
+#
+# Notes
+# - Keep the auto-generated file lists (SRC/OBJ/HDR) intact. `make source` rewrites them.
+# - Installation is split:
+#   - `make install` installs the program binary only (may require privileges depending on PREFIX).
+#   - `make configs-install` installs user configuration files to the user's config directory.
+#   - `make install-all` runs both in a predictable order.
+# - Do not hard-code privilege escalation in Makefile targets. Use `sudo make install`
+#   when installing into system directories (e.g. /usr/local).
 
 # Make the build silent by default
 V =
@@ -16,15 +25,15 @@ uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
 PROGRAM=nanox
 
-SRC=	basic.c bind.c buffer.c display.c eval.c exec.c file.c fileio.c \
-	globals.c input.c isearch.c line.c lock.c main.c names.c nanox.c \
-	pklock.c posix.c random.c region.c search.c spawn.c tcap.c \
-	usage.c utf8.c version.c window.c word.c wrapper.c
+SRC=	basic.c bind.c buffer.c colorscheme.c display.c eval.c exec.c file.c \
+	fileio.c highlight.c input.c isearch.c line.c lock.c globals.c main.c \
+	names.c nanox.c pklock.c platform.c posix.c random.c region.c search.c \
+	spawn.c tcap.c usage.c utf8.c version.c window.c word.c wrapper.c
 
-OBJ=	basic.o bind.o buffer.o display.o eval.o exec.o file.o fileio.o \
-	globals.o input.o isearch.o line.o lock.o main.o names.o nanox.o \
-	pklock.o posix.o random.o region.o search.o spawn.o tcap.o \
-	usage.o utf8.o version.o window.o word.o wrapper.o
+OBJ=	basic.o bind.o buffer.o colorscheme.o display.o eval.o exec.o file.o \
+	fileio.o highlight.o input.o isearch.o line.o lock.o globals.o main.o \
+	names.o nanox.o pklock.o platform.o posix.o random.o region.o search.o \
+	spawn.o tcap.o usage.o utf8.o version.o window.o word.o wrapper.o
 
 HDR=	ebind.h edef.h efunc.h epath.h estruct.h evar.h line.h usage.h \
 	utf8.h util.h version.h wrapper.h nanox.h
@@ -56,12 +65,63 @@ clean:
 	$(E) "  CLEAN"
 	$(Q) rm -f $(PROGRAM) core lintout makeout tags makefile.bak *.o
 
+# -----------------------------------------------------------------------------
+# Install configuration
+#
+# PREFIX:
+#   - Default install prefix for the program binary.
+#   - Typical system install uses PREFIX=/usr/local with `sudo make install`.
+#   - For per-user install, use PREFIX=$(HOME)/.local.
+#
+# Config installation:
+#   - User configuration belongs in XDG_CONFIG_HOME when available.
+#   - Default fallback is $(HOME)/.config.
+#   - Config installation is separated into `configs-install`.
+# -----------------------------------------------------------------------------
+
+PREFIX ?= /usr/local
+DESTDIR ?=
+
+# Default install path for the executable.
+INSTALL_BIN = $(DESTDIR)$(PREFIX)/bin
+
+# User config directory (XDG base directory spec fallback).
+XDG_CONFIG_HOME ?= $(HOME)/.config
+INSTALL_CONF = $(DESTDIR)$(XDG_CONFIG_HOME)/nanox
+
+PROG_EXT =
+
+# Adjust for Windows (MinGW/MSYS/Cygwin).
+ifneq (,$(findstring MINGW,$(uname_S)))
+	PROG_EXT = .exe
+	# Avoid system prefixes by default on MSYS/MinGW unless PREFIX is explicitly set.
+	ifeq ($(PREFIX),/usr/local)
+		INSTALL_BIN = $(DESTDIR)$(HOME)/bin
+	endif
+endif
+ifneq (,$(findstring CYGWIN,$(uname_S)))
+	PROG_EXT = .exe
+endif
+
+# -----------------------------------------------------------------------------
+# Install targets
+#
+# - `install` installs only the binary to $(INSTALL_BIN).
+# - `configs-install` installs configs/nanox/* into $(INSTALL_CONF).
+# - `install-all` runs both.
+# -----------------------------------------------------------------------------
+
 install: $(PROGRAM)
-	install em ${BINDIR}
-	cp emacs.hlp ${LIBDIR}
-	cp emacs.rc ${LIBDIR}/.emacsrc
-	chmod 755 ${BINDIR}/em
-	chmod 644 ${LIBDIR}/emacs.hlp ${LIBDIR}/.emacsrc
+	$(E) "  INSTALL " $(PROGRAM) " -> " $(INSTALL_BIN)
+	$(Q) install -d "$(INSTALL_BIN)"
+	$(Q) install -m 755 "$(PROGRAM)$(PROG_EXT)" "$(INSTALL_BIN)/$(PROGRAM)$(PROG_EXT)"
+
+configs-install:
+	$(E) "  CONFIG  " "configs/nanox -> " $(INSTALL_CONF)
+	$(Q) install -d "$(INSTALL_CONF)"
+	$(Q) cp -r configs/nanox/* "$(INSTALL_CONF)/"
+
+install-all: install configs-install
 
 source:
 	@mv makefile makefile.bak

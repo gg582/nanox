@@ -20,7 +20,8 @@
 #include "edef.h"
 #include "efunc.h"
 
-#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define	MARGIN	8
 #define	SCRSIZ	64
@@ -28,18 +29,18 @@
 #define BEL     0x07
 #define ESC     0x1B
 
-static void tcapkopen(void);
-static void tcapkclose(void);
-static void tcapmove(int, int);
-static void tcapeeol(void);
-static void tcapeeop(void);
-static void tcapbeep(void);
-static void tcaprev(int);
-static int tcapcres(char *);
+// void tcapkopen(void);
+// void tcapkclose(void);
+// void tcapmove(int, int);
+// void tcapeeol(void);
+// void tcapeeop(void);
+// void tcapbeep(void);
+// void tcaprev(int);
+// int tcapcres(char *);
 static void putpad(char *str);
 
-static void tcapopen(void);
-static void tcapclose(void);
+// void tcapopen(void);
+// void tcapclose(void);
 
 #define TCAPSLEN 315
 static char tcapbuf[TCAPSLEN];
@@ -70,7 +71,7 @@ struct terminal term = {
 	tcapcres,
 };
 
-static void tcapopen(void)
+void tcapopen(void)
 {
 	char *t, *p;
 	char tcbuf[1024];
@@ -146,7 +147,7 @@ static void tcapopen(void)
 	ttopen();
 }
 
-static void tcapclose(void)
+void tcapclose(void)
 {
 	putpad(tgoto(CM, 0, term.t_nrow));
 	putpad(TE);
@@ -154,7 +155,7 @@ static void tcapclose(void)
 	ttclose();
 }
 
-static void tcapkopen(void)
+void tcapkopen(void)
 {
 	putpad(TI);
 	ttflush();
@@ -164,23 +165,23 @@ static void tcapkopen(void)
 	strcpy(sres, "NORMAL");
 }
 
-static void tcapkclose(void)
+void tcapkclose(void)
 {
 	putpad(TE);
 	ttflush();
 }
 
-static void tcapmove(int row, int col)
+void tcapmove(int row, int col)
 {
 	putpad(tgoto(CM, col, row));
 }
 
-static void tcapeeol(void)
+void tcapeeol(void)
 {
 	putpad(CE);
 }
 
-static void tcapeeop(void)
+void tcapeeop(void)
 {
 	putpad(CL);
 }
@@ -190,7 +191,7 @@ static void tcapeeop(void)
  *
  * @state: FALSE = normal video, TRUE = reverse video.
  */
-static void tcaprev(int state)
+void tcaprev(int state)
 {
 	if (state) {
 		if (SO != NULL)
@@ -200,12 +201,12 @@ static void tcaprev(int state)
 }
 
 /* Change screen resolution. */
-static int tcapcres(char *res)
+int tcapcres(char *res)
 {
 	return TRUE;
 }
 
-static void tcapbeep(void)
+void tcapbeep(void)
 {
 	ttputc(BEL);
 }

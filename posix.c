@@ -14,6 +14,8 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <termios.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -22,6 +24,8 @@
 #include "edef.h"
 #include "efunc.h"
 #include "utf8.h"
+
+extern struct terminal term;
 
 static int kbdflgs;				/* saved keyboard fd flags      */
 static int kbdpoll;				/* in O_NDELAY mode             */

@@ -9,7 +9,13 @@
  *	modified by Petri Kutvonen
  */
 
-#include        <stdio.h>
+#include <stdio.h>
+
+#include <stdlib.h>
+
+#include <string.h>
+
+
 
 #include "estruct.h"
 #include "edef.h"
@@ -160,6 +166,27 @@ int zotbuf(struct buffer *bp)
 		bp1->b_bufp = bp2;
 	free((char *)bp);			/* Release buffer block */
 	return TRUE;
+}
+
+void bfreeall(void)
+{
+	struct buffer *bp = bheadp;
+	while (bp != NULL) {
+		struct buffer *next = bp->b_bufp;
+		struct line *hlp = bp->b_linep;
+		if (hlp) {
+			struct line *lp = hlp->l_fp;
+			while (lp != hlp) {
+				struct line *nlp = lp->l_fp;
+				free(lp);
+				lp = nlp;
+			}
+			free(hlp);
+		}
+		free(bp);
+		bp = next;
+	}
+	bheadp = NULL;
 }
 
 /*

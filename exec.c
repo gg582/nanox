@@ -8,11 +8,18 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
 #include "line.h"
+
+static char *dname[] = {
+	"if", "else", "endif", "goto", "return", "endm",
+	"while", "endwhile", "break", "force"
+};
 
 /*
  * Execute a named command even if it is not bound.

@@ -23,11 +23,14 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
 #include "line.h"
+
+extern struct terminal term;
 
 static int echo_char(int c, int col);
 
@@ -165,7 +168,7 @@ int isearch(int f, int n)
 	 */
 
 	c = ectoc(expc = get_char());		/* Get the first character    */
-	if ((c == IS_FORWARD) || (c == IS_REVERSE)) {	/* Reuse old search string?   */
+	if ((c == IS_FORWARD) || (c == IS_REVERSE) || (expc == metac)) {	/* Reuse old search string?   */
 		for (cpos = 0; pat[cpos] != 0; cpos++)	/* Yup, find the length           */
 			col = echo_char(pat[cpos], col);	/*  and re-echo the string    */
 		if (c == IS_REVERSE) {		/* forward search?            */
@@ -183,8 +186,13 @@ int isearch(int f, int n)
 		/* Check for special characters first: */
 		/* Most cases here change the search */
 
-		if (expc == metac)		/* Want to quit searching?    */
-			return TRUE;		/* Quit searching now         */
+		if (expc == metac) {		/* Sequential search?    */
+			status = scanmore(pat, n);
+			update(FALSE);
+			expc = get_char();
+			c = ectoc(expc);
+			continue;
+		}
 
 		switch (c) {			/* dispatch on the input char */
 		case IS_ABORT:			/* If abort search request    */
@@ -201,8 +209,7 @@ int isearch(int f, int n)
 			continue;		/* Go continue with the search */
 
 		case IS_NEWLINE:		/* Carriage return            */
-			c = '\n';		/* Make it a new line         */
-			break;			/* Make sure we use it        */
+			return TRUE;		/* Exit search and stay here  */
 
 		case IS_QUOTE:			/* Quote character            */
 			c = ectoc(expc = get_char());	/* Get the next char          */

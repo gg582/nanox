@@ -7,12 +7,16 @@
  */
 
 #include        <stdio.h>
-#include	"estruct.h"
+#include        <stdlib.h>
+#include        <string.h>
+#include       	"estruct.h"
 #include        "edef.h"
-#include	"efunc.h"
+#include	      "efunc.h"
+#include        "util.h"
 
 static FILE *ffp;				/* File pointer, all functions. */
 static int eofflag;				/* end-of-file flag */
+extern int flen;
 
 /*
  * Open a file for reading.
@@ -130,7 +134,7 @@ int ffgetline(void)
 			if (i >= flen) {
 				if ((tmpline = malloc(flen + NSTRING)) == NULL)
 					return FIOMEM;
-				strncpy(tmpline, fline, flen);
+				mystrscpy(tmpline, fline, flen);
 				flen += NSTRING;
 				free(fline);
 				fline = tmpline;

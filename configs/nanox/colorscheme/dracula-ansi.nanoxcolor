@@ -1,0 +1,11 @@
+[styles]
+normal  = fg=white bg=black
+comment = fg=bright_black
+string  = fg=yellow
+number  = fg=magenta
+bracket = fg=cyan
+operator= fg=magenta
+keyword = fg=magenta bold=true
+return  = fg=bright_red bold=true
+ternary = fg=magenta bold=true
+error   = fg=red underline=true

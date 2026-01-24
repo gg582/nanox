@@ -1,0 +1,11 @@
+[styles]
+normal  = fg=#272822 bg=#fafafa
+comment = fg=#75715e
+string  = fg=#28a745
+number  = fg=#ae81ff
+bracket = fg=#272822
+operator= fg=#d73a49
+keyword = fg=#d73a49 bold=true
+return  = fg=#d73a49 bold=true
+ternary = fg=#d73a49 bold=true
+error   = fg=#d73a49 underline=true

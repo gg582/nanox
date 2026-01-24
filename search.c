@@ -58,7 +58,10 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include "util.h"
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
@@ -71,9 +74,11 @@
  * search functions.
  */
 static short int magical;
+extern struct line * matchline;
+extern int matchoff;
 static short int rmagical;
-static struct magic mcpat[NPAT];		/* The magic pattern. */
-static struct magic tapcm[NPAT];		/* The reversed magic patterni. */
+extern struct magic mcpat[NPAT];		/* The magic pattern. */
+extern struct magic tapcm[NPAT];		/* The reversed magic patterni. */
 static struct magic_replacement rmcpat[NPAT];	/* The replacement magic array. */
 
 static int amatch(struct magic *mcptr, int direct, struct line **pcwline, int *pcwoff);
@@ -1180,7 +1185,7 @@ static int rmcstr(void)
 					status = FALSE;
 					break;
 				}
-				strncpy(rmcptr->rstr, patptr - mj, mj);
+				mystrscpy(rmcptr->rstr, patptr - mj, mj);
 				rmcptr++;
 				mj = 0;
 			}
@@ -1202,7 +1207,7 @@ static int rmcstr(void)
 				break;
 			}
 
-			strncpy(rmcptr->rstr, patptr - mj, mj + 1);
+			mystrscpy(rmcptr->rstr, patptr - mj, mj + 1);
 
 			/* If MC_ESC is not the last character
 			 * in the string, find out what it is
@@ -1229,7 +1234,7 @@ static int rmcstr(void)
 			mlwrite("%%Out of memory.");
 			status = FALSE;
 		}
-		strncpy(rmcptr->rstr, patptr - mj, mj);
+		mystrscpy(rmcptr->rstr, patptr - mj, mj);
 		rmcptr++;
 	}
 

@@ -6,14 +6,16 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
 
 #include <sys/errno.h>
 
-static char *lname[NLOCKS];			/* names of all locked files */
-static int numlocks;				/* # of current locks active */
+extern char *lname[NLOCKS];			/* names of all locked files */
+extern int numlocks;				/* # of current locks active */
 
 /*
  * lockchk:

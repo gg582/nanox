@@ -16,11 +16,14 @@
 #include "line.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
 #include "utf8.h"
+
+extern struct kill *kbufp;
 
 #define	BLOCK_SIZE 16				/* Line block chunk size. */
 
@@ -44,6 +47,8 @@ struct line *lalloc(int used)
 	}
 	lp->l_size = size;
 	lp->l_used = used;
+	lp->hl_start_state = (HighlightState){HS_NORMAL, 0};
+	lp->hl_end_state = (HighlightState){HS_NORMAL, 0};
 	return lp;
 }
 
@@ -579,8 +584,8 @@ void kdelete(void)
 
 		/* and reset all the kill buffer pointers */
 		kbufh = kbufp = NULL;
-		kused = KBLOCK;
 	}
+	kused = KBLOCK;
 }
 
 /*

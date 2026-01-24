@@ -10,8 +10,8 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h>
-#include <unistd.h>
 #include <ctype.h>
 #include <stdbool.h>
 #include <string.h>
@@ -25,10 +25,19 @@
 #include "wrapper.h"
 #include "utf8.h"
 #include "util.h"
+#include "highlight.h"
+
+extern struct terminal term;
+
+typedef struct {
+	unicode_t ch;
+	int fg;
+	int bg;
+} video_cell;
 
 struct video {
 	int v_flag;				/* Flags */
-	unicode_t v_text[1];			/* Screen data. */
+	video_cell v_text[1];			/* Screen data. */
 };
 
 #define VFCHG   0x0001				/* Changed flag                 */
@@ -37,6 +46,8 @@ struct video {
 #define	VFCOL	0x0010				/* color change requested       */
 
 static struct video **vscreen;			/* Virtual screen. */
+static int current_color_fg = -1;
+static int current_color_bg = -1;
 
 static int displaying = TRUE;
 #include <signal.h>
@@ -140,7 +151,7 @@ static int window_column_number(struct window *wp)
 		unicode_t c;
 		int bytes = utf8_to_unicode(lp->l_text, i, len, &c);
 		i += bytes;
-		col = next_column(col, c);
+		col = next_column(col, c, tabmask);
 	}
 	return col + 1;
 }
@@ -168,7 +179,7 @@ void vtinit(void)
 	vscreen = xmalloc(term.t_mrow * sizeof(struct video *));
 
 	for (i = 0; i < term.t_mrow; ++i) {
-		vp = xmalloc(sizeof(struct video) + term.t_mcol * 4);
+		vp = xmalloc(sizeof(struct video) + term.t_mcol * sizeof(video_cell));
 		vp->v_flag = 0;
 		vscreen[i] = vp;
 	}
@@ -182,11 +193,20 @@ void vtinit(void)
  */
 void vttidy(void)
 {
+	int i;
 	mlerase();
 	movecursor(term.t_nrow, 0);
 	TTflush();
 	TTclose();
 	TTkclose();
+	if (vscreen != NULL) {
+		for (i = 0; i < term.t_mrow; ++i) {
+			if (vscreen[i] != NULL)
+				free(vscreen[i]);
+		}
+		free(vscreen);
+		vscreen = NULL;
+	}
 	write(1, "\r", 1);
 }
 
@@ -224,7 +244,9 @@ static void vtputc(int c)
 
 	if (vtcol >= term.t_ncol) {
 		++vtcol;
-		vp->v_text[term.t_ncol - 1] = '$';
+		vp->v_text[term.t_ncol - 1].ch = '$';
+		vp->v_text[term.t_ncol - 1].fg = current_color_fg;
+		vp->v_text[term.t_ncol - 1].bg = current_color_bg;
 		return;
 	}
 
@@ -255,8 +277,11 @@ static void vtputc(int c)
 		return;
 	}
 
-	if (vtcol >= 0)
-		vp->v_text[vtcol] = c;
+	if (vtcol >= 0) {
+		vp->v_text[vtcol].ch = c;
+		vp->v_text[vtcol].fg = current_color_fg;
+		vp->v_text[vtcol].bg = current_color_bg;
+	}
 	++vtcol;
 }
 
@@ -266,10 +291,14 @@ static void vtputc(int c)
  */
 static void vteeol(void)
 {
-	unicode_t *vcp = vscreen[vtrow]->v_text;
+	video_cell *vcp = vscreen[vtrow]->v_text;
 
-	while (vtcol < term.t_ncol)
-		vcp[vtcol++] = ' ';
+	while (vtcol < term.t_ncol) {
+		vcp[vtcol].ch = ' ';
+		vcp[vtcol].fg = current_color_fg;
+		vcp[vtcol].bg = current_color_bg;
+		vtcol++;
+	}
 }
 
 /*
@@ -412,14 +441,91 @@ static int reframe(struct window *wp)
 	return TRUE;
 }
 
-static void show_line(struct line *lp)
+static void show_line(struct window *wp, struct line *lp)
 {
-	int i = 0, len = llength(lp);
+	int len = llength(lp);
 
-	while (i < len) {
+	/* Highlight logic */
+	SpanVec spans;
+	HighlightState end_state;
+
+	const char *fname = wp->w_bufp->b_fname;
+	if (!fname || !*fname)
+		fname = wp->w_bufp->b_bname;
+	const HighlightProfile *profile = highlight_get_profile(fname);
+
+	highlight_line(lp->l_text, len, lp->hl_start_state, profile, &spans, &end_state);
+
+	if (memcmp(&lp->hl_end_state, &end_state, sizeof(HighlightState)) != 0) {
+		lp->hl_end_state = end_state;
+		struct line *next = lforw(lp);
+		if (next != curbp->b_linep) {
+			next->hl_start_state = end_state;
+			lchange(WFHARD);
+		}
+	}
+
+	int current_span_idx = 0;
+	int char_idx = 0; /* byte index */
+
+	while (char_idx < len) {
+		/* Selection marker logic */
+		if (nanox_sel_active) {
+			if (lp == nanox_sel_start_lp && char_idx == nanox_sel_start_off) {
+				current_color_fg = colorscheme_get(HL_NOTICE).fg;
+				current_color_bg = colorscheme_get(HL_NOTICE).bg;
+				vtputc('['); vtputc('v'); vtputc(']');
+			}
+			if (lp == nanox_sel_end_lp && char_idx == nanox_sel_end_off) {
+				current_color_fg = colorscheme_get(HL_NOTICE).fg;
+				current_color_bg = colorscheme_get(HL_NOTICE).bg;
+				vtputc('['); vtputc('x'); vtputc(']');
+			}
+		}
+
+		int style = HL_NORMAL;
+		while (current_span_idx < spans.count) {
+			Span *s = (spans.heap_spans) ? &spans.heap_spans[current_span_idx] : &spans.spans[current_span_idx];
+			if (char_idx >= s->end) {
+				current_span_idx++;
+				continue;
+			}
+			if (char_idx >= s->start) {
+				style = s->style;
+			}
+			break;
+		}
+
 		unicode_t c;
-		i += utf8_to_unicode(lp->l_text, i, len, &c);
+		int bytes = utf8_to_unicode(lp->l_text, char_idx, len, &c);
+
+		current_color_fg = colorscheme_get(style).fg;
+		current_color_bg = colorscheme_get(style).bg;
+
 		vtputc(c);
+		char_idx += bytes;
+	}
+
+	if (nanox_sel_active) {
+		if (lp == nanox_sel_start_lp && char_idx == nanox_sel_start_off) {
+			current_color_fg = colorscheme_get(HL_NOTICE).fg;
+			current_color_bg = colorscheme_get(HL_NOTICE).bg;
+			vtputc('['); vtputc('v'); vtputc(']');
+		}
+		if (lp == nanox_sel_end_lp && char_idx == nanox_sel_end_off) {
+			current_color_fg = colorscheme_get(HL_NOTICE).fg;
+			current_color_bg = colorscheme_get(HL_NOTICE).bg;
+			vtputc('['); vtputc('x'); vtputc(']');
+		}
+	}
+
+	span_vec_free(&spans);
+
+	/* Fill trailing whitespace using the default style colors */
+	{
+		HighlightStyle normal = colorscheme_get(HL_NORMAL);
+		current_color_fg = normal.fg;
+		current_color_bg = normal.bg;
 	}
 }
 
@@ -446,7 +552,7 @@ static void updone(struct window *wp)
 	vscreen[sline]->v_flag |= VFCHG;
 	vscreen[sline]->v_flag &= ~VFREQ;
 	vtmove(sline, 0);
-	show_line(lp);
+	show_line(wp, lp);
 	vteeol();
 }
 
@@ -472,7 +578,7 @@ static void updall(struct window *wp)
 		vtmove(sline, 0);
 		if (lp != wp->w_bufp->b_linep) {
 			/* if we are not at the end */
-			show_line(lp);
+			show_line(wp, lp);
 			lp = lforw(lp);
 		}
 
@@ -510,7 +616,7 @@ void updpos(void)
 
 		bytes = utf8_to_unicode(lp->l_text, i, curwp->w_doto, &c);
 		i += bytes;
-		curcol = next_column(curcol, c);
+		curcol = next_column(curcol, c, tabmask);
 	}
 
 	/* if extended, flag so and update the virtual line image */
@@ -540,7 +646,7 @@ void upddex(void)
 			if ((wp != curwp) || (lp != wp->w_dotp) ||
 			    (curcol < term.t_ncol - 1)) {
 				vtmove(i, 0);
-				show_line(lp);
+				show_line(wp, lp);
 				vteeol();
 
 				/* this line no longer is extended */
@@ -613,14 +719,14 @@ static void updext(void)
 	/* once we reach the left edge                                  */
 	vtmove(currow, -lbound);		/* start scanning offscreen */
 	lp = curwp->w_dotp;			/* line to output */
-	show_line(lp);
+	show_line(curwp, lp);
 
 	/* truncate the virtual line, restore tab offset */
 	vteeol();
 	taboff = 0;
 
 	/* and put a '$' in column 1 */
-	vscreen[currow]->v_text[0] = '$';
+	vscreen[currow]->v_text[0].ch = '$';
 }
 
 static void TTputs(const char *s)
@@ -725,15 +831,19 @@ static int updateline(int row, struct video *vp)
 {
 	int maxchar = 0, analyzed = 0;
 	unsigned char array[256];
+	unicode_t text_buf[MAXCOL];
 	bool spellcheck = curwp->w_bufp->b_mode & MDSPELL;
 
 	movecursor(row, 0);			/* Go to start of line. */
+	TTputs("\033[0m");          /* Reset attributes */
+	int phys_fg = -1;
+	int phys_bg = -1;
 
 	/* scan through the line and dump it to the the
 	   virtual screen array, finding where the last non-space is  */
 	for (int i = 0; i < term.t_ncol; i++) {
-		unicode_t ch = vp->v_text[i];
-		if (ch != ' ')
+		text_buf[i] = vp->v_text[i].ch;
+		if (text_buf[i] != ' ' || vp->v_text[i].bg != -1)
 			maxchar = i + 1;
 	}
 
@@ -745,18 +855,61 @@ static int updateline(int row, struct video *vp)
 	}
 
 	if (spellcheck)
-		analyzed = findwords(vp->v_text, maxchar, array, sizeof(array));
+		analyzed = findwords(text_buf, maxchar, array, sizeof(array));
 
 #define SPELLSTART "\033[1m"
 #define SPELLSTOP "\033[22m"
 
 	int started = 0;
 	for (int i = 0; i < maxchar; i++) {
+		video_cell *cell = &vp->v_text[i];
+
+		/* Color Handling */
+		if (cell->fg != phys_fg) {
+			if (cell->fg == -1) {
+				TTputs("\033[39m");
+			} else if (cell->fg & 0x01000000) {
+				char buf[32];
+				snprintf(buf, sizeof(buf), "\033[38;2;%d;%d;%dm",
+					(cell->fg >> 16) & 0xFF, (cell->fg >> 8) & 0xFF, cell->fg & 0xFF);
+				TTputs(buf);
+			} else if (cell->fg >= 8 && cell->fg < 16) {
+				char buf[16];
+				snprintf(buf, sizeof(buf), "\033[%dm", 90 + (cell->fg - 8));
+				TTputs(buf);
+			} else {
+				char buf[16];
+				snprintf(buf, sizeof(buf), "\033[%dm", 30 + cell->fg);
+				TTputs(buf);
+			}
+			phys_fg = cell->fg;
+		}
+
+		if (cell->bg != phys_bg) {
+			if (cell->bg == -1) {
+				TTputs("\033[49m");
+			} else if (cell->bg & 0x01000000) {
+				char buf[32];
+				snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
+					(cell->bg >> 16) & 0xFF, (cell->bg >> 8) & 0xFF, cell->bg & 0xFF);
+				TTputs(buf);
+			} else if (cell->bg >= 8 && cell->bg < 16) {
+				char buf[16];
+				snprintf(buf, sizeof(buf), "\033[%dm", 100 + (cell->bg - 8));
+				TTputs(buf);
+			} else {
+				char buf[16];
+				snprintf(buf, sizeof(buf), "\033[%dm", 40 + cell->bg);
+				TTputs(buf);
+			}
+			phys_bg = cell->bg;
+		}
+
 		if (i < analyzed && (array[i] & BAD_WORD_BEGIN)) {
 			started = 1;
 			TTputs(SPELLSTART);
 		}
-		TTputc(vp->v_text[i]);
+		TTputc(cell->ch);
 		if (i < analyzed && (array[i] & BAD_WORD_END)) {
 			TTputs(SPELLSTOP);
 			started = 0;
@@ -764,8 +917,9 @@ static int updateline(int row, struct video *vp)
 	}
 	if (started)
 		TTputs(SPELLSTOP);
-	ttcol = term.t_ncol;
+	ttcol = maxchar;
 
+	TTputs("\033[0m"); /* Reset */
 	TTeeol();
 	/* turn rev video off */
 	TTrev(FALSE);

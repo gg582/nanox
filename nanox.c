@@ -18,6 +18,10 @@
 #include "line.h"
 #include "util.h"
 #include "version.h"
+#include "highlight.h"
+#include "platform.h"
+
+extern struct terminal term;
 
 struct nanox_config nanox_cfg = {
 	.hint_bar = true,
@@ -25,8 +29,8 @@ struct nanox_config nanox_cfg = {
 	.warning_format = "--W",
 	.error_format = "--E",
 	.help_key = SPEC | 'P',
-	.soft_tab = true,
-	.soft_tab_width = 4,
+	.soft_tab = false,
+	.soft_tab_width = 8,
 	.case_sensitive_default = false,
 };
 
@@ -35,72 +39,64 @@ char file_reserve[4][PATH_MAX];
 static enum nanox_lamp_state lamp_state = NANOX_LAMP_OFF;
 
 struct nanox_help_topic {
-	const char *title;
-	const char *const *lines;
+	char *title;
+	char **lines;
 	size_t line_count;
+	size_t line_cap;
 };
 
 static bool help_active;
 static int help_selected;
 static int help_scroll;
 static bool help_show_section;
+static int help_section_scroll;
 
-static const char *const help_keys[] = {
-	"Alt+O  open file",
-	"Alt+S  save file",
-	"Alt+Q  quit editor",
-	"Alt+W  search forward",
-	"Alt+H  replace text",
-	"Alt+G  goto line",
-	"Alt+K  cut line",
-	"Alt+U  paste",
-	"F2 Save / F3 Open / F4 Quit",
-	"F5 Search / F6 Replace",
-	"F7 Cut line / F8 Paste",
-	"F9..F12 reservation slots",
-};
+static struct nanox_help_topic *dynamic_topics = NULL;
+static size_t dynamic_topic_count = 0;
 
-static const char *const help_file_mode[] = {
-	"File Mode always speaks about files.",
-	"Buffers exist internally but are hidden.",
-	"Lists, switches, and status text say File.",
-	"Messages use the [File Mode] prefix.",
-};
+static void load_help_file(void)
+{
+	if (dynamic_topics) return;
 
-static const char *const help_slots[] = {
-	"Reserve slots with Ctrl+F9..F12 or Alt+9/0/-/=",
-	"Jump with F9..F12. Paths are stored globally.",
-	"Empty jumps raise a warning lamp.",
-	"Messages show which slot is in use.",
-};
+	char *path = flook("emacs.hlp", TRUE);
+	if (!path) return;
 
-static const char *const help_config[] = {
-	"Config path: ~/.local/share/nanox/config",
-	"[ui] hint_bar=true|false",
-	"[ui] warning_lamp=true|false",
-	"[ui] warning_format=--W",
-	"[ui] error_format=--E",
-	"[ui] help_key=F1",
-	"[edit] soft_tab=true|false",
-	"[edit] soft_tab_width=4",
-	"[search] case_sensitive_default=false",
-};
+	FILE *fp = fopen(path, "r");
+	if (!fp) return;
 
-static const char *const help_build[] = {
-	"Engine: MicroEmacs/uEmacs core",
-	"Renderer: termcap based",
-	"Spell: hunspell (if available)",
-	"UTF-8 aware editing",
-	"Nano-style UI layer (nanox)",
-};
+	char line[256];
+	struct nanox_help_topic *curr = NULL;
 
-static const struct nanox_help_topic help_topics[] = {
-	{ "Key bindings", help_keys, ARRAY_SIZE(help_keys) },
-	{ "File Mode concept", help_file_mode, ARRAY_SIZE(help_file_mode) },
-	{ "File reservation slots", help_slots, ARRAY_SIZE(help_slots) },
-	{ "Configuration options", help_config, ARRAY_SIZE(help_config) },
-	{ "Build features", help_build, ARRAY_SIZE(help_build) },
-};
+	while (fgets(line, sizeof(line), fp)) {
+		size_t len = strlen(line);
+		while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
+			line[--len] = 0;
+		}
+
+		if (strncmp(line, "=>", 2) == 0) {
+			dynamic_topics = realloc(dynamic_topics, sizeof(struct nanox_help_topic) * (dynamic_topic_count + 1));
+			curr = &dynamic_topics[dynamic_topic_count++];
+			char *title = line + 2;
+			while (*title == ' ') title++;
+			curr->title = malloc(strlen(title) + 1);
+			if (curr->title) strcpy(curr->title, title);
+			curr->lines = NULL;
+			curr->line_count = 0;
+			curr->line_cap = 0;
+		} else if (curr && strncmp(line, "-------", 7) != 0) {
+			if (curr->line_count >= curr->line_cap) {
+				curr->line_cap = curr->line_cap ? curr->line_cap * 2 : 16;
+				curr->lines = realloc(curr->lines, sizeof(char *) * curr->line_cap);
+			}
+			curr->lines[curr->line_count] = malloc(strlen(line) + 1);
+			if (curr->lines[curr->line_count]) {
+				strcpy(curr->lines[curr->line_count], line);
+				curr->line_count++;
+			}
+		}
+	}
+	fclose(fp);
+}
 
 static void config_defaults(void)
 {
@@ -109,8 +105,8 @@ static void config_defaults(void)
 	mystrscpy(nanox_cfg.warning_format, "--W", sizeof(nanox_cfg.warning_format));
 	mystrscpy(nanox_cfg.error_format, "--E", sizeof(nanox_cfg.error_format));
 	nanox_cfg.help_key = SPEC | 'P';
-	nanox_cfg.soft_tab = true;
-	nanox_cfg.soft_tab_width = 4;
+	nanox_cfg.soft_tab = false;
+	nanox_cfg.soft_tab_width = 8;
 	nanox_cfg.case_sensitive_default = false;
 }
 
@@ -207,16 +203,24 @@ static void parse_config_line(const char *section, char *line)
 
 static void parse_config_file(void)
 {
-	const char *home = getenv("HOME");
 	char path[PATH_MAX];
-	FILE *fp;
+	char dir[512];
+	FILE *fp = NULL;
 	char line[512];
 	char section[32] = "";
 
-	if (!home)
-		return;
-	snprintf(path, sizeof(path), "%s/.local/share/nanox/config", home);
+	/* 1. Try Config Dir */
+	nanox_get_user_config_dir(dir, sizeof(dir));
+	nanox_path_join(path, sizeof(path), dir, "config");
 	fp = fopen(path, "r");
+
+	/* 2. Try Data Dir */
+	if (!fp) {
+		nanox_get_user_data_dir(dir, sizeof(dir));
+		nanox_path_join(path, sizeof(path), dir, "config");
+		fp = fopen(path, "r");
+	}
+
 	if (!fp)
 		return;
 
@@ -240,6 +244,50 @@ static void parse_config_file(void)
 	fclose(fp);
 }
 
+static bool join_if_exists(char *out, size_t cap, const char *dir, const char *file)
+{
+	if (!dir || !*dir)
+		return false;
+	nanox_path_join(out, cap, dir, file);
+	if (!out[0])
+		return false;
+	return nanox_file_exists(out);
+}
+
+static bool find_highlight_rules(char *out, size_t cap)
+{
+	if (!out || cap == 0)
+		return false;
+
+	out[0] = 0;
+	char dir[512];
+
+	nanox_get_user_config_dir(dir, sizeof(dir));
+	if (join_if_exists(out, cap, dir, "highlight.ini"))
+		return true;
+	if (join_if_exists(out, cap, dir, "syntax.ini"))
+		return true;
+
+	nanox_get_user_data_dir(dir, sizeof(dir));
+	if (join_if_exists(out, cap, dir, "highlight.ini"))
+		return true;
+	if (join_if_exists(out, cap, dir, "syntax.ini"))
+		return true;
+
+	const char *fallbacks[] = {
+		"configs/nanox/syntax.ini",
+		"syntax.ini",
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(fallbacks); i++) {
+		if (nanox_file_exists(fallbacks[i])) {
+			mystrscpy(out, fallbacks[i], cap);
+			return true;
+		}
+	}
+	return false;
+}
+
 void nanox_apply_config(void)
 {
 	if (nanox_cfg.soft_tab)
@@ -258,6 +306,14 @@ void nanox_init(void)
 	config_defaults();
 	parse_config_file();
 	nanox_apply_config();
+
+	/* Initialize Syntax Highlighting */
+	char path[1024];
+
+	if (!find_highlight_rules(path, sizeof(path)))
+		path[0] = 0;
+
+	highlight_init(path[0] ? path : NULL);
 }
 
 void nanox_set_lamp(enum nanox_lamp_state state)
@@ -384,56 +440,171 @@ static void help_blank_line(int row)
 		ttputc(' ');
 }
 
+/* selection mode */
+int nanox_selection_mode(int f, int n)
+{
+	int c;
+	struct line *dotp;
+	int doto;
+
+	/* Reset selection */
+	nanox_sel_active = 1;
+	nanox_sel_start_lp = curwp->w_dotp;
+	nanox_sel_start_off = curwp->w_doto;
+	nanox_sel_end_lp = NULL;
+	nanox_sel_end_off = 0;
+
+	mlwrite("SELECT: Ctrl-, Start, Ctrl-. End, Esc Cut, Ent Copy");
+
+	while (1) {
+		update(FALSE);
+		c = getcmd();
+
+		if (c == (CONTROL | '[')) { /* Esc - CUT */
+			if (nanox_sel_start_lp && nanox_sel_end_lp) {
+				/* Set region pointers */
+				curwp->w_dotp = nanox_sel_end_lp;
+				curwp->w_doto = nanox_sel_end_off;
+				curwp->w_markp = nanox_sel_start_lp;
+				curwp->w_marko = nanox_sel_start_off;
+				killregion(FALSE, 1);
+				nanox_sel_active = 0;
+				mlwrite("Region Cut");
+				break;
+			}
+			/* If no region fully defined, just exit or treat current as end? */
+			/* Let's assume Esc cancels if no region, or cuts if region. */
+			/* Actually prompt said "Esc cuts". */
+			nanox_sel_active = 0;
+			mlwrite("Selection Cancelled");
+			break;
+		}
+
+		if (c == (CONTROL | 'M')) { /* Enter - COPY */
+			if (nanox_sel_start_lp && nanox_sel_end_lp) {
+				curwp->w_dotp = nanox_sel_end_lp;
+				curwp->w_doto = nanox_sel_end_off;
+				curwp->w_markp = nanox_sel_start_lp;
+				curwp->w_marko = nanox_sel_start_off;
+				copyregion(FALSE, 1);
+				nanox_sel_active = 0;
+				mlwrite("Region Copied");
+				break;
+			}
+			nanox_sel_active = 0;
+			mlwrite("Selection Cancelled");
+			break;
+		}
+
+		if (c == (CONTROL | ',') || c == ',') { /* Start Mark */
+			nanox_sel_start_lp = curwp->w_dotp;
+			nanox_sel_start_off = curwp->w_doto;
+			mlwrite("Start set. Move to end and press Ctrl-.");
+		}
+		else if (c == (CONTROL | '.') || c == '.') { /* End Mark */
+			nanox_sel_end_lp = curwp->w_dotp;
+			nanox_sel_end_off = curwp->w_doto;
+			mlwrite("End set. Esc to Cut, Enter to Copy");
+		}
+		else if (c == (CONTROL | 'G')) {
+			nanox_sel_active = 0;
+			mlwrite("Selection Cancelled");
+			break;
+		}
+		else if (c != (CONTROL | 'G') && c != (CONTROL | '[')) {
+			/* Only execute bound commands if they are not potentially harmful in this mode */
+			if (c < 0 || (c & SPEC && (c & 0xFF) > 0x7F)) {
+				/* Ignore invalid special keys */
+			} else {
+				execute(c, FALSE, 1);
+			}
+		}
+	}
+	nanox_sel_active = 0;
+	return TRUE;
+}
+
+/* Help System Enhancements */
+
+static char help_msg[128];
+
 void nanox_help_render(void)
 {
-	int row;
-	const size_t topics = ARRAY_SIZE(help_topics);
+	load_help_file();
+	if (!dynamic_topics) return;
 
-	for (row = 0; row <= term.t_nrow; ++row)
-		help_blank_line(row);
+	int visible_rows = nanox_hint_top_row() - 3;
+	if (visible_rows < 1) visible_rows = 1;
+
+	/* Clear screen completely */
+	TTmove(0, 0);
+	TTeeop();
 
 	movecursor(0, 0);
-	help_puts("nanox help - i: Up, k: Down, Enter open, Backspace back");
+	if (help_show_section) {
+		/* Header */
+		help_puts(" [ HELP: ");
+		help_puts(dynamic_topics[help_selected].title);
+		help_puts(" ]");
 
-	if (!help_show_section) {
-		for (size_t i = 0; i < topics && (int)i + 2 < nanox_hint_top_row(); ++i) {
-			row = 2 + (int)i;
-			movecursor(row, 0);
-			if ((int)i == help_selected)
-				help_puts(" > ");
-			else
-				help_puts("   ");
-			help_puts(help_topics[i].title);
-		}
-	} else {
-		const struct nanox_help_topic *topic = &help_topics[help_selected];
-		int r = 2;
 		movecursor(1, 0);
-		help_puts(topic->title);
-		for (size_t i = help_scroll; i < topic->line_count && r < nanox_hint_top_row(); ++i, ++r) {
+		for (int i = 0; i < term.t_ncol; i++) help_puts("-");
+
+		/* Content */
+		int r = 2;
+		struct nanox_help_topic *topic = &dynamic_topics[help_selected];
+		for (size_t i = help_section_scroll; i < topic->line_count && r < nanox_hint_top_row() - 1; ++i, ++r) {
 			movecursor(r, 0);
+			help_puts("  ");
 			help_puts(topic->lines[i]);
 		}
+
+		/* Footer */
+		movecursor(nanox_hint_top_row() - 1, 0);
+		for (int i = 0; i < term.t_ncol; i++) help_puts("-");
+		movecursor(nanox_hint_top_row() - 1, 2);
+		help_puts(" i/k: Scroll, Backspace: Back, F1: Close ");
+	} else {
+		/* Header */
+		help_puts(" [ NanoX Help System ]");
+
+		movecursor(1, 0);
+		for (int i = 0; i < term.t_ncol; i++) help_puts("-");
+
+		/* Menu */
+		int r = 2;
+		for (size_t i = help_scroll; i < dynamic_topic_count && r < nanox_hint_top_row() - 1; ++i, ++r) {
+			movecursor(r, 0);
+			if ((int)i == help_selected) {
+				help_puts(" > ");
+				help_puts(dynamic_topics[i].title);
+				help_puts(" <");
+			} else {
+				help_puts("   ");
+				help_puts(dynamic_topics[i].title);
+			}
+		}
+
+		/* Footer */
+		movecursor(nanox_hint_top_row() - 1, 0);
+		for (int i = 0; i < term.t_ncol; i++) help_puts("-");
+		movecursor(nanox_hint_top_row() - 1, 2);
+		help_puts(" i: Up, k: Down, Enter: View, F1/Esc: Exit ");
 	}
 	ttflush();
 }
-
-bool nanox_help_is_active(void)
-{
-	return help_active;
-}
-
 int nanox_help_command(int f, int n)
 {
 	help_active = true;
 	help_selected = 0;
 	help_scroll = 0;
 	help_show_section = false;
+	help_section_scroll = 0;
 	nanox_help_render();
 	return TRUE;
 }
 
-static void help_close(void)
+void help_close(void)
 {
 	help_active = false;
 	sgarbf = TRUE;
@@ -444,43 +615,68 @@ int nanox_help_handle_key(int key)
 	if (!help_active)
 		return FALSE;
 
+	if (key < 0) return TRUE;
+
+	int visible_rows = nanox_hint_top_row() - 3;
+	if (visible_rows < 1) visible_rows = 1;
+
 	switch (key) {
 	case CONTROL | 'G':
 	case CONTROL | '[':
 	case 27:
+	case SPEC | 'P': /* F1 */
 		help_close();
 		return TRUE;
-	case CONTROL | 'M':
-	case '\r':
-		help_show_section = true;
-		help_scroll = 0;
-		break;
-	case 0x7F:
+
+	case 0x7F: /* Backspace */
 	case CONTROL | 'H':
-		if (help_show_section)
+		if (help_show_section) {
 			help_show_section = false;
-		else
-			help_close();
-		break;
-	case 'i':
-	case 'I':
-		if (!help_show_section && help_selected > 0)
-			--help_selected;
-		else if (help_show_section && help_scroll > 0)
-			--help_scroll;
-		break;
-	case 'k':
-	case 'K': {
-		if (!help_show_section) {
-			if (help_selected < (int)ARRAY_SIZE(help_topics) - 1)
-				++help_selected;
 		} else {
-			const struct nanox_help_topic *topic = &help_topics[help_selected];
-			if (help_scroll + (nanox_hint_top_row() - 2) < (int)topic->line_count)
-				++help_scroll;
+			help_close();
+			return TRUE;
 		}
 		break;
-	}
+
+	case CONTROL | 'M':
+	case '\r':
+		if (!help_show_section) {
+			help_show_section = true;
+			help_section_scroll = 0;
+		}
+		break;
+
+	case 'i':
+	case 'I':
+	case SPEC | 'A': /* Up */
+		if (help_show_section) {
+			if (help_section_scroll > 0) help_section_scroll--;
+		} else {
+			if (help_selected > 0) {
+				--help_selected;
+				if (help_selected < help_scroll) help_scroll = help_selected;
+			}
+		}
+		break;
+
+	case 'j':
+	case 'J':
+	case 'k':
+	case 'K':
+	case SPEC | 'B': /* Down */
+		if (help_show_section) {
+			struct nanox_help_topic *topic = &dynamic_topics[help_selected];
+			if (help_section_scroll + visible_rows < (int)topic->line_count)
+				help_section_scroll++;
+		} else {
+			if (help_selected < (int)dynamic_topic_count - 1) {
+				++help_selected;
+				if (help_selected >= help_scroll + visible_rows)
+					help_scroll++;
+			}
+		}
+		break;
+
 	default:
 		break;
 	}
@@ -502,6 +698,8 @@ static int reserve_set(int slot)
 	char path[PATH_MAX];
 	int rc;
 
+	if (slot < 0 || slot >= 4) return FALSE;
+
 	snprintf(prompt, sizeof(prompt), "Reserve %s file: ", slot_name(slot));
 	rc = mlreply(prompt, path, sizeof(path));
 	if (rc != TRUE)
@@ -516,6 +714,8 @@ static int reserve_set(int slot)
 static int reserve_jump(int slot)
 {
 	int rc;
+
+	if (slot < 0 || slot >= 4) return FALSE;
 
 	if (!file_reserve[slot][0]) {
 		nanox_set_lamp(NANOX_LAMP_WARN);
@@ -542,3 +742,31 @@ int reserve_jump_1(int f, int n) { return reserve_jump(0); }
 int reserve_jump_2(int f, int n) { return reserve_jump(1); }
 int reserve_jump_3(int f, int n) { return reserve_jump(2); }
 int reserve_jump_4(int f, int n) { return reserve_jump(3); }
+
+void nanox_cleanup(void)
+{
+	if (dynamic_topics) {
+		for (size_t i = 0; i < dynamic_topic_count; i++) {
+			struct nanox_help_topic *topic = &dynamic_topics[i];
+			if (topic->title) free(topic->title);
+			if (topic->lines) {
+				for (size_t j = 0; j < topic->line_count; j++) {
+					if (topic->lines[j]) free(topic->lines[j]);
+				}
+				free(topic->lines);
+			}
+		}
+		free(dynamic_topics);
+		dynamic_topics = NULL;
+		dynamic_topic_count = 0;
+	}
+}
+
+bool nanox_help_is_active(void) {
+    return help_active;
+}
+
+/* Call original uEmacs help function or create a dummy */
+int help(int f, int n) {
+    return nanox_help_command(f, n);
+}

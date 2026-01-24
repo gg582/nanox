@@ -7,12 +7,19 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
 #include "wrapper.h"
+
+#include "util.h"
+
+extern struct name_bind names[];
+extern struct terminal  term;
 
 /*
  * Ask a yes or no question in the message line. Return either TRUE, FALSE, or
@@ -26,7 +33,7 @@ int mlyesno(char *prompt)
 
 	for (;;) {
 		/* build and prompt the user */
-		strcpy(buf, prompt);
+		mystrscpy(buf, prompt, sizeof(buf));
 		strcat(buf, " (y/n)? ");
 		mlwrite(buf);
 
@@ -370,6 +377,15 @@ static int decode_csi_sequence(int cmask)
 
 	if (ch >= 'E' && ch <= 'z' && ch != 'i' && ch != 'c') {
 		int modifier = (count > 0) ? params[count - 1] : 1;
+		if (ch == 'u') {
+			int key = params[0];
+			if (key < 128) {
+				int code = key;
+				if (code >= 'a' && code <= 'z')
+					code -= 0x20;
+				return code | apply_modifier_bits(modifier, cmask);
+			}
+		}
 		return SPEC | ch | apply_modifier_bits(modifier, cmask);
 	}
 

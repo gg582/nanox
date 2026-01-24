@@ -8,6 +8,8 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "estruct.h"
 #include "edef.h"
@@ -15,6 +17,9 @@
 #include "epath.h"
 #include "line.h"
 #include "util.h"
+
+extern struct key_tab keytab[];
+extern struct name_bind names[];
 
 int deskey(int f, int n)
 {						/* describe the command for a certain key */

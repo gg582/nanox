@@ -59,5 +59,8 @@ int reserve_jump_3(int f, int n);
 int reserve_jump_4(int f, int n);
 
 void nanox_message_prefix(const char *input, char *output, size_t outsz);
+void help_close(void);
+void nanox_cleanup(void);
+int nanox_selection_mode(int f, int n);
 
 #endif /* NANOX_H_ */

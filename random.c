@@ -7,6 +7,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 
 #include "estruct.h"
 #include "edef.h"
@@ -139,7 +140,7 @@ int getccol(int bflg)
 		i += utf8_to_unicode(dlp->l_text, i, len, &c);
 		if (c != ' ' && c != '\t' && bflg)
 			break;
-		col = next_column(col, c);
+		col = next_column(col, c, tabmask);
 	}
 	return col;
 }
@@ -451,8 +452,8 @@ int insert_newline(int f, int n)
 	if (n < 0)
 		return FALSE;
 
-	/* if we are in C mode and this is a default <NL> */
-	if (n == 1 && (curbp->b_mode & MDCMOD) && curwp->w_dotp != curbp->b_linep)
+	/* if this is a default <NL> */
+	if (n == 1 && curwp->w_dotp != curbp->b_linep)
 		return cinsert();
 
 	/*
@@ -472,6 +473,108 @@ int insert_newline(int f, int n)
 	return TRUE;
 }
 
+static int get_indent(struct line *lp) {
+	int nicol = 0;
+	int i, c;
+	for (i = 0; i < llength(lp); ++i) {
+		c = lgetc(lp, i);
+		if (c != ' ' && c != '\t')
+			break;
+		if (c == '\t')
+			nicol |= tabmask;
+		++nicol;
+	}
+	return nicol;
+}
+
+static int is_closing_block(struct line *lp) {
+	int i, len;
+	int c;
+	char buffer[32];
+	int buf_idx = 0;
+
+	len = llength(lp);
+	for (i = 0; i < len; ++i) {
+		c = lgetc(lp, i);
+		if (c != ' ' && c != '\t')
+			break;
+	}
+	if (i == len) return FALSE;
+
+	while (i < len && buf_idx < 31) {
+		c = lgetc(lp, i);
+		if (c == ' ' || c == '\t' || c == '\n')
+			break;
+		buffer[buf_idx++] = (char)c;
+		i++;
+	}
+	buffer[buf_idx] = '\0';
+
+	while (i < len) {
+		c = lgetc(lp, i);
+		if (c != ' ' && c != '\t')
+			return FALSE;
+		i++;
+	}
+
+	if (strcmp(buffer, "}") == 0) return TRUE;
+	if (strcmp(buffer, ")") == 0) return TRUE;
+	if (strcmp(buffer, "fi") == 0) return TRUE;
+	if (strcmp(buffer, "done") == 0) return TRUE;
+	if (strcmp(buffer, "esac") == 0) return TRUE;
+
+	return FALSE;
+}
+
+static void check_indent_dedent(void) {
+	struct line *lp = curwp->w_dotp;
+	int cur_indent, prev_indent, target_indent;
+	struct line *scan_lp;
+
+	if (!is_closing_block(lp)) return;
+
+	cur_indent = get_indent(lp);
+	scan_lp = lback(lp);
+
+	while (scan_lp != curbp->b_linep) {
+		int is_blank = TRUE;
+		int k, c;
+		for (k = 0; k < llength(scan_lp); k++) {
+			c = lgetc(scan_lp, k);
+			if (c != ' ' && c != '\t') {
+				is_blank = FALSE;
+				break;
+			}
+		}
+
+		if (!is_blank) {
+			prev_indent = get_indent(scan_lp);
+			if (prev_indent < cur_indent) {
+				int diff = cur_indent - prev_indent;
+				target_indent = cur_indent - diff;
+				if (target_indent < 0) target_indent = 0;
+
+				curwp->w_doto = 0;
+				while (curwp->w_doto < llength(curwp->w_dotp)) {
+					c = lgetc(curwp->w_dotp, curwp->w_doto);
+					if (c != ' ' && c != '\t') break;
+					ldelchar(1, FALSE);
+				}
+
+				if (target_indent > 0) {
+					int num_tabs = target_indent / 8;
+					int num_spaces = target_indent % 8;
+					while (num_tabs--) linsert(1, '\t');
+					while (num_spaces--) linsert(1, ' ');
+				}
+				curwp->w_doto = llength(curwp->w_dotp);
+				return;
+			}
+		}
+		scan_lp = lback(scan_lp);
+	}
+}
+
 int cinsert(void)
 {						/* insert a newline and indentation for C */
 	char *cptr;				/* string pointer into text to copy */
@@ -479,6 +582,33 @@ int cinsert(void)
 	int bracef;				/* was there a brace at the end of line? */
 	int i;
 	char ichar[NSTRING];			/* buffer to hold indent of last line */
+	char saved_indent[NSTRING];
+	int is_paren = FALSE;
+	struct line *lp = curwp->w_dotp;
+	int len = llength(lp);
+	int idx = 0;
+
+	/* Check for ) before dedent */
+	while (idx < len) {
+		int c = lgetc(lp, idx);
+		if (c != ' ' && c != '\t') break;
+		idx++;
+	}
+	if (idx < len && lgetc(lp, idx) == ')')
+		is_paren = TRUE;
+
+	/* Save indent */
+	if (is_paren) {
+		int si = 0;
+		for (int k = 0; k < len && k < NSTRING - 1; k++) {
+			int c = lgetc(lp, k);
+			if (c != ' ' && c != '\t') break;
+			saved_indent[si++] = (char)c;
+		}
+		saved_indent[si] = 0;
+	}
+
+	check_indent_dedent();
 
 	/* grab a pointer to text to copy indentation from */
 	cptr = &curwp->w_dotp->l_text[0];
@@ -496,6 +626,9 @@ int cinsert(void)
 	}
 	ichar[i] = 0;				/* terminate it */
 
+	if (is_paren)
+		strcpy(ichar, saved_indent);
+
 	/* put in the newline */
 	if (lnewline() == FALSE)
 		return FALSE;
@@ -503,9 +636,13 @@ int cinsert(void)
 	/* and the saved indentation */
 	linstr(ichar);
 
-	/* and one more tab for a brace */
-	if (bracef)
-		insert_tab(FALSE, 1);
+	/* and double indentation for a brace */
+	if (bracef) {
+		if (ichar[0] == '\0')
+			insert_tab(FALSE, 1);
+		else
+			linstr(ichar);
+	}
 
 	return TRUE;
 }
@@ -533,6 +670,41 @@ int insbrace(int n, int c)
 			if (ch != ' ' && ch != '\t')
 				return linsert(n, c);
 		}
+
+	if (c == '}') {
+		char ichar[NSTRING];
+		struct line *prevlp;
+		int len;
+
+		prevlp = lback(curwp->w_dotp);
+		i = 0;
+		if (prevlp != curbp->b_linep) {
+			len = llength(prevlp);
+			while (i < len && i < NSTRING - 1) {
+				ch = lgetc(prevlp, i);
+				if (ch != ' ' && ch != '\t')
+					break;
+				ichar[i++] = (char)ch;
+			}
+		}
+		ichar[i] = 0;
+
+		/* halve the indentation */
+		ichar[i / 2] = 0;
+
+		/* delete current indentation */
+		curwp->w_doto = 0;
+		while (curwp->w_doto < llength(curwp->w_dotp)) {
+			ch = lgetc(curwp->w_dotp, curwp->w_doto);
+			if (ch != ' ' && ch != '\t')
+				break;
+			ldelchar(1, FALSE);
+		}
+
+		/* insert new indentation */
+		linstr(ichar);
+		return linsert(n, c);
+	}
 
 	/* chercher le caractere oppose correspondant */
 	switch (c) {
@@ -674,6 +846,9 @@ int indent(int f, int n)
 		return rdonly();		/* we are in read only mode     */
 	if (n < 0)
 		return FALSE;
+
+	check_indent_dedent();
+
 	while (n--) {
 		nicol = 0;
 		for (i = 0; i < llength(curwp->w_dotp); ++i) {
