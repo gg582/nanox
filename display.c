@@ -99,7 +99,6 @@ static void mlbuf_puts(struct mlbuf *dest, const char *text)
 
 static void draw_hint_row(int row, const char *left, const char *status)
 {
-	char rowbuf[MAXCOL + 1];
 	int width = term.t_ncol;
 	int i;
 
@@ -107,27 +106,70 @@ static void draw_hint_row(int row, const char *left, const char *status)
 		width = MAXCOL;
 	if (width <= 0)
 		return;
-	memset(rowbuf, ' ', width);
-	rowbuf[width] = 0;
-	if (left && *left) {
-		size_t llen = strlen(left);
-		if ((int)llen > width)
-			llen = width;
-		memcpy(rowbuf, left, llen);
-	}
-	if (status && *status) {
-		size_t slen = strlen(status);
-		int pos;
-		if ((int)slen > width)
-			slen = width;
-		pos = width - (int)slen;
-		if (pos < 0)
-			pos = 0;
-		memcpy(rowbuf + pos, status, slen);
-	}
+
 	vtmove(row, 0);
-	for (i = 0; i < width; ++i)
-		vtputc(rowbuf[i]);
+	
+	// Draw left string
+	int col = 0;
+	if (left && *left) {
+		int left_len = strlen(left);
+		int left_i = 0;
+		
+		while (left_i < left_len && col < width) {
+			unicode_t c;
+			int bytes = utf8_to_unicode((char *)left, left_i, left_len, &c);
+			int char_width = unicode_width(c);
+			
+			if (col + char_width > width)
+				break;
+			
+			vtputc(c);
+			col += char_width;
+			left_i += bytes;
+		}
+	}
+	
+	// Calculate status display width and position
+	int status_width = 0;
+	if (status && *status) {
+		status_width = utf8_display_width(status, strlen(status));
+	}
+	
+	// Fill middle with spaces
+	int status_start = width - status_width;
+	if (status_start < col)
+		status_start = col;
+	
+	while (col < status_start) {
+		vtputc(' ');
+		col++;
+	}
+	
+	// Draw status string
+	if (status && *status && col < width) {
+		int status_len = strlen(status);
+		int status_i = 0;
+		
+		while (status_i < status_len && col < width) {
+			unicode_t c;
+			int bytes = utf8_to_unicode((char *)status, status_i, status_len, &c);
+			int char_width = unicode_width(c);
+			
+			if (col + char_width > width)
+				break;
+			
+			vtputc(c);
+			col += char_width;
+			status_i += bytes;
+		}
+	}
+	
+	// Fill rest with spaces
+	while (col < width) {
+		vtputc(' ');
+		col++;
+	}
+	
 	vteeol();
 }
 
