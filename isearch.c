@@ -35,6 +35,7 @@
 extern struct terminal term;
 
 static int echo_char(int c, int col);
+static int display_pattern(char *prompt, char *pattern);
 
 /* A couple of "own" variables for re-eat */
 
@@ -171,8 +172,8 @@ int isearch(int f, int n)
 
     c = ectoc(expc = get_char());       /* Get the first character    */
     if ((c == IS_FORWARD) || (c == IS_REVERSE) || (expc == metac)) {    /* Reuse old search string?   */
-        for (cpos = 0; pat[cpos] != 0; cpos++)  /* Yup, find the length           */
-            col = echo_char(pat[cpos], col);    /*  and re-echo the string    */
+        cpos = strlen(pat);  /* Get the length of existing pattern */
+        col = display_pattern("ISearch: ", pat);  /* Display the entire pattern */
         if (c == IS_REVERSE) {      /* forward search?            */
             n = -1;         /* No, search in reverse      */
             backchar(TRUE, 1);  /* Be defensive about EOB     */
@@ -251,7 +252,7 @@ int isearch(int f, int n)
             return TRUE;        /* Return an error            */
         }
         pat[cpos] = 0;          /* null terminate the buffer  */
-        col = echo_char(c, col);    /* Echo the character         */
+        col = display_pattern("ISearch: ", pat);    /* Redisplay entire pattern */
         if (!status) {          /* If we lost last time       */
             TTputc(BELL);       /* Feep again                 */
             TTflush();      /* see that the feep feeps    */
@@ -393,6 +394,50 @@ int promptpattern(char *prompt)
         mlwrite(tpat);
     }
     return strlen(tpat);
+}
+
+/*
+ * Display the entire ISearch pattern on the message line
+ * This handles UTF-8 properly by processing the complete pattern
+ */
+static int display_pattern(char *prompt, char *pattern)
+{
+    int i, col;
+    
+    col = strlen(prompt);
+    
+    /* Position cursor and clear the line */
+    movecursor(term.t_nrow, 0);
+    TTeeol();
+    
+    /* Output the prompt */
+    for (i = 0; prompt[i]; i++) {
+        TTputc((unsigned char)prompt[i]);
+    }
+    
+    /* Output the pattern with proper UTF-8 handling */
+    i = 0;
+    while (pattern[i]) {
+        unicode_t uc;
+        int bytes = utf8_to_unicode((unsigned char *)pattern, i, strlen(pattern), &uc);
+        
+        if (bytes <= 0) {
+            /* Invalid UTF-8 or error, just output the byte */
+            TTputc((unsigned char)pattern[i]);
+            col++;
+            i++;
+        } else {
+            /* Valid UTF-8 character - output all bytes */
+            for (int j = 0; j < bytes; j++) {
+                TTputc((unsigned char)pattern[i + j]);
+            }
+            col += mystrnlen_raw_w(uc);
+            i += bytes;
+        }
+    }
+    
+    TTflush();
+    return col;
 }
 
 /*
