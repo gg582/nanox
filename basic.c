@@ -61,65 +61,28 @@ int gotobol(int f, int n)
  */
 int backchar(int f, int n)
 {
-    struct line *lp;
+	struct line *lp;
 
-    if (n < 0)
-        return forwchar(f, -n);
-    while (n--) {
-        if (curwp->w_doto == 0) {
-            if ((lp = lback(curwp->w_dotp)) == curbp->b_linep)
-                return FALSE;
-            curwp->w_dotp = lp;
-            curwp->w_doto = llength(lp);
-            curwp->w_flag |= WFMOVE;
-        } else {
-            unsigned char c;
-            // To move back one character, we need to find the start of the character
-            // that *precedes* the current cursor position.
-            // This means stepping back byte by byte until we find a byte that starts a UTF-8 sequence.
-            // The loop should continue as long as we are not at the beginning of the line (offset 0)
-            // and the current byte is not the beginning of a UTF-8 sequence.
-            do {
-                curwp->w_doto--;
-                c = lgetc(curwp->w_dotp, curwp->w_doto);
-            } while (curwp->w_doto > 0 && !is_beginning_utf8(c));
-            
-            // After the loop, curwp->w_doto is either 0 or points to the start of a UTF-8 sequence.
-            // If it's not 0, and not the beginning of a sequence, it means we stepped back from
-            // the start of a sequence. We need to ensure we land at the beginning of a character.
-            // If the byte at curwp->w_doto is not the start of a sequence, it means curwp->w_doto
-            // is likely a continuation byte. We need to find the actual start.
-            // This can be done by checking if the byte at curwp->w_doto is *not* a continuation byte (0x80-0xBF).
-            // If it's not a continuation byte, it must be the start of a character.
-            // A simpler approach: if we stepped back from the start of a character (i.e., stopped at a continuation byte),
-            // we need to continue stepping back until we hit the start or byte 0.
-            
-            // The current loop `do { ... } while (curwp->w_doto);` combined with `is_beginning_utf8`
-            // effectively finds the start of the *previous* character.
-            // However, if curwp->w_doto is at byte X, and byte X is a continuation byte,
-            // the loop stops when is_beginning_utf8 is true.
-            // If the current char is multi-byte, and curwp->w_doto is pointing to its last byte,
-            // then decrementing w_doto might land on a continuation byte.
-            // We need to ensure we land at the *start* of a character.
-            // The existing loop actually does this correctly by finding the start of the *previous* character.
-            // Let's refine the loop to be more explicit about finding the start of the *character preceding* the current position.
-            // A character starts if it's not a continuation byte (0x80-0xBF).
-            if (curwp->w_doto > 0) {
-                unsigned char c_check = lgetc(curwp->w_dotp, curwp->w_doto - 1);
-                if (!is_beginning_utf8(c_check)) {
-                    // This means curwp->w_doto is pointing to a continuation byte,
-                    // not the start of a character. We need to go further back.
-                    while(curwp->w_doto > 0) {
-                        curwp->w_doto--;
-                        c_check = lgetc(curwp->w_dotp, curwp->w_doto);
-                        if (is_beginning_utf8(c_check))
-                            break;
-                    }
-                }
-            }
-        }
-    }
-    return TRUE;
+	if (n < 0)
+		return forwchar(f, -n);
+	while (n--) {
+		if (curwp->w_doto == 0) {
+			if ((lp = lback(curwp->w_dotp)) == curbp->b_linep)
+				return FALSE;
+			curwp->w_dotp = lp;
+			curwp->w_doto = llength(lp);
+			curwp->w_flag |= WFMOVE;
+		} else {
+			do {
+				unsigned char c;
+				curwp->w_doto--;
+				c = lgetc(curwp->w_dotp, curwp->w_doto);
+				if (is_beginning_utf8(c))
+					break;
+			} while (curwp->w_doto);
+		}
+	}
+	return TRUE;
 }
 
 /*
