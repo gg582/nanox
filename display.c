@@ -27,28 +27,11 @@
 #include "utf8.h"
 #include "util.h"
 #include "highlight.h"
+#include "video.h"
 
 extern struct terminal term;
 
-typedef struct {
-    unicode_t ch;
-    int fg;
-    int bg;
-    bool bold;
-    bool underline;
-} video_cell;
-
-struct video {
-    int v_flag;             /* Flags */
-    video_cell v_text[1];           /* Screen data. */
-};
-
-#define VFCHG   0x0001              /* Changed flag                 */
-#define VFEXT   0x0002              /* extended (beyond column 80)  */
-#define VFREQ   0x0008              /* reverse video request        */
-#define VFCOL   0x0010              /* color change requested       */
-
-static struct video **vscreen;          /* Virtual screen. */
+struct video **vscreen;          /* Virtual screen. */
 static int current_color_fg = -1;
 static int current_color_bg = -1;
 static bool current_color_bold = false;
@@ -66,8 +49,8 @@ static void updall(struct window *wp);
 static void updext(void);
 static int updateline(int row, struct video *vp);
 static void modeline(struct window *wp);
-static void vtputc(int c);
-static void vteeol(void);
+void vtputc(int c);
+void vteeol(void);
 struct mlbuf {
     char *buf;
     size_t len;
@@ -116,7 +99,7 @@ static void draw_hint_row(int row, const char *left, const char *status)
         
         while (left_i < left_len && display_col < width) {
             unicode_t c;
-            int bytes = utf8_to_unicode((char *)left, left_i, left_len, &c);
+            int bytes = utf8_to_unicode((unsigned char *)left, left_i, left_len, &c);
             if (bytes <= 0)
                 break;
                         int char_width = mystrnlen_raw_w(c);
@@ -153,7 +136,7 @@ static void draw_hint_row(int row, const char *left, const char *status)
                     
                     while (status_i < status_len && display_col < width) {
                         unicode_t c;
-                        int bytes = utf8_to_unicode((char *)status, status_i, status_len, &c);
+                        int bytes = utf8_to_unicode((unsigned char *)status, status_i, status_len, &c);
                         if (bytes <= 0)
                             break;
                         int char_width = mystrnlen_raw_w(c);
@@ -193,7 +176,7 @@ static void draw_hint_row(int row, const char *left, const char *status)
             
                 while (i < wp->w_doto) {
                     unicode_t c;
-                    int bytes = utf8_to_unicode(lp->l_text, i, len, &c);
+                    int bytes = utf8_to_unicode((unsigned char *)lp->l_text, i, len, &c);
                     i += bytes;
                     col = next_column(col, c, tab_width);
                 }
@@ -277,19 +260,11 @@ void vtmove(int row, int col)
  * This routine only puts printing characters into the virtual
  * terminal buffers. Only column overflow is checked.
  */
-static void vtputc(int c)
+void vtputc(int c)
 {
     struct video *vp;           /* ptr to line being updated */
 
-    /* In case somebody passes us a signed char.. */
-    if (c < 0) {
-        c += 256;
-        if (c < 0)
-            return;
-    }
-
     vp = vscreen[vtrow];
-
     if (vtcol >= term.t_ncol) {
         ++vtcol;
         vp->v_text[term.t_ncol - 1].ch = '$';
@@ -319,13 +294,7 @@ static void vtputc(int c)
         return;
     }
 
-    if (c >= 0x80 && c <= 0xA0) {
-        static const char hex[] = "0123456789abcdef";
-        vtputc('\\');
-        vtputc(hex[c >> 4]);
-        vtputc(hex[c & 15]);
-        return;
-    }
+
 
     if (vtcol >= 0) {
         int char_width = mystrnlen_raw_w(c);
@@ -349,7 +318,7 @@ static void vtputc(int c)
  * Erase from the end of the software cursor to the end of the line on which
  * the software cursor is located.
  */
-static void vteeol(void)
+void vteeol(void)
 {
     video_cell *vcp = vscreen[vtrow]->v_text;
 
@@ -553,7 +522,7 @@ static void show_line(struct window *wp, struct line *lp)
         }
 
         unicode_t c;
-        int bytes = utf8_to_unicode(lp->l_text, char_idx, len, &c);
+        int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
 
         HighlightStyle style_def = colorscheme_get(style);
 
@@ -672,7 +641,7 @@ void updpos(void)
         unicode_t c;
         int bytes;
 
-        bytes = utf8_to_unicode(lp->l_text, i, curwp->w_doto, &c);
+        bytes = utf8_to_unicode((unsigned char *)lp->l_text, i, curwp->w_doto, &c);
         i += bytes;
         curcol = next_column(curcol, c, tab_width);
     }
@@ -1188,12 +1157,12 @@ void mlerase(void)
  * stack grows down; this assumption is made by the "++" in the argument scan
  * loop. Set the "message line" flag TRUE.
  *
- * char *fmt;       format string for output
- * char *arg;       pointer to first argument to print
+ * char *fmt;        format string for output
+ * char *arg;        pointer to first argument to print
  */
 void mlwrite(const char *fmt, ...)
 {
-    int c;                  /* current char in format string */
+    int c;                   /* current char in format string */
     va_list ap;
     char raw[1024];
     char final[1200];
@@ -1291,14 +1260,15 @@ void mlwrite(const char *fmt, ...)
     va_end(ap);
     nanox_message_prefix(dest.buf, final, sizeof(final));
     for (const char *p = final; *p; ++p) {
-        TTputc(*p);
+        /* Use unsigned char to avoid sign extension on UTF-8 bytes */
+        TTputc((unsigned char)*p);
         ++ttcol;
     }
 
     /* if we can, erase to the end of screen */
     if (eolexist == TRUE)
         TTeeol();
-    
+
     TTflush();
     mpresf = TRUE;
     nanox_notify_message(final);
@@ -1328,10 +1298,9 @@ void mlforce(char *s)
  */
 void mlputs(char *s)
 {
-    int c;
-
-    while ((c = *s++) != 0) {
-        TTputc(c);
+    while (*s != 0) {
+        /* Ensure 8-bit transparency for multi-byte characters */
+        TTputc((unsigned char)*s++);
         ++ttcol;
     }
 }

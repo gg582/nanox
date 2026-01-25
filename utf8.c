@@ -14,7 +14,7 @@
  * NOTE 2! This does *not* verify things like minimality. So overlong forms
  * are happily accepted and decoded, as are the various "invalid values".
  */
-unsigned utf8_to_unicode(char *line, unsigned index, unsigned len, unicode_t *res)
+unsigned utf8_to_unicode(unsigned char *line, unsigned index, unsigned len, unicode_t *res)
 {
     unsigned value;
     unsigned char c = line[index];
@@ -58,7 +58,7 @@ unsigned utf8_to_unicode(char *line, unsigned index, unsigned len, unicode_t *re
     return bytes;
 }
 
-static void reverse_string(char *begin, char *end)
+static void reverse_string(unsigned char *begin, unsigned char *end)
 {
     do {
         char a = *begin, b = *end;
@@ -80,7 +80,7 @@ static void reverse_string(char *begin, char *end)
  * possible sequence, while utf8_to_unicode() accepts both Latin1 and
  * overlong utf-8 sequences.
  */
-unsigned unicode_to_utf8(unsigned int c, char *utf8)
+unsigned unicode_to_utf8(unsigned int c, unsigned char *utf8)
 {
     int bytes = 1;
 

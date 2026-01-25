@@ -169,10 +169,10 @@ int linstr(char *instr)
  * well, and FALSE on errors.
  */
 
-static int linsert_byte(int n, int c)
+int linsert_byte(int n, int c)
 {
-    char *cp1;
-    char *cp2;
+    unsigned char *cp1;
+    unsigned char *cp2;
     struct line *lp1;
     struct line *lp2;
     struct line *lp3;
@@ -377,7 +377,7 @@ int lnewline(void)
 int lgetchar(unicode_t *c)
 {
     int len = llength(curwp->w_dotp);
-    char *buf = curwp->w_dotp->l_text;
+    unsigned char *buf = curwp->w_dotp->l_text;
     return utf8_to_unicode(buf, curwp->w_doto, len, c);
 }
 

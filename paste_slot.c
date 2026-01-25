@@ -14,6 +14,10 @@
 #include "edef.h"
 #include "efunc.h"
 #include "utf8.h"
+#include "util.h"
+#include "video.h"
+
+extern void vtputc(int c);
 
 /* Paste slot buffer */
 static char *paste_slot_buffer = NULL;
@@ -106,109 +110,117 @@ int paste_slot_is_active(void)
 void paste_slot_display(void)
 {
     extern void mlwrite(const char *fmt, ...);
+    extern void vtmove(int row, int col);
+    extern int updupd(int force);
+    extern struct video **vscreen;
+
     int col;
     char *content = paste_slot_buffer;
     int content_len = paste_slot_size;
     int current_row = 0;
     int byte_pos = 0;
-    
-    /* Clear screen */
-    movecursor(0, 0);
-    TTeeol();
-    
-    /* Draw border */
-    movecursor(0, 0);
-    TTputc('+');
+    char *title = " PASTE SLOT ";
+
+    /* Clear screen and set change flags for all rows */
+    for (int i = 0; i < term.t_nrow; i++) {
+        vscreen[i]->v_flag |= VFCHG;
+        vtmove(i, 0);
+        extern void vteeol(void);
+        vteeol();
+    }
+
+    /* Draw Top Border */
+    vtmove(0, 0);
+    vtputc('+');
     for (col = 1; col < term.t_ncol - 1; col++)
-        TTputc('-');
-    TTputc('+');
-    
-    movecursor(1, 0);
-    TTputc('|');
-    movecursor(1, 1);
-    mlwrite(" PASTE SLOT ");
-    movecursor(1, term.t_ncol - 1);
-    TTputc('|');
-    
-    movecursor(2, 0);
-    TTputc('+');
+        vtputc('-');
+    vtputc('+');
+
+    /* Draw Header Line with Title */
+    vtmove(1, 0);
+    vtputc('|');
+    vtmove(1, 2);
+    while (*title) {
+        vtputc(*title++);
+    }
+    vtmove(1, term.t_ncol - 1);
+    vtputc('|');
+
+    /* Draw Middle Border */
+    vtmove(2, 0);
+    vtputc('+');
     for (col = 1; col < term.t_ncol - 1; col++)
-        TTputc('-');
-    TTputc('+');
-    
+        vtputc('-');
+    vtputc('+');
+
     /* Display content with UTF-8 awareness */
     current_row = 3;
-    col = 1;
-    
     while (byte_pos < content_len && current_row < term.t_nrow - 1) {
-        /* Start new line */
-        movecursor(current_row, 0);
-        TTputc('|');
+        vtmove(current_row, 0);
+        vtputc('|');
         col = 1;
-        
-        /* Display characters until newline or end of line */
+
         while (byte_pos < content_len && col < term.t_ncol - 1) {
-            char c = content[byte_pos];
-            
+            unsigned char c = (unsigned char)content[byte_pos];
+
             if (c == '\n' || c == '\r') {
-                /* Handle newline */
                 if (c == '\r' && byte_pos + 1 < content_len && content[byte_pos + 1] == '\n')
-                    byte_pos++;  /* Skip \r in \r\n */
+                    byte_pos++;
                 byte_pos++;
                 break;
             } else {
-                /* Display UTF-8 character */
                 unicode_t uc;
                 int bytes = utf8_to_unicode((unsigned char *)content, byte_pos, content_len, &uc);
-                
-                /* Output the UTF-8 bytes */
-                for (int b = 0; b < bytes && byte_pos + b < content_len; b++) {
-                    TTputc((unsigned char)content[byte_pos + b]);
-                }
-                
+
+                /* Render decoded unicode character to virtual screen */
+                vtputc(uc);
+
                 byte_pos += bytes;
-                col++;  /* Simplified: assume 1 column per character */
+                col += mystrnlen_raw_w(uc);
             }
         }
-        
-        /* Fill rest of line with spaces */
+
+        /* Fill rest of the line with spaces and draw right border */
         while (col < term.t_ncol - 1) {
-            TTputc(' ');
+            vtputc(' ');
             col++;
         }
-        
-        movecursor(current_row, term.t_ncol - 1);
-        TTputc('|');
+        vtmove(current_row, term.t_ncol - 1);
+        vtputc('|');
         current_row++;
     }
-    
-    /* Fill remaining lines */
+
+    /* Fill remaining empty rows within the box */
     while (current_row < term.t_nrow - 1) {
-        movecursor(current_row, 0);
-        TTputc('|');
+        vtmove(current_row, 0);
+        vtputc('|');
         for (col = 1; col < term.t_ncol - 1; col++)
-            TTputc(' ');
-        TTputc('|');
+            vtputc(' ');
+        vtmove(current_row, term.t_ncol - 1);
+        vtputc('|');
         current_row++;
     }
-    
-    /* Bottom border */
-    movecursor(term.t_nrow - 1, 0);
-    TTputc('+');
+
+    /* Draw Bottom Border */
+    vtmove(term.t_nrow - 1, 0);
+    vtputc('+');
     for (col = 1; col < term.t_ncol - 1; col++)
-        TTputc('-');
-    TTputc('+');
-    
-    /* Show instructions in status bar */
+        vtputc('-');
+    vtputc('+');
+
+    /* Push virtual screen to physical terminal */
+    updupd(TRUE);
+
+    /* Show instructions on the last line */
     mlwrite("Press 'p' or Enter to paste, ESC to cancel");
-    
+
     TTflush();
 }
 
 /* Insert paste slot content into document without auto-indent - UTF-8 compatible */
 int paste_slot_insert(void)
 {
-    extern int linsert(int n, int c);
+    extern int linsert_byte(int n, int c);
     extern int lnewline(void);
     
     if (paste_slot_buffer == NULL || paste_slot_size == 0)
@@ -231,13 +243,15 @@ int paste_slot_insert(void)
                 return 0;
             byte_pos++;
         } else {
-            /* Insert UTF-8 character byte by byte */
+            /* Insert UTF-8 character byte by byte using linsert_byte 
+               to avoid double-encoding issues with linsert() */
             unicode_t uc;
             int bytes = utf8_to_unicode((unsigned char *)paste_slot_buffer, byte_pos, paste_slot_size, &uc);
             
-            /* Insert each byte of the UTF-8 sequence */
+            /* Insert each byte of the UTF-8 sequence directly */
             for (int b = 0; b < bytes; b++) {
-                if (linsert(1, (unsigned char)paste_slot_buffer[byte_pos + b]) == 0)
+                /* Pass 1 as the first argument for a single insertion */
+                if (linsert_byte(1, (unsigned char)paste_slot_buffer[byte_pos + b]) == 0)
                     return 0;
             }
             

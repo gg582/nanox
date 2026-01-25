@@ -3,8 +3,8 @@
 
 typedef unsigned int unicode_t;
 
-unsigned utf8_to_unicode(char *line, unsigned index, unsigned len, unicode_t * res);
-unsigned unicode_to_utf8(unsigned int c, char *utf8);
+unsigned utf8_to_unicode(unsigned char *line, unsigned index, unsigned len, unicode_t * res);
+unsigned unicode_to_utf8(unsigned int c, unsigned char *utf8);
 int unicode_width(unicode_t c);
 
 static inline int is_beginning_utf8(unsigned char c)

@@ -402,8 +402,11 @@ static int decode_csi_sequence(int cmask)
                             */
 int getcmd(void)
 {
-    int c;                  /* fetched keystroke */
+        int c_int;              /* fetched keystroke as int */
+        unsigned char c_byte; /* processed byte value */
+    
     int cmask = 0;
+    int c;
     /* get initial character */
     c = get1key();
 
@@ -474,6 +477,8 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
 {
     int cpos;               /* current character position in string */
     int c;
+    int c_int;
+    unsigned char c_byte;
     int quotef;             /* are we quoting the next char? */
     int ffile, ocpos, nskip = 0, didtry = 0;
 
@@ -496,10 +501,8 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
         if (!didtry)
             nskip = -1;
         didtry = 0;
-        /* get a character from the user */
-        c = get1key();
-
-        /* If it is a <ret>, change it to a <NL> */
+        c_int = get1key();
+            c_byte = (unsigned char)c_int;        /* If it is a <ret>, change it to a <NL> */
         if (c == (CONTROL | 0x4d) && !quotef)
             c = CONTROL | 0x40 | '\n';
 
@@ -642,27 +645,28 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
 
         } else if ((c == quotec || c == 0x16) && quotef == FALSE) {
             quotef = TRUE;
-        } else {
+        } else { // Normal character input
             quotef = FALSE;
             if (cpos < nbuf - 1) {
-                buf[cpos++] = c;
+                // Store the unsigned byte value directly.
+                buf[cpos++] = c_byte;
 
-                if ((c < ' ') && (c != '\n')) {
-                    outstring("^");
-                    ++ttcol;
-                    c ^= 0x40;
+                // Output logic adapted for unsigned char c_byte
+                if (disinp) { // If input should be echoed
+                    if (c_byte < 0x20 && c_byte != '\n') { // Control character representation (e.g., ^A)
+                         outstring("^");
+                         TTputc(c_byte + '@'); // Map 0x00-0x1F to 0x40-0x5F
+                         ttcol += 2; // For '^' and the character
+                    } else if (c_byte == '\n') { // Newline representation
+                         outstring("<NL>");
+                         ttcol += 3;
+                    } else { // Printable ASCII or UTF-8 byte
+                         TTputc(c_byte);
+                         ttcol++;
+                    }
                 }
-
-                if (c != '\n') {
-                    if (disinp)
-                        TTputc(c);
-                } else {    /* put out <NL> for <ret> */
-                    outstring("<NL>");
-                    ttcol += 3;
-                }
-                ++ttcol;
-                TTflush();
             }
+            TTflush();
         }
     }
 }
