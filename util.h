@@ -6,14 +6,19 @@
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 
 /* Unicode character range constants for display width calculations */
+/* Hangul Compatibility Jamo: Individual Korean letters like ㄱ, ㄴ, ㄷ (consonants) and ㅏ, ㅑ, ㅓ (vowels) */
 #define HANGUL_COMPAT_JAMO_START 0x3130
 #define HANGUL_COMPAT_JAMO_END   0x318F
+/* CJK Unified Ideographs: Chinese characters and some Japanese kanji */
 #define CJK_UNIFIED_START        0x4E00
 #define CJK_UNIFIED_END          0x9FFF
+/* Hangul Syllables: Complete Korean characters like 한, 글, 테, 스, 트 */
 #define HANGUL_SYLLABLES_START   0xAC00
 #define HANGUL_SYLLABLES_END     0xD7AF
+/* Hiragana: Japanese syllabary (あ, い, う, etc.) */
 #define HIRAGANA_START           0x3040
 #define HIRAGANA_END             0x309F
+/* Katakana: Japanese syllabary (ア, イ, ウ, etc.) */
 #define KATAKANA_START           0x30A0
 #define KATAKANA_END             0x30FF
 
