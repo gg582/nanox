@@ -28,11 +28,11 @@ extern struct terminal term;
  * ==================================================================== */
 
 /* Minibuffer dedicated structures */
-static struct window *minibuf_wp = NULL;    /* Minibuffer window */
-static struct buffer *minibuf_bp = NULL;    /* Minibuffer buffer */
+struct window *minibuf_wp = NULL;    /* Minibuffer window */
+struct buffer *minibuf_bp = NULL;    /* Minibuffer buffer */
 
 /* Initialize the minibuffer window and buffer system */
-static void minibuf_init(void)
+void minibuf_init(void)
 {
     struct line *lp;
     
@@ -91,7 +91,7 @@ static void minibuf_init(void)
 }
 
 /* Clear minibuffer content */
-static void minibuf_clear(void)
+void minibuf_clear(void)
 {
     if (minibuf_bp == NULL || minibuf_wp == NULL)
         return;
@@ -117,7 +117,7 @@ static void minibuf_clear(void)
 }
 
 /* Insert a UTF-8 character into minibuffer using linsert() */
-static int minibuf_insert_char(unicode_t c)
+int minibuf_insert_char(unicode_t c)
 {
     struct window *save_wp = curwp;
     struct buffer *save_bp = curbp;
@@ -138,7 +138,7 @@ static int minibuf_insert_char(unicode_t c)
 }
 
 /* Delete characters from minibuffer using ldelete() */
-static int minibuf_delete_char(long n)
+int minibuf_delete_char(long n)
 {
     struct window *save_wp = curwp;
     struct buffer *save_bp = curbp;
@@ -179,7 +179,7 @@ static int minibuf_delete_char(long n)
 }
 
 /* Update minibuffer display - cloned from update() and show_line() */
-static void minibuf_update(const char *prompt)
+void minibuf_update(const char *prompt)
 {
     int col = 0;
     int i, len;
@@ -263,7 +263,7 @@ static void minibuf_update(const char *prompt)
 }
 
 /* Get minibuffer content as string */
-static void minibuf_get_text(char *dest, int max_len)
+void minibuf_get_text(char *dest, int max_len)
 {
     struct line *lp;
     int i;
