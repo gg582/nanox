@@ -16,6 +16,7 @@
 #include "efunc.h"
 #include "wrapper.h"
 
+#include "utf8.h"
 #include "util.h"
 
 extern struct name_bind names[];
@@ -532,16 +533,43 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
         } else if ((c == 0x7F || c == 0x08) && quotef == FALSE) {
             /* rubout/erase */
             if (cpos != 0) {
-                outstring("\b \b");
-                --ttcol;
-
-                if (buf[--cpos] < 0x20) {
+                // Find the start of the character to delete
+                int char_start = cpos - 1;
+                while (char_start > 0 && !is_beginning_utf8((unsigned char)buf[char_start])) {
+                    char_start--;
+                }
+                
+                // Decode the character to get its width
+                unicode_t uc;
+                int char_bytes = utf8_to_unicode((unsigned char *)buf, char_start, cpos, &uc);
+                int char_width = 1;
+                
+                if (char_bytes > 0 && char_start + char_bytes == cpos) {
+                    // Valid UTF-8 character
+                    if (buf[char_start] < 0x20) {
+                        // Control character - represented as ^X (2 columns)
+                        char_width = 2;
+                    } else if (buf[char_start] == '\n') {
+                        // Newline - represented as <NL> (4 columns)
+                        char_width = 4;
+                    } else {
+                        // Normal character - use mystrnlen_raw_w
+                        char_width = mystrnlen_raw_w(uc);
+                    }
+                    
+                    // Erase the character visually
+                    for (int i = 0; i < char_width; i++) {
+                        outstring("\b \b");
+                    }
+                    ttcol -= char_width;
+                    
+                    // Remove all bytes of the character from buffer
+                    cpos = char_start;
+                } else {
+                    // Fallback for invalid UTF-8
                     outstring("\b \b");
                     --ttcol;
-                }
-                if (buf[cpos] == '\n') {
-                    outstring("\b\b  \b\b");
-                    ttcol -= 2;
+                    --cpos;
                 }
 
                 TTflush();
@@ -550,16 +578,40 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
         } else if (c == 0x15 && quotef == FALSE) {
             /* C-U, kill */
             while (cpos != 0) {
-                outstring("\b \b");
-                --ttcol;
-
-                if (buf[--cpos] < 0x20) {
+                // Find the start of the character to delete
+                int char_start = cpos - 1;
+                while (char_start > 0 && !is_beginning_utf8((unsigned char)buf[char_start])) {
+                    char_start--;
+                }
+                
+                // Decode the character to get its width
+                unicode_t uc;
+                int char_bytes = utf8_to_unicode((unsigned char *)buf, char_start, cpos, &uc);
+                int char_width = 1;
+                
+                if (char_bytes > 0 && char_start + char_bytes == cpos) {
+                    // Valid UTF-8 character
+                    if (buf[char_start] < 0x20) {
+                        char_width = 2;
+                    } else if (buf[char_start] == '\n') {
+                        char_width = 4;
+                    } else {
+                        char_width = mystrnlen_raw_w(uc);
+                    }
+                    
+                    // Erase the character visually
+                    for (int i = 0; i < char_width; i++) {
+                        outstring("\b \b");
+                    }
+                    ttcol -= char_width;
+                    
+                    // Remove all bytes of the character from buffer
+                    cpos = char_start;
+                } else {
+                    // Fallback for invalid UTF-8
                     outstring("\b \b");
                     --ttcol;
-                }
-                if (buf[cpos] == '\n') {
-                    outstring("\b\b  \b\b");
-                    ttcol -= 2;
+                    --cpos;
                 }
             }
             TTflush();
@@ -572,17 +624,37 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
             didtry = 1;
             ocpos = cpos;
             while (cpos != 0) {
-                outstring("\b \b");
-                --ttcol;
-
-                if (buf[--cpos] < 0x20) {
+                // Find the start of the character to delete
+                int char_start = cpos - 1;
+                while (char_start > 0 && !is_beginning_utf8((unsigned char)buf[char_start])) {
+                    char_start--;
+                }
+                
+                // Decode the character to get its width
+                unicode_t uc;
+                int char_bytes = utf8_to_unicode((unsigned char *)buf, char_start, cpos, &uc);
+                int char_width = 1;
+                
+                if (char_bytes > 0 && char_start + char_bytes == cpos) {
+                    if (buf[char_start] < 0x20) {
+                        char_width = 2;
+                    } else if (buf[char_start] == '\n') {
+                        char_width = 4;
+                    } else {
+                        char_width = mystrnlen_raw_w(uc);
+                    }
+                    
+                    for (int i = 0; i < char_width; i++) {
+                        outstring("\b \b");
+                    }
+                    ttcol -= char_width;
+                    cpos = char_start;
+                } else {
                     outstring("\b \b");
                     --ttcol;
+                    --cpos;
                 }
-                if (buf[cpos] == '\n') {
-                    outstring("\b\b  \b\b");
-                    ttcol -= 2;
-                }
+                
                 if (buf[cpos] == '*' || buf[cpos] == '?')
                     iswild = 1;
             }
@@ -622,22 +694,48 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
             if (c == '*')
                 TTbeep();
 
-            for (n = 0; n < cpos; n++) {
-                c = buf[n];
-                if ((c < ' ') && (c != '\n')) {
-                    outstring("^");
-                    ++ttcol;
-                    c ^= 0x40;
+            for (n = 0; n < cpos; ) {
+                unicode_t uc;
+                int bytes = utf8_to_unicode((unsigned char *)buf, n, cpos, &uc);
+                
+                if (bytes <= 0) {
+                    // Invalid UTF-8, just output as-is
+                    c = buf[n++];
+                    if ((c < ' ') && (c != '\n')) {
+                        outstring("^");
+                        TTputc(c ^ 0x40);
+                        ttcol += 2;
+                    } else if (c == '\n') {
+                        outstring("<NL>");
+                        ttcol += 4;
+                    } else {
+                        if (disinp)
+                            TTputc(c);
+                        ttcol++;
+                    }
+                } else {
+                    // Valid UTF-8 character
+                    c = buf[n];
+                    if ((c < ' ') && (c != '\n')) {
+                        outstring("^");
+                        TTputc(c ^ 0x40);
+                        ttcol += 2;
+                        n++;
+                    } else if (c == '\n') {
+                        outstring("<NL>");
+                        ttcol += 4;
+                        n++;
+                    } else {
+                        // Output all bytes of the UTF-8 character
+                        if (disinp) {
+                            for (int i = 0; i < bytes; i++) {
+                                TTputc(buf[n + i]);
+                            }
+                        }
+                        ttcol += mystrnlen_raw_w(uc);
+                        n += bytes;
+                    }
                 }
-
-                if (c != '\n') {
-                    if (disinp)
-                        TTputc(c);
-                } else {    /* put out <NL> for <ret> */
-                    outstring("<NL>");
-                    ttcol += 3;
-                }
-                ++ttcol;
             }
             TTflush();
             rewind(tmpf);
@@ -649,6 +747,7 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
             quotef = FALSE;
             if (cpos < nbuf - 1) {
                 // Store the unsigned byte value directly.
+                int old_cpos = cpos;
                 buf[cpos++] = c_byte;
 
                 // Output logic adapted for unsigned char c_byte
@@ -662,7 +761,26 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
                          ttcol += 3;
                     } else { // Printable ASCII or UTF-8 byte
                          TTputc(c_byte);
-                         ttcol++;
+                         // Only increment ttcol when we complete a UTF-8 character
+                         if (c_byte < 0x80) {
+                             // ASCII - width is always 1
+                             ttcol++;
+                         } else if (is_beginning_utf8(c_byte)) {
+                             // Start of multi-byte UTF-8 - don't increment yet
+                             // Will increment when sequence completes
+                         } else {
+                             // Continuation byte - check if we completed the character
+                             int start = old_cpos;
+                             while (start > 0 && !is_beginning_utf8((unsigned char)buf[start])) {
+                                 start--;
+                             }
+                             unicode_t uc;
+                             int bytes_used = utf8_to_unicode((unsigned char *)buf, start, cpos, &uc);
+                             if (bytes_used > 0 && start + bytes_used == cpos) {
+                                 // Character complete - add its width
+                                 ttcol += mystrnlen_raw_w(uc);
+                             }
+                         }
                     }
                 }
             }
