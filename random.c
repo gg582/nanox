@@ -423,7 +423,7 @@ int setccol(int pos)
     /* set us at the new position */
     curwp->w_doto = i;
 
-    /* and tell weather we made it */
+    /* and tell whether we made it */
     return col >= pos;
 }
 
