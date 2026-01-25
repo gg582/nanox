@@ -681,6 +681,10 @@ int yank(int f, int n)
     if (kbufh == NULL)
         return TRUE;            /* not an error, just nothing */
 
+    /* Enable paste mode to disable auto-indentation during paste */
+    int old_mode = curbp->b_mode;
+    curbp->b_mode |= MDPASTE;
+
     /* for each time.... */
     while (n--) {
         kp = kbufh;
@@ -693,22 +697,31 @@ int yank(int f, int n)
             while (i--) {
                 c = *sp++;
                 if (c == '\r') {
-                    if (lnewline() == FALSE)
+                    if (lnewline() == FALSE) {
+                        curbp->b_mode = old_mode;  /* Restore mode on error */
                         return FALSE;
+                    }
                     if (i > 0 && *sp == '\n') {
                         sp++;
                         i--;
                     }
                 } else if (c == '\n') {
-                    if (lnewline() == FALSE)
+                    if (lnewline() == FALSE) {
+                        curbp->b_mode = old_mode;  /* Restore mode on error */
                         return FALSE;
+                    }
                 } else {
-                    if (linsert_byte(1, c) == FALSE)
+                    if (linsert_byte(1, c) == FALSE) {
+                        curbp->b_mode = old_mode;  /* Restore mode on error */
                         return FALSE;
+                    }
                 }
             }
             kp = kp->d_next;
         }
     }
+
+    /* Restore original mode */
+    curbp->b_mode = old_mode;
     return TRUE;
 }

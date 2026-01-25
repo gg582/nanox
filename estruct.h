@@ -31,7 +31,7 @@
 #define HUGE    1000                /* Huge number                  */
 #define NLOCKS  1000                /* max # of file locks active   */
 #define NCOLORS 8               /* number of supported colors   */
-#define KBLOCK  250             /* sizeof kill buffer chunks    */
+#define KBLOCK  8192            /* sizeof kill buffer chunks (increased for large pastes) */
 
 #define CONTROL 0x10000000          /* Control flag, or'ed in       */
 #define META    0x20000000          /* Meta flag, or'ed in          */
@@ -215,6 +215,7 @@ struct buffer {
 #define MDVIEW  0x0010              /* read-only buffer             */
 #define MDOVER  0x0020              /* overwrite mode               */
 #define MDMAGIC 0x0040              /* regular expressions in search */
+#define MDPASTE 0x0080              /* paste mode (disable auto-indent) */
 #define MDASAVE 0x0800              /* auto-save mode               */
 
 /*
