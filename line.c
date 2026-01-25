@@ -670,6 +670,7 @@ int yank(int f, int n)
 {
     int c;
     int i;
+    int result = TRUE;
     char *sp;               /* pointer into string to insert */
     struct kill *kp;            /* pointer into kill buffer */
 
@@ -698,8 +699,8 @@ int yank(int f, int n)
                 c = *sp++;
                 if (c == '\r') {
                     if (lnewline() == FALSE) {
-                        curbp->b_mode = old_mode;  /* Restore mode on error */
-                        return FALSE;
+                        result = FALSE;
+                        goto cleanup;
                     }
                     if (i > 0 && *sp == '\n') {
                         sp++;
@@ -707,13 +708,13 @@ int yank(int f, int n)
                     }
                 } else if (c == '\n') {
                     if (lnewline() == FALSE) {
-                        curbp->b_mode = old_mode;  /* Restore mode on error */
-                        return FALSE;
+                        result = FALSE;
+                        goto cleanup;
                     }
                 } else {
                     if (linsert_byte(1, c) == FALSE) {
-                        curbp->b_mode = old_mode;  /* Restore mode on error */
-                        return FALSE;
+                        result = FALSE;
+                        goto cleanup;
                     }
                 }
             }
@@ -721,7 +722,8 @@ int yank(int f, int n)
         }
     }
 
+cleanup:
     /* Restore original mode */
     curbp->b_mode = old_mode;
-    return TRUE;
+    return result;
 }

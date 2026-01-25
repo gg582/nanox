@@ -27,6 +27,9 @@
 
 extern struct terminal term;
 
+/* Forward declaration */
+static int handle_bracketed_paste(void);
+
 static int kbdflgs;             /* saved keyboard fd flags      */
 static int kbdpoll;             /* in O_NDELAY mode             */
 
@@ -80,6 +83,9 @@ void ttopen(void)
        of the cursor                                        */
     ttrow = 999;
     ttcol = 999;
+
+    /* Enable bracketed paste mode */
+    write(1, "\033[?2004h", 8);
 }
 
 /*
@@ -89,6 +95,8 @@ void ttopen(void)
  */
 void ttclose(void)
 {
+    /* Disable bracketed paste mode */
+    write(1, "\033[?2004l", 8);
     tcsetattr(0, TCSADRAIN, &otermios); /* restore terminal settings */
 }
 
@@ -188,6 +196,10 @@ int ttgetc(void)
         TT.nr = count;
     }
 
+    /* Check for bracketed paste mode */
+    if (handle_bracketed_paste())
+        return 0;  /* Paste was handled, return dummy value */
+
     c = (unsigned char)TT.buf[0];
     if (c != 27 && c < 128)
         goto done;
@@ -245,4 +257,70 @@ int typahead(void)
     if (ioctl(0, FIONREAD, &x) < 0)
         x = 0;
     return x + TT.nr;
+}
+
+/*
+ * Handle bracketed paste mode
+ * Returns TRUE if bracketed paste was handled, FALSE otherwise
+ */
+int handle_bracketed_paste(void)
+{
+    extern void kdelete(void);
+    extern int kinsert(int c);
+    extern int yank(int f, int n);
+    
+    /* Check if we have enough bytes for the paste start sequence */
+    if (TT.nr < 6)
+        return 0;
+    
+    /* Check for ESC[200~ (paste start) */
+    if (TT.buf[0] != 27 || TT.buf[1] != '[' || 
+        TT.buf[2] != '2' || TT.buf[3] != '0' || 
+        TT.buf[4] != '0' || TT.buf[5] != '~')
+        return 0;
+    
+    /* Consume the paste start sequence */
+    TT.nr -= 6;
+    memmove(TT.buf, TT.buf + 6, TT.nr);
+    
+    /* Clear existing content in the paste buffer */
+    kdelete();
+    
+    /* Read characters until we see ESC[201~ (paste end) */
+    int paste_active = 1;
+    while (paste_active) {
+        /* Ensure we have data */
+        while (TT.nr == 0) {
+            int count = read(0, TT.buf + TT.nr, sizeof(TT.buf) - TT.nr);
+            if (count <= 0)
+                break;
+            TT.nr += count;
+        }
+        
+        if (TT.nr == 0)
+            break;
+        
+        /* Check for paste end sequence */
+        if (TT.nr >= 6 && TT.buf[0] == 27 && TT.buf[1] == '[' &&
+            TT.buf[2] == '2' && TT.buf[3] == '0' && 
+            TT.buf[4] == '1' && TT.buf[5] == '~') {
+            /* Consume the paste end sequence */
+            TT.nr -= 6;
+            memmove(TT.buf, TT.buf + 6, TT.nr);
+            paste_active = 0;
+            break;
+        }
+        
+        /* Read one byte and add to paste buffer */
+        unsigned char c = TT.buf[0];
+        TT.nr--;
+        memmove(TT.buf, TT.buf + 1, TT.nr);
+        
+        kinsert(c);
+    }
+    
+    /* Now automatically yank (paste) the content */
+    yank(0, 1);
+    
+    return 1;
 }
