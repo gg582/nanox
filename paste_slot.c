@@ -102,6 +102,7 @@ int paste_slot_is_active(void)
 /* Display paste slot window */
 void paste_slot_display(void)
 {
+    extern void mlwrite(const char *fmt, ...);
     int row, col;
     int max_rows = term.t_nrow - 4;  /* Leave room for border and status */
     int max_cols = term.t_ncol - 4;
@@ -124,7 +125,7 @@ void paste_slot_display(void)
     movecursor(1, 0);
     TTputc('|');
     movecursor(1, 1);
-    mlwrite(" PASTE SLOT - Edit content, then Ctrl+Shift+V to paste, Esc to cancel ");
+    mlwrite(" PASTE SLOT ");
     movecursor(1, term.t_ncol - 1);
     TTputc('|');
     
@@ -177,6 +178,9 @@ void paste_slot_display(void)
     for (col = 1; col < term.t_ncol - 1; col++)
         TTputc('-');
     TTputc('+');
+    
+    /* Show instructions in status bar */
+    mlwrite("Ctrl+Shift+P to paste, ESC to cancel");
     
     TTflush();
 }

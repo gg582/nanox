@@ -414,6 +414,12 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Check if paste slot is active and handle the key */
+    if (check_paste_slot_active()) {
+        paste_slot_handle_key(c);
+        goto loop;
+    }
+
     execute(c, f, n);
     goto loop;
 }

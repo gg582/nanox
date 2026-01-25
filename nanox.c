@@ -764,7 +764,17 @@ int paste_slot_handle_key(int c)
     extern int paste_slot_insert(void);
     extern int update(int force);
     
-    /* Check for Ctrl+Shift+V (bracketed paste again) - this means insert */
+    /* Check for Ctrl+Shift+P - insert paste */
+    if (c == (CONTROL | SHIFT | 'P')) {
+        /* Insert the paste slot content */
+        paste_slot_insert();
+        paste_slot_set_active(0);
+        paste_slot_clear();
+        update(TRUE);
+        return TRUE;
+    }
+    
+    /* Check for Ctrl+Shift+V (bracketed paste again) - also insert for backward compatibility */
     if (c == 0) {
         /* Check if this is another paste event */
         extern int paste_slot_is_active(void);
@@ -787,7 +797,7 @@ int paste_slot_handle_key(int c)
     }
     
     /* For now, just show message for other keys */
-    mlwrite("Press Ctrl+Shift+V to paste, ESC to cancel");
+    mlwrite("Ctrl+Shift+P to paste, ESC to cancel");
     return TRUE;
 }
 
