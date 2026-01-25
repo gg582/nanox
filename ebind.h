@@ -147,7 +147,7 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | 'R', filefind },
     { SPEC | 'S', quit },
     { SPEC | 'U', fisearch },
-    { SPEC | 'W', qreplace },
+    { SPEC | 'W', sed_replace_command },  /* F6 - Sed-style regex replace */
     { SPEC | 'X', killtext },
     { SPEC | 'Y', yank },
     { SPEC | '`', reserve_jump_1 },

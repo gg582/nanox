@@ -218,6 +218,7 @@ extern void nanox_message_prefix(const char *input, char *output, size_t outsz);
 
 /* command_mode.c */
 extern int command_mode_activate_command(int f, int n);
+extern int sed_replace_command(int f, int n);
 
 extern int reserve_set_1(int f, int n);
 extern int reserve_set_2(int f, int n);

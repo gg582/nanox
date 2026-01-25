@@ -21,4 +21,7 @@ void command_mode_render(void);
 /* Cleanup command mode */
 void command_mode_cleanup(void);
 
+/* F6 Sed Replace command */
+int sed_replace_command(int f, int n);
+
 #endif /* COMMAND_MODE_H */

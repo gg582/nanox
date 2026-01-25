@@ -405,3 +405,23 @@ int command_mode_activate_command(int f, int n) {
     command_mode_activate();
     return TRUE;
 }
+
+/* F6 Sed Replace - interactive sed-style regex replace */
+int sed_replace_command(int f, int n) {
+    char sed_expr[256];
+    int status;
+    
+    /* Check for read-only mode */
+    if (curbp->b_mode & MDVIEW)
+        return rdonly();
+    
+    /* Prompt for sed expression */
+    status = mlreply("Sed replace (s/pattern/replacement/[g]): ", sed_expr, sizeof(sed_expr));
+    if (status != TRUE)
+        return status;
+    
+    /* Execute the sed replace */
+    execute_sed(sed_expr);
+    
+    return TRUE;
+}
