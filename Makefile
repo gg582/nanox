@@ -52,7 +52,7 @@ BINDIR=$(HOME)/bin
 LIBDIR=$(HOME)/lib
 
 CFLAGS += $(shell pkg-config --cflags $(LIBS)) -I/usr/include/hunspell
-LDLIBS += $(shell pkg-config --libs $(LIBS)) -lpcre
+LDLIBS += $(shell pkg-config --libs $(LIBS)) -lpcre2-8
 
 $(PROGRAM): $(OBJ)
 	$(E) "  LINK    " $@

@@ -4,7 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <pcre.h>
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
@@ -152,14 +153,14 @@ static int parse_sed_expr(const char *expr, char **pattern, char **replacement, 
     return TRUE;
 }
 
-/* Execute sed replace command with PCRE regex */
+/* Execute sed replace command with PCRE2 regex */
 static void execute_sed(const char *sed_expr) {
     char *pattern = NULL;
     char *replacement = NULL;
     int global = 0;
-    pcre *re;
-    const char *error;
-    int erroffset;
+    pcre2_code *re;
+    int errorcode;
+    PCRE2_SIZE erroroffset;
     int replace_count = 0;
     
     /* Parse the sed expression */
@@ -167,10 +168,30 @@ static void execute_sed(const char *sed_expr) {
         return;
     }
     
-    /* Compile the regex pattern */
-    re = pcre_compile(pattern, PCRE_UTF8 | PCRE_MULTILINE, &error, &erroffset, NULL);
+    /* Compile the regex pattern with PCRE2 */
+    re = pcre2_compile(
+        (PCRE2_SPTR)pattern,           /* pattern */
+        PCRE2_ZERO_TERMINATED,         /* length (0-terminated) */
+        PCRE2_UTF | PCRE2_MULTILINE,   /* options */
+        &errorcode,                     /* error code */
+        &erroroffset,                   /* error offset */
+        NULL                            /* compile context */
+    );
+    
     if (!re) {
-        mlwrite("Regex error at offset %d: %s", erroffset, error);
+        PCRE2_UCHAR buffer[256];
+        pcre2_get_error_message(errorcode, buffer, sizeof(buffer));
+        mlwrite("Regex error at offset %d: %s", (int)erroroffset, buffer);
+        free(pattern);
+        free(replacement);
+        return;
+    }
+    
+    /* Create match data block */
+    pcre2_match_data *match_data = pcre2_match_data_create_from_pattern(re, NULL);
+    if (!match_data) {
+        mlwrite("Failed to create match data");
+        pcre2_code_free(re);
         free(pattern);
         free(replacement);
         return;
@@ -187,31 +208,39 @@ static void execute_sed(const char *sed_expr) {
         memcpy(line_text, lp->l_text, line_len);
         line_text[line_len] = '\0';
         
-        int ovector[30];
-        int offset = 0;
+        PCRE2_SIZE offset = 0;
         int line_modified = 0;
         char *new_line = NULL;
         int new_len = 0;
         
         /* Find and replace matches in this line */
-        while (offset < line_len) {
-            int rc = pcre_exec(re, NULL, line_text, line_len, offset, 0, ovector, 30);
+        while (offset < (PCRE2_SIZE)line_len) {
+            int rc = pcre2_match(
+                re,                         /* compiled pattern */
+                (PCRE2_SPTR)line_text,     /* subject string */
+                line_len,                   /* length of subject */
+                offset,                     /* start offset */
+                0,                          /* options */
+                match_data,                 /* match data block */
+                NULL                        /* match context */
+            );
             
             if (rc < 0) {
-                if (rc != PCRE_ERROR_NOMATCH) {
-                    mlwrite("PCRE exec error: %d", rc);
+                if (rc != PCRE2_ERROR_NOMATCH) {
+                    mlwrite("PCRE2 match error: %d", rc);
                 }
                 break;
             }
             
-            /* Found a match */
-            int match_start = ovector[0];
-            int match_end = ovector[1];
+            /* Get match offsets */
+            PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(match_data);
+            PCRE2_SIZE match_start = ovector[0];
+            PCRE2_SIZE match_end = ovector[1];
             
             /* Build new line with replacement */
-            int before_len = match_start;
-            int after_start = match_end;
-            int after_len = line_len - match_end;
+            int before_len = (int)match_start;
+            int after_start = (int)match_end;
+            int after_len = line_len - (int)match_end;
             int total_new_len = new_len + before_len + strlen(replacement) + after_len;
             
             char *temp = realloc(new_line, total_new_len + 1);
@@ -262,7 +291,8 @@ static void execute_sed(const char *sed_expr) {
     }
     
     /* Cleanup */
-    pcre_free(re);
+    pcre2_match_data_free(match_data);
+    pcre2_code_free(re);
     free(pattern);
     free(replacement);
     
