@@ -1069,7 +1069,7 @@ static int updateline(int row, struct video *vp)
 static void modeline(struct window *wp)
 {
     struct buffer *bp = wp->w_bufp;
-    const char *row1 = nanox_cfg.hint_bar ? "F1 Help  F2 Save  F3 Open  F4 Quit  F5 Search  F6 Replace" : "";
+    const char *row1 = nanox_cfg.hint_bar ? "F1 Line/Help  F2 Save  F3 Open  F4 Quit  F5 Search  F6 Replace" : "";
     const char *row2 = nanox_cfg.hint_bar ? "F7 CutLn  F8 Paste  F9 Slot1  F10 Slot2  F11 Slot3  F12 Slot4" : "";
     char status[MAXCOL + 1];
     const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;

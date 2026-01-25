@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <pcre.h>
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
@@ -34,8 +35,14 @@ void command_mode_activate(void) {
     cmd_buffer[0] = '\0';
     cmd_pos = 0;
     
+    /* Force screen update to show command prompt */
+    update(TRUE);
+    
     /* Show command prompt in status bar */
     mlwrite("F1 Command: [number] goto line | Help | Sed s/pattern/replacement/");
+    
+    /* Force another update to ensure message is visible */
+    update(TRUE);
 }
 
 /* Execute goto line command */
@@ -70,11 +77,195 @@ static void execute_help(void) {
     nanox_help_command(FALSE, 1);
 }
 
-/* Execute sed replace command */
+/* Parse sed expression: s/pattern/replacement/flags */
+static int parse_sed_expr(const char *expr, char **pattern, char **replacement, int *global) {
+    const char *p = expr;
+    char *pat_start, *pat_end, *repl_start, *repl_end;
+    
+    /* Skip leading whitespace and 'sed' keyword if present */
+    while (*p && isspace(*p)) p++;
+    if (strncasecmp(p, "sed", 3) == 0) p += 3;
+    while (*p && isspace(*p)) p++;
+    
+    /* Must start with 's/' */
+    if (*p != 's' || *(p+1) != '/') {
+        mlwrite("Invalid sed syntax. Use: s/pattern/replacement/ or s/pattern/replacement/g");
+        return FALSE;
+    }
+    p += 2; /* Skip 's/' */
+    
+    /* Extract pattern */
+    pat_start = (char *)p;
+    while (*p && *p != '/') {
+        if (*p == '\\' && *(p+1)) p++; /* Skip escaped chars */
+        p++;
+    }
+    if (*p != '/') {
+        mlwrite("Invalid sed syntax: missing second '/'");
+        return FALSE;
+    }
+    pat_end = (char *)p;
+    p++; /* Skip '/' */
+    
+    /* Extract replacement */
+    repl_start = (char *)p;
+    while (*p && *p != '/') {
+        if (*p == '\\' && *(p+1)) p++; /* Skip escaped chars */
+        p++;
+    }
+    repl_end = (char *)p;
+    
+    /* Check for flags */
+    *global = 0;
+    if (*p == '/') {
+        p++;
+        while (*p) {
+            if (*p == 'g') *global = 1;
+            p++;
+        }
+    }
+    
+    /* Allocate and copy pattern */
+    int pat_len = pat_end - pat_start;
+    *pattern = malloc(pat_len + 1);
+    if (!*pattern) return FALSE;
+    strncpy(*pattern, pat_start, pat_len);
+    (*pattern)[pat_len] = '\0';
+    
+    /* Allocate and copy replacement */
+    int repl_len = repl_end - repl_start;
+    *replacement = malloc(repl_len + 1);
+    if (!*replacement) {
+        free(*pattern);
+        return FALSE;
+    }
+    strncpy(*replacement, repl_start, repl_len);
+    (*replacement)[repl_len] = '\0';
+    
+    return TRUE;
+}
+
+/* Execute sed replace command with PCRE regex */
 static void execute_sed(const char *sed_expr) {
-    /* TODO: Implement sed regex replace */
-    /* This will be phase 4 - needs PCRE library integration */
-    mlwrite("Sed replace not yet implemented: %s", sed_expr);
+    char *pattern = NULL;
+    char *replacement = NULL;
+    int global = 0;
+    pcre *re;
+    const char *error;
+    int erroffset;
+    int replace_count = 0;
+    
+    /* Parse the sed expression */
+    if (!parse_sed_expr(sed_expr, &pattern, &replacement, &global)) {
+        return;
+    }
+    
+    /* Compile the regex pattern */
+    re = pcre_compile(pattern, PCRE_UTF8 | PCRE_MULTILINE, &error, &erroffset, NULL);
+    if (!re) {
+        mlwrite("Regex error at offset %d: %s", erroffset, error);
+        free(pattern);
+        free(replacement);
+        return;
+    }
+    
+    /* Process each line in the buffer */
+    struct line *lp;
+    for (lp = lforw(curbp->b_linep); lp != curbp->b_linep; lp = lforw(lp)) {
+        int line_len = llength(lp);
+        if (line_len == 0) continue;
+        
+        char *line_text = malloc(line_len + 1);
+        if (!line_text) continue;
+        memcpy(line_text, lp->l_text, line_len);
+        line_text[line_len] = '\0';
+        
+        int ovector[30];
+        int offset = 0;
+        int line_modified = 0;
+        char *new_line = NULL;
+        int new_len = 0;
+        
+        /* Find and replace matches in this line */
+        while (offset < line_len) {
+            int rc = pcre_exec(re, NULL, line_text, line_len, offset, 0, ovector, 30);
+            
+            if (rc < 0) {
+                if (rc != PCRE_ERROR_NOMATCH) {
+                    mlwrite("PCRE exec error: %d", rc);
+                }
+                break;
+            }
+            
+            /* Found a match */
+            int match_start = ovector[0];
+            int match_end = ovector[1];
+            
+            /* Build new line with replacement */
+            int before_len = match_start;
+            int after_start = match_end;
+            int after_len = line_len - match_end;
+            int total_new_len = new_len + before_len + strlen(replacement) + after_len;
+            
+            char *temp = realloc(new_line, total_new_len + 1);
+            if (!temp) break;
+            new_line = temp;
+            
+            /* Copy text before match (if first match, otherwise already copied) */
+            if (new_len == 0) {
+                memcpy(new_line, line_text, before_len);
+                new_len = before_len;
+            }
+            
+            /* Copy replacement */
+            memcpy(new_line + new_len, replacement, strlen(replacement));
+            new_len += strlen(replacement);
+            
+            /* Copy text after match */
+            memcpy(new_line + new_len, line_text + after_start, after_len);
+            new_len += after_len;
+            new_line[new_len] = '\0';
+            
+            line_modified = 1;
+            replace_count++;
+            offset = match_end;
+            
+            /* Update line_text for next iteration */
+            free(line_text);
+            line_text = strdup(new_line);
+            line_len = new_len;
+            
+            if (!global) break; /* Only replace first match if not global */
+        }
+        
+        /* Replace the line if modified */
+        if (line_modified && new_line) {
+            /* Delete old line content */
+            lp->l_used = 0;
+            
+            /* Insert new content */
+            for (int i = 0; i < new_len; i++) {
+                linsert(1, new_line[i]);
+            }
+            
+            free(new_line);
+        }
+        
+        free(line_text);
+    }
+    
+    /* Cleanup */
+    pcre_free(re);
+    free(pattern);
+    free(replacement);
+    
+    /* Report results */
+    if (replace_count > 0) {
+        mlwrite("Replaced %d occurrence%s", replace_count, replace_count == 1 ? "" : "s");
+        curbp->b_flag |= BFCHG; /* Mark buffer as changed */
+    } else {
+        mlwrite("No matches found");
+    }
 }
 
 /* Parse and execute command */
@@ -154,6 +345,9 @@ void command_mode_render(void) {
     
     /* Show current command buffer in status bar */
     mlwrite("F1 Command: %s_", cmd_buffer);
+    
+    /* Force screen update to make input visible */
+    update(TRUE);
 }
 
 /* Cleanup command mode */

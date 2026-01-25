@@ -51,8 +51,8 @@ LIBS=ncurses hunspell
 BINDIR=$(HOME)/bin
 LIBDIR=$(HOME)/lib
 
-CFLAGS += $(shell pkg-config --cflags $(LIBS))
-LDLIBS += $(shell pkg-config --libs $(LIBS))
+CFLAGS += $(shell pkg-config --cflags $(LIBS)) -I/usr/include/hunspell
+LDLIBS += $(shell pkg-config --libs $(LIBS)) -lpcre
 
 $(PROGRAM): $(OBJ)
 	$(E) "  LINK    " $@
