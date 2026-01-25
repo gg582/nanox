@@ -515,10 +515,6 @@ void nanox_help_render(void)
     int visible_rows = nanox_hint_top_row() - 3;
     if (visible_rows < 1) visible_rows = 1;
 
-    /* Clear screen completely */
-    TTmove(0, 0);
-    TTeeop();
-
     movecursor(0, 0);
     if (help_show_section) {
         /* Header */
