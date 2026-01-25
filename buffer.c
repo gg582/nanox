@@ -1,12 +1,12 @@
-/*	buffer.c
+/*  buffer.c
  *
- *	Buffer management.
- *	Some of the functions are internal,
- *	and some are actually attached to user
- *	keys. Like everyone else, they set hints
- *	for the display system
+ *  Buffer management.
+ *  Some of the functions are internal,
+ *  and some are actually attached to user
+ *  keys. Like everyone else, they set hints
+ *  for the display system
  *
- *	modified by Petri Kutvonen
+ *  modified by Petri Kutvonen
  */
 
 #include <stdio.h>
@@ -30,55 +30,55 @@
  */
 int usebuffer(int f, int n)
 {
-	struct buffer *bp;
-	int s;
-	char bufn[NBUFN];
+    struct buffer *bp;
+    int s;
+    char bufn[NBUFN];
 
-	if ((s = mlreply("Use buffer: ", bufn, NBUFN)) != TRUE)
-		return s;
-	if ((bp = bfind(bufn, TRUE, 0)) == NULL)
-		return FALSE;
-	return swbuffer(bp);
+    if ((s = mlreply("Use buffer: ", bufn, NBUFN)) != TRUE)
+        return s;
+    if ((bp = bfind(bufn, TRUE, 0)) == NULL)
+        return FALSE;
+    return swbuffer(bp);
 }
 
 /*
  * switch to the next buffer in the buffer list
  *
- * int f, n;		default flag, numeric argument
+ * int f, n;        default flag, numeric argument
  */
 int nextbuffer(int f, int n)
 {
-	struct buffer *bp = NULL;		/* eligable buffer to switch to */
-	struct buffer *bbp;			/* eligable buffer to switch to */
+    struct buffer *bp = NULL;       /* eligable buffer to switch to */
+    struct buffer *bbp;         /* eligable buffer to switch to */
 
-	/* make sure the arg is legit */
-	if (f == FALSE)
-		n = 1;
-	if (n < 1)
-		return FALSE;
+    /* make sure the arg is legit */
+    if (f == FALSE)
+        n = 1;
+    if (n < 1)
+        return FALSE;
 
-	bbp = curbp;
-	while (n-- > 0) {
-		/* advance to the next buffer */
-		bp = bbp->b_bufp;
+    bbp = curbp;
+    while (n-- > 0) {
+        /* advance to the next buffer */
+        bp = bbp->b_bufp;
 
-		/* cycle through the buffers to find an eligable one */
-		while (bp == NULL || bp->b_flag & BFINVS) {
-			if (bp == NULL)
-				bp = bheadp;
-			else
-				bp = bp->b_bufp;
+        /* cycle through the buffers to find an eligable one */
+        while (bp == NULL || bp->b_flag & BFINVS) {
+            if (bp == NULL)
+                bp = bheadp;
+            else
+                bp = bp->b_bufp;
 
-			/* don't get caught in an infinite loop! */
-			if (bp == bbp)
-				return FALSE;
+            /* don't get caught in an infinite loop! */
+            if (bp == bbp)
+                return FALSE;
 
-		}
+        }
 
-		bbp = bp;
-	}
+        bbp = bp;
+    }
 
-	return swbuffer(bp);
+    return swbuffer(bp);
 }
 
 /*
@@ -86,32 +86,32 @@ int nextbuffer(int f, int n)
  */
 int swbuffer(struct buffer *bp)
 {
-	if (--curbp->b_nwnd == 0) {		/* Last use.            */
-		curbp->b_dotp = curwp->w_dotp;
-		curbp->b_doto = curwp->w_doto;
-		curbp->b_markp = curwp->w_markp;
-		curbp->b_marko = curwp->w_marko;
-	}
-	curbp = bp;				/* Switch.              */
-	if (curbp->b_active != TRUE) {		/* buffer not active yet */
-		/* read it in and activate it */
-		readin(curbp->b_fname, TRUE);
-		curbp->b_dotp = lforw(curbp->b_linep);
-		curbp->b_doto = 0;
-		curbp->b_active = TRUE;
-		curbp->b_mode |= gmode;		/* P.K. */
-	}
-	curwp->w_bufp = bp;
-	curwp->w_linep = bp->b_linep;		/* For macros, ignored. */
-	curwp->w_flag |= WFMODE | WFFORCE | WFHARD;	/* Quite nasty.         */
-	if (bp->b_nwnd++ == 0) {		/* First use.           */
-		curwp->w_dotp = bp->b_dotp;
-		curwp->w_doto = bp->b_doto;
-		curwp->w_markp = bp->b_markp;
-		curwp->w_marko = bp->b_marko;
-		return TRUE;
-	}
-	return TRUE;
+    if (--curbp->b_nwnd == 0) {     /* Last use.            */
+        curbp->b_dotp = curwp->w_dotp;
+        curbp->b_doto = curwp->w_doto;
+        curbp->b_markp = curwp->w_markp;
+        curbp->b_marko = curwp->w_marko;
+    }
+    curbp = bp;             /* Switch.              */
+    if (curbp->b_active != TRUE) {      /* buffer not active yet */
+        /* read it in and activate it */
+        readin(curbp->b_fname, TRUE);
+        curbp->b_dotp = lforw(curbp->b_linep);
+        curbp->b_doto = 0;
+        curbp->b_active = TRUE;
+        curbp->b_mode |= gmode;     /* P.K. */
+    }
+    curwp->w_bufp = bp;
+    curwp->w_linep = bp->b_linep;       /* For macros, ignored. */
+    curwp->w_flag |= WFMODE | WFFORCE | WFHARD; /* Quite nasty.         */
+    if (bp->b_nwnd++ == 0) {        /* First use.           */
+        curwp->w_dotp = bp->b_dotp;
+        curwp->w_doto = bp->b_doto;
+        curwp->w_markp = bp->b_markp;
+        curwp->w_marko = bp->b_marko;
+        return TRUE;
+    }
+    return TRUE;
 }
 
 /*
@@ -124,17 +124,17 @@ int swbuffer(struct buffer *bp)
  */
 int killbuffer(int f, int n)
 {
-	struct buffer *bp;
-	int s;
-	char bufn[NBUFN];
+    struct buffer *bp;
+    int s;
+    char bufn[NBUFN];
 
-	if ((s = mlreply("Kill buffer: ", bufn, NBUFN)) != TRUE)
-		return s;
-	if ((bp = bfind(bufn, FALSE, 0)) == NULL)	/* Easy if unknown.     */
-		return TRUE;
-	if (bp->b_flag & BFINVS)		/* Deal with special buffers        */
-		return TRUE;			/* by doing nothing.    */
-	return zotbuf(bp);
+    if ((s = mlreply("Kill buffer: ", bufn, NBUFN)) != TRUE)
+        return s;
+    if ((bp = bfind(bufn, FALSE, 0)) == NULL)   /* Easy if unknown.     */
+        return TRUE;
+    if (bp->b_flag & BFINVS)        /* Deal with special buffers        */
+        return TRUE;            /* by doing nothing.    */
+    return zotbuf(bp);
 }
 
 /*
@@ -142,94 +142,94 @@ int killbuffer(int f, int n)
  */
 int zotbuf(struct buffer *bp)
 {
-	struct buffer *bp1;
-	struct buffer *bp2;
-	int s;
+    struct buffer *bp1;
+    struct buffer *bp2;
+    int s;
 
-	if (bp->b_nwnd != 0) {			/* Error if on screen.  */
-		mlwrite("Buffer is being displayed");
-		return FALSE;
-	}
-	if ((s = bclear(bp)) != TRUE)		/* Blow text away.      */
-		return s;
-	free((char *)bp->b_linep);		/* Release header line. */
-	bp1 = NULL;				/* Find the header.     */
-	bp2 = bheadp;
-	while (bp2 != bp) {
-		bp1 = bp2;
-		bp2 = bp2->b_bufp;
-	}
-	bp2 = bp2->b_bufp;			/* Next one in chain.   */
-	if (bp1 == NULL)			/* Unlink it.           */
-		bheadp = bp2;
-	else
-		bp1->b_bufp = bp2;
-	free((char *)bp);			/* Release buffer block */
-	return TRUE;
+    if (bp->b_nwnd != 0) {          /* Error if on screen.  */
+        mlwrite("Buffer is being displayed");
+        return FALSE;
+    }
+    if ((s = bclear(bp)) != TRUE)       /* Blow text away.      */
+        return s;
+    free((char *)bp->b_linep);      /* Release header line. */
+    bp1 = NULL;             /* Find the header.     */
+    bp2 = bheadp;
+    while (bp2 != bp) {
+        bp1 = bp2;
+        bp2 = bp2->b_bufp;
+    }
+    bp2 = bp2->b_bufp;          /* Next one in chain.   */
+    if (bp1 == NULL)            /* Unlink it.           */
+        bheadp = bp2;
+    else
+        bp1->b_bufp = bp2;
+    free((char *)bp);           /* Release buffer block */
+    return TRUE;
 }
 
 void bfreeall(void)
 {
-	struct buffer *bp = bheadp;
-	while (bp != NULL) {
-		struct buffer *next = bp->b_bufp;
-		struct line *hlp = bp->b_linep;
-		if (hlp) {
-			struct line *lp = hlp->l_fp;
-			while (lp != hlp) {
-				struct line *nlp = lp->l_fp;
-				free(lp);
-				lp = nlp;
-			}
-			free(hlp);
-		}
-		free(bp);
-		bp = next;
-	}
-	bheadp = NULL;
+    struct buffer *bp = bheadp;
+    while (bp != NULL) {
+        struct buffer *next = bp->b_bufp;
+        struct line *hlp = bp->b_linep;
+        if (hlp) {
+            struct line *lp = hlp->l_fp;
+            while (lp != hlp) {
+                struct line *nlp = lp->l_fp;
+                free(lp);
+                lp = nlp;
+            }
+            free(hlp);
+        }
+        free(bp);
+        bp = next;
+    }
+    bheadp = NULL;
 }
 
 /*
  * Rename the current buffer
  *
- * int f, n;		default Flag & Numeric arg
+ * int f, n;        default Flag & Numeric arg
  */
 int namebuffer(int f, int n)
 {
-	struct buffer *bp;			/* pointer to scan through all buffers */
-	char bufn[NBUFN];			/* buffer to hold buffer name */
+    struct buffer *bp;          /* pointer to scan through all buffers */
+    char bufn[NBUFN];           /* buffer to hold buffer name */
 
-	/* prompt for and get the new buffer name */
- ask:	if (mlreply("Change buffer name to: ", bufn, NBUFN) != TRUE)
-		return FALSE;
+    /* prompt for and get the new buffer name */
+ ask:   if (mlreply("Change buffer name to: ", bufn, NBUFN) != TRUE)
+        return FALSE;
 
-	/* and check for duplicates */
-	bp = bheadp;
-	while (bp != NULL) {
-		if (bp != curbp) {
-			/* if the names the same */
-			if (strcmp(bufn, bp->b_bname) == 0)
-				goto ask;	/* try again */
-		}
-		bp = bp->b_bufp;		/* onward */
-	}
+    /* and check for duplicates */
+    bp = bheadp;
+    while (bp != NULL) {
+        if (bp != curbp) {
+            /* if the names the same */
+            if (strcmp(bufn, bp->b_bname) == 0)
+                goto ask;   /* try again */
+        }
+        bp = bp->b_bufp;        /* onward */
+    }
 
-	strcpy(curbp->b_bname, bufn);		/* copy buffer name to structure */
-	curwp->w_flag |= WFMODE;		/* make mode line replot */
-	mlerase();
-	return TRUE;
+    strcpy(curbp->b_bname, bufn);       /* copy buffer name to structure */
+    curwp->w_flag |= WFMODE;        /* make mode line replot */
+    mlerase();
+    return TRUE;
 }
 
 void ltoa(char *buf, int width, long num)
 {
-	buf[width] = 0;				/* End of string.       */
-	while (num >= 10) {			/* Conditional digits.  */
-		buf[--width] = (int)(num % 10L) + '0';
-		num /= 10L;
-	}
-	buf[--width] = (int)num + '0';		/* Always 1 digit.      */
-	while (width != 0)			/* Pad with blanks.     */
-		buf[--width] = ' ';
+    buf[width] = 0;             /* End of string.       */
+    while (num >= 10) {         /* Conditional digits.  */
+        buf[--width] = (int)(num % 10L) + '0';
+        num /= 10L;
+    }
+    buf[--width] = (int)num + '0';      /* Always 1 digit.      */
+    while (width != 0)          /* Pad with blanks.     */
+        buf[--width] = ' ';
 }
 
 /*
@@ -241,22 +241,22 @@ void ltoa(char *buf, int width, long num)
  */
 int addline(char *text)
 {
-	struct line *lp;
-	int i;
-	int ntext;
+    struct line *lp;
+    int i;
+    int ntext;
 
-	ntext = strlen(text);
-	if ((lp = lalloc(ntext)) == NULL)
-		return FALSE;
-	for (i = 0; i < ntext; ++i)
-		lputc(lp, i, text[i]);
-	blistp->b_linep->l_bp->l_fp = lp;	/* Hook onto the end    */
-	lp->l_bp = blistp->b_linep->l_bp;
-	blistp->b_linep->l_bp = lp;
-	lp->l_fp = blistp->b_linep;
-	if (blistp->b_dotp == blistp->b_linep)	/* If "." is at the end */
-		blistp->b_dotp = lp;		/* move it to new line  */
-	return TRUE;
+    ntext = strlen(text);
+    if ((lp = lalloc(ntext)) == NULL)
+        return FALSE;
+    for (i = 0; i < ntext; ++i)
+        lputc(lp, i, text[i]);
+    blistp->b_linep->l_bp->l_fp = lp;   /* Hook onto the end    */
+    lp->l_bp = blistp->b_linep->l_bp;
+    blistp->b_linep->l_bp = lp;
+    lp->l_fp = blistp->b_linep;
+    if (blistp->b_dotp == blistp->b_linep)  /* If "." is at the end */
+        blistp->b_dotp = lp;        /* move it to new line  */
+    return TRUE;
 }
 
 /*
@@ -271,15 +271,15 @@ int addline(char *text)
  */
 int anycb(void)
 {
-	struct buffer *bp;
+    struct buffer *bp;
 
-	bp = bheadp;
-	while (bp != NULL) {
-		if ((bp->b_flag & BFINVS) == 0 && (bp->b_flag & BFCHG) != 0)
-			return TRUE;
-		bp = bp->b_bufp;
-	}
-	return FALSE;
+    bp = bheadp;
+    while (bp != NULL) {
+        if ((bp->b_flag & BFINVS) == 0 && (bp->b_flag & BFCHG) != 0)
+            return TRUE;
+        bp = bp->b_bufp;
+    }
+    return FALSE;
 }
 
 /*
@@ -291,57 +291,57 @@ int anycb(void)
  */
 struct buffer *bfind(char *bname, int cflag, int bflag)
 {
-	struct buffer *bp;
-	struct buffer *sb;			/* buffer to insert after */
-	struct line *lp;
+    struct buffer *bp;
+    struct buffer *sb;          /* buffer to insert after */
+    struct line *lp;
 
-	bp = bheadp;
-	while (bp != NULL) {
-		if (strcmp(bname, bp->b_bname) == 0)
-			return bp;
-		bp = bp->b_bufp;
-	}
-	if (cflag != FALSE) {
-		if ((bp = (struct buffer *)malloc(sizeof(struct buffer))) == NULL)
-			return NULL;
-		if ((lp = lalloc(0)) == NULL) {
-			free((char *)bp);
-			return NULL;
-		}
-		/* find the place in the list to insert this buffer */
-		if (bheadp == NULL || strcmp(bheadp->b_bname, bname) > 0) {
-			/* insert at the beginning */
-			bp->b_bufp = bheadp;
-			bheadp = bp;
-		} else {
-			sb = bheadp;
-			while (sb->b_bufp != NULL) {
-				if (strcmp(sb->b_bufp->b_bname, bname) > 0)
-					break;
-				sb = sb->b_bufp;
-			}
+    bp = bheadp;
+    while (bp != NULL) {
+        if (strcmp(bname, bp->b_bname) == 0)
+            return bp;
+        bp = bp->b_bufp;
+    }
+    if (cflag != FALSE) {
+        if ((bp = (struct buffer *)malloc(sizeof(struct buffer))) == NULL)
+            return NULL;
+        if ((lp = lalloc(0)) == NULL) {
+            free((char *)bp);
+            return NULL;
+        }
+        /* find the place in the list to insert this buffer */
+        if (bheadp == NULL || strcmp(bheadp->b_bname, bname) > 0) {
+            /* insert at the beginning */
+            bp->b_bufp = bheadp;
+            bheadp = bp;
+        } else {
+            sb = bheadp;
+            while (sb->b_bufp != NULL) {
+                if (strcmp(sb->b_bufp->b_bname, bname) > 0)
+                    break;
+                sb = sb->b_bufp;
+            }
 
-			/* and insert it */
-			bp->b_bufp = sb->b_bufp;
-			sb->b_bufp = bp;
-		}
+            /* and insert it */
+            bp->b_bufp = sb->b_bufp;
+            sb->b_bufp = bp;
+        }
 
-		/* and set up the other buffer fields */
-		bp->b_active = TRUE;
-		bp->b_dotp = lp;
-		bp->b_doto = 0;
-		bp->b_markp = NULL;
-		bp->b_marko = 0;
-		bp->b_flag = bflag;
-		bp->b_mode = gmode;
-		bp->b_nwnd = 0;
-		bp->b_linep = lp;
-		strcpy(bp->b_fname, "");
-		strcpy(bp->b_bname, bname);
-		lp->l_fp = lp;
-		lp->l_bp = lp;
-	}
-	return bp;
+        /* and set up the other buffer fields */
+        bp->b_active = TRUE;
+        bp->b_dotp = lp;
+        bp->b_doto = 0;
+        bp->b_markp = NULL;
+        bp->b_marko = 0;
+        bp->b_flag = bflag;
+        bp->b_mode = gmode;
+        bp->b_nwnd = 0;
+        bp->b_linep = lp;
+        strcpy(bp->b_fname, "");
+        strcpy(bp->b_bname, bname);
+        lp->l_fp = lp;
+        lp->l_bp = lp;
+    }
+    return bp;
 }
 
 /*
@@ -356,31 +356,31 @@ struct buffer *bfind(char *bname, int cflag, int bflag)
  */
 int bclear(struct buffer *bp)
 {
-	struct line *lp;
-	int s;
+    struct line *lp;
+    int s;
 
-	if ((bp->b_flag & BFINVS) == 0		/* Not scratch buffer.  */
-	    && (bp->b_flag & BFCHG) != 0	/* Something changed    */
-	    && (s = mlyesno("Discard changes")) != TRUE)
-		return s;
-	bp->b_flag &= ~BFCHG;			/* Not changed          */
-	while ((lp = lforw(bp->b_linep)) != bp->b_linep)
-		lfree(lp);
-	bp->b_dotp = bp->b_linep;		/* Fix "."              */
-	bp->b_doto = 0;
-	bp->b_markp = NULL;			/* Invalidate "mark"    */
-	bp->b_marko = 0;
-	return TRUE;
+    if ((bp->b_flag & BFINVS) == 0      /* Not scratch buffer.  */
+        && (bp->b_flag & BFCHG) != 0    /* Something changed    */
+        && (s = mlyesno("Discard changes")) != TRUE)
+        return s;
+    bp->b_flag &= ~BFCHG;           /* Not changed          */
+    while ((lp = lforw(bp->b_linep)) != bp->b_linep)
+        lfree(lp);
+    bp->b_dotp = bp->b_linep;       /* Fix "."              */
+    bp->b_doto = 0;
+    bp->b_markp = NULL;         /* Invalidate "mark"    */
+    bp->b_marko = 0;
+    return TRUE;
 }
 
 /*
  * unmark the current buffers change flag
  *
- * int f, n;		unused command arguments
+ * int f, n;        unused command arguments
  */
 int unmark(int f, int n)
 {
-	curbp->b_flag &= ~BFCHG;
-	curwp->w_flag |= WFMODE;
-	return TRUE;
+    curbp->b_flag &= ~BFCHG;
+    curwp->w_flag |= WFMODE;
+    return TRUE;
 }

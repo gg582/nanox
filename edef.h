@@ -18,8 +18,8 @@ extern void ttflush(void);
 
 /* initialized global definitions */
 
-int flen = 0;					/* current length of fline */
-struct kill *kbufp = NULL;			/* current kill buffer chunk pointer    */
+int flen = 0;                   /* current length of fline */
+struct kill *kbufp = NULL;          /* current kill buffer chunk pointer    */
 int fillcol = 72;        /* Current fill column          */
 int kbdm[NKBDM];         /* Macro (Type changed to int)  */
 char *execstr = NULL;        /* Pointer to string to execute */
@@ -30,8 +30,8 @@ int eolexist = TRUE;        /* does clear to EOL exist?     */
 int revexist = FALSE;        /* does reverse video exist?    */
 int flickcode = FALSE;        /* do flicker supression?       */
 char *modename[] = {        /* mode names                   */
-	"Wrap", "Cmode", "Spell", "Exact", "View", "Over",
-	"Magic", "Crypt", "Asave"
+    "Wrap", "Cmode", "Spell", "Exact", "View", "Over",
+    "Magic", "Crypt", "Asave"
 };
 
 char modecode[] = "WCSEVOMYA";    /* letters to represent modes   */

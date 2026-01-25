@@ -12,21 +12,21 @@
 #include <stddef.h>
 
 enum nanox_lamp_state {
-	NANOX_LAMP_OFF = 0,
-	NANOX_LAMP_WARN,
-	NANOX_LAMP_ERROR,
+    NANOX_LAMP_OFF = 0,
+    NANOX_LAMP_WARN,
+    NANOX_LAMP_ERROR,
 };
 
 struct nanox_config {
-	bool hint_bar;
-	bool warning_lamp;
-	char warning_format[8];
-	char error_format[8];
-	int help_key;
-	char help_language[8];
-	bool soft_tab;
-	int soft_tab_width;
-	bool case_sensitive_default;
+    bool hint_bar;
+    bool warning_lamp;
+    char warning_format[8];
+    char error_format[8];
+    int help_key;
+    char help_language[8];
+    bool soft_tab;
+    int soft_tab_width;
+    bool case_sensitive_default;
 };
 
 extern struct nanox_config nanox_cfg;
