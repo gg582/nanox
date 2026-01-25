@@ -1,4 +1,5 @@
 #include "utf8.h"
+#include <wchar.h>
 
 /*
  * utf8_to_unicode()
@@ -97,4 +98,32 @@ unsigned unicode_to_utf8(unsigned int c, char *utf8)
 		reverse_string(utf8, p);
 	}
 	return bytes;
+}
+
+/*
+ * unicode_width()
+ *
+ * Return the display width of a Unicode character.
+ * Uses wcwidth() for proper handling of East Asian wide characters,
+ * combining characters, and other special cases.
+ */
+int unicode_width(unicode_t c)
+{
+	int width;
+	
+	/* Handle special control characters */
+	if (c < 0x20 || c == 0x7F)
+		return 2;  /* Control chars displayed as ^X */
+	
+	if (c >= 0x80 && c <= 0xA0)
+		return 3;  /* Displayed as \xx */
+	
+	/* Use wcwidth for proper Unicode width calculation */
+	width = wcwidth((wchar_t)c);
+	
+	/* wcwidth returns -1 for non-printable chars, treat as 1 */
+	if (width < 0)
+		return 1;
+	
+	return width;
 }

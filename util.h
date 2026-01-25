@@ -25,20 +25,15 @@ static inline int next_tab_stop(int col, int tab_width_val) {
     return col - (col % step) + step;
 }
 
-// Overly simplistic "how does the column number change
-// based on character 'c'" function
+// Calculate the next column position based on character 'c'
+// Uses proper Unicode width calculation for accurate cursor positioning
 static inline int next_column(int old, unicode_t c, int tab_width)
 {
 	if (c == '\t')
 		return next_tab_stop(old, tab_width);
 
-	if (c < 0x20 || c == 0x7F)
-		return old + 2;
-
-	if (c >= 0x80 && c <= 0xa0)
-		return old + 3;
-
-	return old + 1;
+	/* Use unicode_width for proper handling of wide characters */
+	return old + unicode_width(c);
 }
 
 #endif				/* UTIL_H_ */
