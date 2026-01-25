@@ -84,8 +84,8 @@ void ttopen(void)
     ttrow = 999;
     ttcol = 999;
 
-    /* Enable bracketed paste mode */
-    write(1, "\033[?2004h", 8);
+    /* Bracketed paste mode disabled - causes hangs */
+    /* write(1, "\033[?2004h", 8); */
 }
 
 /*
@@ -95,8 +95,8 @@ void ttopen(void)
  */
 void ttclose(void)
 {
-    /* Disable bracketed paste mode */
-    write(1, "\033[?2004l", 8);
+    /* Bracketed paste mode disabled - causes hangs */
+    /* write(1, "\033[?2004l", 8); */
     tcsetattr(0, TCSADRAIN, &otermios); /* restore terminal settings */
 }
 
@@ -196,9 +196,9 @@ int ttgetc(void)
         TT.nr = count;
     }
 
-    /* Check for bracketed paste mode */
-    if (handle_bracketed_paste())
-        return 0;  /* Paste was handled, return dummy value */
+    /* Bracketed paste mode disabled - causes hangs */
+    /* if (handle_bracketed_paste())
+        return 0; */
 
     c = (unsigned char)TT.buf[0];
     if (c != 27 && c < 128)
