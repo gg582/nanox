@@ -276,13 +276,28 @@ static void execute_sed(const char *sed_expr) {
         
         /* Replace the line if modified */
         if (line_modified && new_line) {
-            /* Delete old line content */
-            lp->l_used = 0;
+            /* Save current cursor position */
+            struct line *old_dotp = curwp->w_dotp;
+            int old_doto = curwp->w_doto;
             
-            /* Insert new content */
+            /* Move cursor to the beginning of this line */
+            curwp->w_dotp = lp;
+            curwp->w_doto = 0;
+            
+            /* Delete entire line content */
+            if (line_len > 0) {
+                ldelete((long)line_len, FALSE);
+            }
+            
+            /* Insert new content at current position (beginning of line) */
             for (int i = 0; i < new_len; i++) {
                 linsert(1, new_line[i]);
             }
+            
+            /* Restore cursor position or adjust it */
+            /* Keep cursor at the modified line for visual feedback */
+            curwp->w_dotp = lp;
+            curwp->w_doto = 0;
             
             free(new_line);
         }
