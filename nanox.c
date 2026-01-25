@@ -21,6 +21,7 @@
 #include "highlight.h"
 #include "platform.h"
 #include "colorscheme.h"
+#include "paste_slot.h"
 
 extern struct terminal term;
 
@@ -752,4 +753,46 @@ bool nanox_help_is_active(void) {
 /* Call original uEmacs help function or create a dummy */
 int help(int f, int n) {
     return nanox_help_command(f, n);
+}
+
+/* Paste Slot Window handling */
+
+int paste_slot_handle_key(int c)
+{
+    extern void paste_slot_set_active(int active);
+    extern void paste_slot_clear(void);
+    extern int paste_slot_insert(void);
+    extern int update(int force);
+    
+    /* Check for Ctrl+Shift+V (bracketed paste again) - this means insert */
+    if (c == 0) {
+        /* Check if this is another paste event */
+        extern int paste_slot_is_active(void);
+        if (paste_slot_is_active()) {
+            /* Insert the paste slot content */
+            paste_slot_insert();
+            paste_slot_set_active(0);
+            paste_slot_clear();
+            update(TRUE);
+            return TRUE;
+        }
+    }
+    
+    /* ESC key - cancel */
+    if (c == (CONTROL | '[') || c == 27) {
+        paste_slot_set_active(0);
+        paste_slot_clear();
+        update(TRUE);
+        return TRUE;
+    }
+    
+    /* For now, just show message for other keys */
+    mlwrite("Press Ctrl+Shift+V to paste, ESC to cancel");
+    return TRUE;
+}
+
+int check_paste_slot_active(void)
+{
+    extern int paste_slot_is_active(void);
+    return paste_slot_is_active();
 }

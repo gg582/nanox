@@ -19,11 +19,13 @@
 #include <termios.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <time.h>
 
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
 #include "utf8.h"
+#include "paste_slot.h"
 
 extern struct terminal term;
 
@@ -84,8 +86,8 @@ void ttopen(void)
     ttrow = 999;
     ttcol = 999;
 
-    /* Bracketed paste mode disabled - causes hangs */
-    /* write(1, "\033[?2004h", 8); */
+    /* Enable bracketed paste mode for paste slot window */
+    write(1, "\033[?2004h", 8);
 }
 
 /*
@@ -95,8 +97,8 @@ void ttopen(void)
  */
 void ttclose(void)
 {
-    /* Bracketed paste mode disabled - causes hangs */
-    /* write(1, "\033[?2004l", 8); */
+    /* Disable bracketed paste mode */
+    write(1, "\033[?2004l", 8);
     tcsetattr(0, TCSADRAIN, &otermios); /* restore terminal settings */
 }
 
@@ -196,9 +198,9 @@ int ttgetc(void)
         TT.nr = count;
     }
 
-    /* Bracketed paste mode disabled - causes hangs */
-    /* if (handle_bracketed_paste())
-        return 0; */
+    /* Check for bracketed paste mode */
+    if (handle_bracketed_paste())
+        return 0;  /* Paste was handled, return dummy value */
 
     c = (unsigned char)TT.buf[0];
     if (c != 27 && c < 128)
@@ -260,14 +262,16 @@ int typahead(void)
 }
 
 /*
- * Handle bracketed paste mode
+ * Handle bracketed paste mode - redirects to paste slot window
  * Returns TRUE if bracketed paste was handled, FALSE otherwise
  */
 int handle_bracketed_paste(void)
 {
-    extern void kdelete(void);
-    extern int kinsert(int c);
-    extern int yank(int f, int n);
+    extern void paste_slot_init(void);
+    extern int paste_slot_add_char(char c);
+    extern void paste_slot_clear(void);
+    extern void paste_slot_set_active(int active);
+    extern void paste_slot_display(void);
     
     /* Check if we have enough bytes for the paste start sequence */
     if (TT.nr < 6)
@@ -283,23 +287,36 @@ int handle_bracketed_paste(void)
     TT.nr -= 6;
     memmove(TT.buf, TT.buf + 6, TT.nr);
     
-    /* Clear existing content in the paste buffer */
-    kdelete();
+    /* Initialize and clear paste slot */
+    paste_slot_init();
+    paste_slot_clear();
     
     /* Read characters until we see ESC[201~ (paste end) */
     int paste_active = 1;
     while (paste_active) {
-        /* Ensure we have data */
-        while (TT.nr == 0) {
+        /* Ensure we have data - non-blocking read with timeout */
+        if (TT.nr == 0) {
+            /* Set non-blocking mode */
+            fcntl(0, F_SETFL, kbdflgs | O_NONBLOCK);
+            
+            /* Try to read with small delay */
+            struct timespec ts = {0, 10000000};  /* 10ms */
+            nanosleep(&ts, NULL);
+            
             int count = read(0, TT.buf + TT.nr, sizeof(TT.buf) - TT.nr);
+            
+            /* Restore blocking mode */
+            fcntl(0, F_SETFL, kbdflgs);
+            
             if (count <= 0) {
-                paste_active = 0;  /* Exit outer loop on read error */
+                /* No more data, assume paste ended */
+                paste_active = 0;
                 break;
             }
             TT.nr += count;
         }
         
-        if (!paste_active || TT.nr == 0)
+        if (TT.nr == 0)
             break;
         
         /* Check for paste end sequence */
@@ -313,16 +330,17 @@ int handle_bracketed_paste(void)
             break;
         }
         
-        /* Read one byte and add to paste buffer */
+        /* Read one byte and add to paste slot buffer */
         unsigned char c = TT.buf[0];
         TT.nr--;
         memmove(TT.buf, TT.buf + 1, TT.nr);
         
-        kinsert(c);
+        paste_slot_add_char(c);
     }
     
-    /* Now automatically yank (paste) the content */
-    yank(0, 1);
+    /* Activate paste slot window */
+    paste_slot_set_active(1);
+    paste_slot_display();
     
     return 1;
 }
