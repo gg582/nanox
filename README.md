@@ -9,6 +9,7 @@ Nanox(/na.noks/) is a modern, feature-rich fork of **uEmacs/PK** that brings the
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
 [![License](https://img.shields.io/badge/license-Custom-blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/yourusername/nanox?style=social)](https://github.com/yourusername/nanox)
+![Hangeul Ready](https://img.shields.io/badge/Hangeul-UTF--8%20Ready-red)
 
 ---
 
@@ -27,6 +28,13 @@ We’ve ditched complex semantic analysis for **lean, rule-based logic** that fo
 
 * **Logic over Heuristics:** Indentation is consistent, fast, and follows a strict set of predictable rules.
 * **Minimal Overhead:** By avoiding AST generation, the editor maintains a microscopic memory footprint while providing the essential "smart" feel of a modern IDE.
+
+### 3. [NEW] Atomic UTF-8 Minibuffer Window
+Unlike other `uEmacs` forks that suffer from broken CJK input in the message line, Nanox features a robust **Minibuffer Window System**:
+* **No More Latin-1 Ghosts:** Uses a dedicated 8-bit masked output pipeline (`TTputc & 0xFF`) to stop sign-extension artifacts.
+* **Perfect CJK Sync:** Integrated with `mystrnlen_raw_w` for precise cursor positioning on double-width Korean/Chinese/Japanese characters.
+* **Race-Condition Free:** Implements an atomic "Gate Buffer" logic for ISearch and Replace, ensuring your terminal never "beeps" due to incomplete UTF-8 fragments.
+
 
 ## Key Features
 

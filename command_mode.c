@@ -292,9 +292,11 @@ static void execute_sed(const char *sed_expr) {
                 linsert(1, new_line[i]);
             }
             
+            /* Update lp in case it was reallocated or merged */
+            lp = curwp->w_dotp;
+            
             /* Restore cursor position or adjust it */
             /* Keep cursor at the modified line for visual feedback */
-            curwp->w_dotp = lp;
             curwp->w_doto = 0;
             
             free(new_line);
