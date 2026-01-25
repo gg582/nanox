@@ -12,7 +12,6 @@
  */
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "estruct.h"
@@ -382,7 +381,7 @@ static int cmd_offset;
 static int cmd_reexecute = -1;
 
 /* Come here on the next term.t_getchar call */
-int uneat(void)
+static int uneat(void)
 {
     int c;
     term.t_getchar = saved_get_char;
@@ -391,7 +390,7 @@ int uneat(void)
     return c;
 }
 
-void reeat(int c)
+static void reeat(int c)
 {
     if (eaten_char != -1)
         return;
@@ -401,7 +400,7 @@ void reeat(int c)
 }
 
 /* Get character for search */
-int get_char(void)
+static int get_char(void)
 {
     int c;
     
