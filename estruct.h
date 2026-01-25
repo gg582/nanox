@@ -31,7 +31,7 @@
 #define HUGE    1000                /* Huge number                  */
 #define NLOCKS  1000                /* max # of file locks active   */
 #define NCOLORS 8               /* number of supported colors   */
-#define KBLOCK  250             /* sizeof kill buffer chunks    */
+#define KBLOCK  8192            /* sizeof kill buffer chunks (increased for large pastes) */
 
 #define CONTROL 0x10000000          /* Control flag, or'ed in       */
 #define META    0x20000000          /* Meta flag, or'ed in          */

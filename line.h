@@ -19,7 +19,7 @@ struct line {
     int l_used;             /* Used size                    */
     HighlightState hl_start_state;
     HighlightState hl_end_state;
-    char l_text[1];             /* A bunch of characters.       */
+    unsigned char l_text[1];             /* A bunch of characters.       */
 };
 
 #define lforw(lp)       ((lp)->l_fp)

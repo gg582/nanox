@@ -127,7 +127,7 @@ struct key_tab keytab[NBINDS] = {
     { META | 'X', namedcmd },
     { META | 'Z', quickexit },
     { META | 0x7F, delbword },
-    { SPEC | '1', nanox_help_command },     /* F1 */
+    { SPEC | '1', command_mode_activate_command },     /* F1 - Command Mode */
     { SPEC | '2', yank },
     { SPEC | '3', killregion },
     { SPEC | '4', setmark },
@@ -140,14 +140,14 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | 'c', metafn },
     { SPEC | 'd', backchar },
     { SPEC | 'e', forwline },
-    { SPEC | 'f', gotobob },
+    { SPEC | 'H', gotobob },
     { SPEC | 'i', cex },
     { SPEC | 'P', nanox_help_command },
     { SPEC | 'Q', filesave },
     { SPEC | 'R', filefind },
     { SPEC | 'S', quit },
     { SPEC | 'U', fisearch },
-    { SPEC | 'W', qreplace },
+    { SPEC | 'W', sed_replace_command },  /* F6 - Sed-style regex replace */
     { SPEC | 'X', killtext },
     { SPEC | 'Y', yank },
     { SPEC | '`', reserve_jump_1 },
@@ -171,6 +171,8 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | META | 'R', nullproc },    /*  on file read */
     { SPEC | META | 'X', nullproc },    /*  on window change P.K. */
 
+    /* End of file, Beginning of file bindings */
+    { SPEC | 'F', gotoeob},
     { 0, NULL }
 };
 

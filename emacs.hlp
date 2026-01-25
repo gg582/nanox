@@ -24,15 +24,17 @@ A BUFFER is a named area containing a FILE being edited. Many buffers may
 be active at once. Many WINDOWS may be active at once on the screen. All
 windows may show different parts of the same buffer, or each may display a
 different one.
+F6 Replace Mode accepts regular expression and apply.
 -------------------------------------------------------------------------------
 =>                      CURSOR MOVEMENT
 Backward character ....      ^B         Forward character .....      ^F
-Previous word ......... Alt  B         Next word ............. Meta  F
+Previous word ......... Alt  B          Next word ............. Meta  F
 Beginning of line .....      ^A         End of line ...........      ^E
 Previous line .........      ^P         Next line .............      ^N
-Previous paragraph .... Alt  P         Next paragraph ........ Meta  N
+Previous paragraph .... Alt  P          Next paragraph ........ Meta  N
 Previous page .........      ^Z         Next page .............      ^V
-Beginning of file ..... Ctrl  ,         End of file ........... Ctrl  .
+Beginning of file ..... Home            End of file ........... End
+Goto line ............. Alt  G
 -------------------------------------------------------------------------------
 =>                      FILE COMMANDS
 Open file .............   F3 / Alt-O    Quick exit ............ Alt  Z

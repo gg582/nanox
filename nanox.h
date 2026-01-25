@@ -63,4 +63,8 @@ void nanox_message_prefix(const char *input, char *output, size_t outsz);
 void help_close(void);
 void nanox_cleanup(void);
 
+/* Paste slot functions */
+int paste_slot_handle_key(int c);
+int check_paste_slot_active(void);
+
 #endif /* NANOX_H_ */

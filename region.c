@@ -45,7 +45,8 @@ static int nanox_copy_region_to_kill(const struct region *region)
             linep = lforw(linep);
             loffs = 0;
         } else {
-            if (kinsert(lgetc(linep, loffs)) != TRUE)
+            /* [Surgical Patch] lgetc의 반환값을 unsigned char로 캐스팅 */
+            if (kinsert((unsigned char)lgetc(linep, loffs)) != TRUE)
                 return FALSE;
             ++loffs;
         }
@@ -135,7 +136,7 @@ int lowerregion(int f, int n)
             linep = lforw(linep);
             loffs = 0;
         } else {
-            c = lgetc(linep, loffs);
+            c = (unsigned char)lgetc(linep, loffs);
             if (c >= 'A' && c <= 'Z')
                 lputc(linep, loffs, c + 'a' - 'A');
             ++loffs;
@@ -172,7 +173,7 @@ int upperregion(int f, int n)
             linep = lforw(linep);
             loffs = 0;
         } else {
-            c = lgetc(linep, loffs);
+            c = (unsigned char) lgetc(linep, loffs);
             if (c >= 'a' && c <= 'z')
                 lputc(linep, loffs, c - 'a' + 'A');
             ++loffs;

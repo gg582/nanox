@@ -21,6 +21,7 @@
 #include "highlight.h"
 #include "platform.h"
 #include "colorscheme.h"
+#include "paste_slot.h"
 
 extern struct terminal term;
 
@@ -579,6 +580,7 @@ int nanox_help_command(int f, int n)
     help_show_section = false;
     help_section_scroll = 0;
     sgarbf = TRUE;
+    update(TRUE);  /* Force immediate screen redraw when entering help */
     nanox_help_render();
     return TRUE;
 }
@@ -587,6 +589,7 @@ void help_close(void)
 {
     help_active = false;
     sgarbf = TRUE;
+    update(TRUE);  /* Force immediate screen redraw when exiting help */
 }
 
 int nanox_help_handle_key(int key)
@@ -750,4 +753,52 @@ bool nanox_help_is_active(void) {
 /* Call original uEmacs help function or create a dummy */
 int help(int f, int n) {
     return nanox_help_command(f, n);
+}
+
+/* Paste Slot Window handling */
+
+int paste_slot_handle_key(int c)
+{
+    extern void paste_slot_set_active(int active);
+    extern void paste_slot_clear(void);
+    extern int paste_slot_insert(void);
+    extern int update(int force);
+    
+    /* Check for 'p' or 'P' key - insert paste */
+    if (c == 'p' || c == 'P') {
+        /* Insert the paste slot content */
+        paste_slot_insert();
+        paste_slot_set_active(0);
+        paste_slot_clear();
+        update(TRUE);
+        return TRUE;
+    }
+    
+    /* Check for Enter key - also insert */
+    if (c == '\r' || c == '\n' || c == 13) {
+        /* Insert the paste slot content */
+        paste_slot_insert();
+        paste_slot_set_active(0);
+        paste_slot_clear();
+        update(TRUE);
+        return TRUE;
+    }
+    
+    /* ESC key - cancel */
+    if (c == (CONTROL | '[') || c == 27) {
+        paste_slot_set_active(0);
+        paste_slot_clear();
+        update(TRUE);
+        return TRUE;
+    }
+    
+    /* For now, just show message for other keys */
+    mlwrite("Press 'p' or Enter to paste, ESC to cancel");
+    return TRUE;
+}
+
+int check_paste_slot_active(void)
+{
+    extern int paste_slot_is_active(void);
+    return paste_slot_is_active();
 }

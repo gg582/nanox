@@ -66,6 +66,7 @@
 #include "edef.h"
 #include "version.h"
 #include "nanox.h"                  /* Added for Nanox specific declarations */
+#include "command_mode.h"           /* F1 command mode */
 
 #include <signal.h>
 static void emergencyexit(int);
@@ -412,6 +413,18 @@ int main(int argc, char **argv)
                 n++;
             n = -n;
         }
+    }
+
+    /* Check if command mode is active and handle the key */
+    if (command_mode_is_active()) {
+        command_mode_handle_key(c);
+        goto loop;
+    }
+
+    /* Check if paste slot is active and handle the key */
+    if (check_paste_slot_active()) {
+        paste_slot_handle_key(c);
+        goto loop;
     }
 
     execute(c, f, n);

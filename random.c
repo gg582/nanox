@@ -400,33 +400,30 @@ int getccol(int bflg)
  */
 int setccol(int pos)
 {
-    int c;                  /* character being scanned */
     int i;                  /* index into current line */
     int col;                /* current cursor column   */
     int llen;               /* length of line in bytes */
+    struct line *dlp = curwp->w_dotp;
 
     col = 0;
-    llen = llength(curwp->w_dotp);
+    llen = llength(dlp);
 
     /* scan the line until we are at or past the target column */
-    for (i = 0; i < llen; ++i) {
-        /* upon reaching the target, drop out */
-        if (col >= pos)
-            break;
+    i = 0;
+    while (i < llen && col < pos) {
+        unicode_t c;
+        int bytes;
 
         /* advance one character */
-        c = lgetc(curwp->w_dotp, i);
-        if (c == '\t')
-            col |= tab_width;
-        else if (c < 0x20 || c == 0x7F)
-            ++col;
-        ++col;
+        bytes = utf8_to_unicode(dlp->l_text, i, llen, &c);
+        col = next_column(col, c, tab_width);
+        i += bytes;
     }
 
     /* set us at the new position */
     curwp->w_doto = i;
 
-    /* and tell weather we made it */
+    /* and tell whether we made it */
     return col >= pos;
 }
 
