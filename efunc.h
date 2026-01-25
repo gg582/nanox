@@ -215,6 +215,10 @@ extern int nanox_help_command(int f, int n);
 extern int nanox_help_handle_key(int key);
 extern void nanox_cleanup(void);
 extern void nanox_message_prefix(const char *input, char *output, size_t outsz);
+
+/* command_mode.c */
+extern int command_mode_activate_command(int f, int n);
+
 extern int reserve_set_1(int f, int n);
 extern int reserve_set_2(int f, int n);
 extern int reserve_set_3(int f, int n);

@@ -127,7 +127,7 @@ struct key_tab keytab[NBINDS] = {
     { META | 'X', namedcmd },
     { META | 'Z', quickexit },
     { META | 0x7F, delbword },
-    { SPEC | '1', nanox_help_command },     /* F1 */
+    { SPEC | '1', command_mode_activate_command },     /* F1 - Command Mode */
     { SPEC | '2', yank },
     { SPEC | '3', killregion },
     { SPEC | '4', setmark },
