@@ -215,7 +215,6 @@ struct buffer {
 #define MDVIEW  0x0010              /* read-only buffer             */
 #define MDOVER  0x0020              /* overwrite mode               */
 #define MDMAGIC 0x0040              /* regular expressions in search */
-#define MDPASTE 0x0080              /* paste mode (disable auto-indent) */
 #define MDASAVE 0x0800              /* auto-save mode               */
 
 /*

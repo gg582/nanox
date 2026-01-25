@@ -670,7 +670,6 @@ int yank(int f, int n)
 {
     int c;
     int i;
-    int result = TRUE;
     char *sp;               /* pointer into string to insert */
     struct kill *kp;            /* pointer into kill buffer */
 
@@ -681,10 +680,6 @@ int yank(int f, int n)
     /* make sure there is something to yank */
     if (kbufh == NULL)
         return TRUE;            /* not an error, just nothing */
-
-    /* Enable paste mode to disable auto-indentation during paste */
-    int old_mode = curbp->b_mode;
-    curbp->b_mode |= MDPASTE;
 
     /* for each time.... */
     while (n--) {
@@ -698,32 +693,22 @@ int yank(int f, int n)
             while (i--) {
                 c = *sp++;
                 if (c == '\r') {
-                    if (lnewline() == FALSE) {
-                        result = FALSE;
-                        goto cleanup;
-                    }
+                    if (lnewline() == FALSE)
+                        return FALSE;
                     if (i > 0 && *sp == '\n') {
                         sp++;
                         i--;
                     }
                 } else if (c == '\n') {
-                    if (lnewline() == FALSE) {
-                        result = FALSE;
-                        goto cleanup;
-                    }
+                    if (lnewline() == FALSE)
+                        return FALSE;
                 } else {
-                    if (linsert_byte(1, c) == FALSE) {
-                        result = FALSE;
-                        goto cleanup;
-                    }
+                    if (linsert_byte(1, c) == FALSE)
+                        return FALSE;
                 }
             }
             kp = kp->d_next;
         }
     }
-
-cleanup:
-    /* Restore original mode */
-    curbp->b_mode = old_mode;
-    return result;
+    return TRUE;
 }

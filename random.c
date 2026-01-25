@@ -768,11 +768,6 @@ int cinsert(void)
     struct line *lp = curwp->w_dotp;
     int doto = curwp->w_doto;
 
-    /* Skip auto-indentation if in paste mode */
-    if (curbp->b_mode & MDPASTE) {
-        return lnewline();
-    }
-
     /* check for a brace at the end of the line (ignoring trailing whitespace) */
     int tptr = doto - 1;
     while (tptr >= 0 && (lgetc(lp, tptr) == ' ' || lgetc(lp, tptr) == '\t'))
