@@ -292,12 +292,14 @@ int handle_bracketed_paste(void)
         /* Ensure we have data */
         while (TT.nr == 0) {
             int count = read(0, TT.buf + TT.nr, sizeof(TT.buf) - TT.nr);
-            if (count <= 0)
+            if (count <= 0) {
+                paste_active = 0;  /* Exit outer loop on read error */
                 break;
+            }
             TT.nr += count;
         }
         
-        if (TT.nr == 0)
+        if (!paste_active || TT.nr == 0)
             break;
         
         /* Check for paste end sequence */
