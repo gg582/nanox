@@ -406,11 +406,11 @@ static int echo_char(int c, int col)
     static unsigned char utf8_buf[4];
     static int utf8_len = 0;
     
-    movecursor(term.t_nrow, col);       /* Position the cursor        */
     if ((c < ' ') || (c == 0x7F)) {     /* Control character?           */
         /* Reset UTF-8 buffer for control characters */
         utf8_len = 0;
         
+        movecursor(term.t_nrow, col);       /* Position the cursor        */
         switch (c) {            /* Yes, dispatch special cases */
         case '\n':          /* Newline                    */
             TTputc('<');
@@ -442,20 +442,23 @@ static int echo_char(int c, int col)
         }
     } else {
         /* Handle UTF-8 multi-byte sequences */
-        TTputc(c);          /* Output the byte */
-        
         if (c < 0x80) {
             /* ASCII character - width is 1 */
             utf8_len = 0;   /* Reset buffer */
+            movecursor(term.t_nrow, col);   /* Position cursor */
+            TTputc(c);      /* Output the byte */
             col++;
         } else if (is_beginning_utf8((unsigned char)c)) {
-            /* Start of UTF-8 sequence - don't increment col yet */
+            /* Start of UTF-8 sequence - position cursor and output first byte */
             utf8_buf[0] = (unsigned char)c;
             utf8_len = 1;
+            movecursor(term.t_nrow, col);   /* Position cursor ONCE for the character */
+            TTputc(c);      /* Output first byte */
         } else {
-            /* Continuation byte */
+            /* Continuation byte - just output, don't move cursor */
             if (utf8_len > 0 && utf8_len < 4) {
                 utf8_buf[utf8_len++] = (unsigned char)c;
+                TTputc(c);  /* Output continuation byte without moving cursor */
                 
                 /* Try to decode */
                 unicode_t uc;
