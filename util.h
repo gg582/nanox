@@ -26,6 +26,10 @@ static inline void mystrscpy(char *dst, const char *src, int size)
  * CJK characters which are generally 2 columns wide.
  */
 static inline int mystrnlen_raw_w(unicode_t c) {
+    // Hangul Compatibility Jamo (U+3130-U+318F) - display as width 1
+    // These are individual Korean letters like ㄱ, ㄴ, ㄷ, etc.
+    // Even though wcwidth() returns 2 for these, they display as 1 column in modern terminals
+    if (c >= 0x3130 && c <= 0x318F) return 1;
     // CJK Unified Ideographs
     if (c >= 0x4E00 && c <= 0x9FFF) return 2;
     // Hangul Syllables
