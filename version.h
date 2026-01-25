@@ -4,9 +4,9 @@
 #define PROGRAM_NAME "em"
 #define PROGRAM_NAME_LONG "uEmacs/Pk"
 
-#define	VERSION	"4.0.15"
+#define VERSION "4.0.15"
 
 /* Print the version string. */
 void version(void);
 
-#endif				/* VERSION_H_ */
+#endif              /* VERSION_H_ */

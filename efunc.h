@@ -1,12 +1,12 @@
-/*	efunc.h
+/*  efunc.h
  *
- *	Function declarations and names.
+ *  Function declarations and names.
  *
- *	This file list all the C code functions used and the names to use
- *      to bind keys to them. To add functions,	declare it here in both the
+ *  This file list all the C code functions used and the names to use
+ *      to bind keys to them. To add functions, declare it here in both the
  *      extern function list and the name binding table.
  *
- *	modified by Petri Kutvonen
+ *  modified by Petri Kutvonen
  */
 
 #include "nanox.h"
@@ -54,7 +54,7 @@ extern int setmark(int f, int n);
 extern int swapmark(int f, int n);
 
 /* random.c */
-extern int tabsize;				/* Tab size (0: use real tabs). */
+extern int tabsize;             /* Tab size (0: use real tabs). */
 extern int setfillcol(int f, int n);
 extern int showcpos(int f, int n);
 extern int getcline(void);

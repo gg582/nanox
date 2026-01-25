@@ -3,4 +3,4 @@
 
 extern void die(const char *err, ...);
 
-#endif				/* USAGE_H_ */
+#endif              /* USAGE_H_ */

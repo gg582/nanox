@@ -5,12 +5,12 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#define HL_MAX_SPANS 64
-#define MAX_TOKENS 8
-#define MAX_TOKEN_LEN 16
-#define MAX_PROFILES 128
-#define MAX_EXTS 32
-#define MAX_EXT_LEN 16
+#define HL_MAX_SPANS 256
+#define MAX_TOKENS 32
+#define MAX_TOKEN_LEN 64
+#define MAX_PROFILES 512
+#define MAX_EXTS 1232
+#define MAX_EXT_LEN 64
 
 typedef struct {
     char start[MAX_TOKEN_LEN];
@@ -18,7 +18,7 @@ typedef struct {
 } BlockCommentPair;
 
 typedef struct {
-    char name[32];
+    char name[1232];
     char extensions[MAX_EXTS][MAX_EXT_LEN];
     int ext_count;
 
@@ -30,11 +30,11 @@ typedef struct {
     
     char string_delims[MAX_TOKENS]; /* Characters */
     
-    char keywords[MAX_TOKENS * 8][MAX_TOKEN_LEN];
+    char keywords[MAX_TOKENS * 32][MAX_TOKEN_LEN];
     int keyword_count;
-    char type_keywords[MAX_TOKENS * 8][MAX_TOKEN_LEN];
+    char type_keywords[MAX_TOKENS * 32][MAX_TOKEN_LEN];
     int type_keyword_count;
-    char flow_keywords[MAX_TOKENS * 8][MAX_TOKEN_LEN];
+    char flow_keywords[MAX_TOKENS * 32][MAX_TOKEN_LEN];
     int flow_keyword_count;
     char preproc_keywords[MAX_TOKENS * 4][MAX_TOKEN_LEN];
     int preproc_keyword_count;

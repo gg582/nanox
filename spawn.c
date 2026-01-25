@@ -1,8 +1,8 @@
-/*	spaw.c
+/*  spaw.c
  *
- *	Various operating system access commands.
+ *  Various operating system access commands.
  *
- *	<odified by Petri Kutvonen
+ *  <odified by Petri Kutvonen
  */
 
 #include <stdio.h>
@@ -26,54 +26,54 @@ extern void sizesignal(int);
  */
 int spawncli(int f, int n)
 {
-	char *cp;
+    char *cp;
 
-	/* don't allow this command if restricted */
-	if (restflag)
-		return resterr();
+    /* don't allow this command if restricted */
+    if (restflag)
+        return resterr();
 
-	movecursor(term.t_nrow, 0);		/* Seek to last line.   */
-	TTflush();
-	TTclose();				/* stty to old settings */
-	TTkclose();				/* Close "keyboard" */
-	if ((cp = getenv("SHELL")) != NULL && *cp != '\0')
-		system(cp);
-	else
-		system("exec /bin/sh");
-	sgarbf = TRUE;
-	sleep(2);
-	TTopen();
-	TTkopen();
+    movecursor(term.t_nrow, 0);     /* Seek to last line.   */
+    TTflush();
+    TTclose();              /* stty to old settings */
+    TTkclose();             /* Close "keyboard" */
+    if ((cp = getenv("SHELL")) != NULL && *cp != '\0')
+        system(cp);
+    else
+        system("exec /bin/sh");
+    sgarbf = TRUE;
+    sleep(2);
+    TTopen();
+    TTkopen();
 
 /*
  * This fools the update routines to force a full
  * redraw with complete window size checking.
- *		-lbt
+ *      -lbt
  */
-	chg_width = term.t_ncol;
-	chg_height = term.t_nrow + 1;
-	term.t_nrow = term.t_ncol = 0;
-	return TRUE;
+    chg_width = term.t_ncol;
+    chg_height = term.t_nrow + 1;
+    term.t_nrow = term.t_ncol = 0;
+    return TRUE;
 }
 
 int bktoshell(int f, int n)
-{						/* suspend MicroEMACS and wait to wake up */
-	vttidy();
+{                       /* suspend MicroEMACS and wait to wake up */
+    vttidy();
 /******************************
-	int pid;
+    int pid;
 
-	pid = getpid();
-	kill(pid,SIGTSTP);
+    pid = getpid();
+    kill(pid,SIGTSTP);
 ******************************/
-	kill(0, SIGTSTP);
-	return TRUE;
+    kill(0, SIGTSTP);
+    return TRUE;
 }
 
 void rtfrmshell(void)
 {
-	TTopen();
-	curwp->w_flag = WFHARD;
-	sgarbf = TRUE;
+    TTopen();
+    curwp->w_flag = WFHARD;
+    sgarbf = TRUE;
 }
 
 /*
@@ -83,31 +83,31 @@ void rtfrmshell(void)
  */
 int spawn(int f, int n)
 {
-	int s;
-	char line[NLINE];
+    int s;
+    char line[NLINE];
 
-	/* don't allow this command if restricted */
-	if (restflag)
-		return resterr();
+    /* don't allow this command if restricted */
+    if (restflag)
+        return resterr();
 
-	if ((s = mlreply("!", line, NLINE)) != TRUE)
-		return s;
-	TTflush();
-	TTclose();				/* stty to old modes    */
-	TTkclose();
-	system(line);
-	fflush(stdout);				/* to be sure P.K.      */
-	TTopen();
+    if ((s = mlreply("!", line, NLINE)) != TRUE)
+        return s;
+    TTflush();
+    TTclose();              /* stty to old modes    */
+    TTkclose();
+    system(line);
+    fflush(stdout);             /* to be sure P.K.      */
+    TTopen();
 
-	if (clexec == FALSE) {
-		mlputs("(End)");		/* Pause.               */
-		TTflush();
-		while ((s = tgetc()) != '\r' && s != ' ') ;
-		mlputs("\r\n");
-	}
-	TTkopen();
-	sgarbf = TRUE;
-	return TRUE;
+    if (clexec == FALSE) {
+        mlputs("(End)");        /* Pause.               */
+        TTflush();
+        while ((s = tgetc()) != '\r' && s != ' ') ;
+        mlputs("\r\n");
+    }
+    TTkopen();
+    sgarbf = TRUE;
+    return TRUE;
 }
 
 /*
@@ -118,27 +118,27 @@ int spawn(int f, int n)
 
 int execprg(int f, int n)
 {
-	int s;
-	char line[NLINE];
+    int s;
+    char line[NLINE];
 
-	/* don't allow this command if restricted */
-	if (restflag)
-		return resterr();
+    /* don't allow this command if restricted */
+    if (restflag)
+        return resterr();
 
-	if ((s = mlreply("!", line, NLINE)) != TRUE)
-		return s;
-	TTputc('\n');				/* Already have '\r'    */
-	TTflush();
-	TTclose();				/* stty to old modes    */
-	TTkclose();
-	system(line);
-	fflush(stdout);				/* to be sure P.K.      */
-	TTopen();
-	mlputs("(End)");			/* Pause.               */
-	TTflush();
-	while ((s = tgetc()) != '\r' && s != ' ') ;
-	sgarbf = TRUE;
-	return TRUE;
+    if ((s = mlreply("!", line, NLINE)) != TRUE)
+        return s;
+    TTputc('\n');               /* Already have '\r'    */
+    TTflush();
+    TTclose();              /* stty to old modes    */
+    TTkclose();
+    system(line);
+    fflush(stdout);             /* to be sure P.K.      */
+    TTopen();
+    mlputs("(End)");            /* Pause.               */
+    TTflush();
+    while ((s = tgetc()) != '\r' && s != ' ') ;
+    sgarbf = TRUE;
+    return TRUE;
 }
 
 /*
@@ -147,64 +147,64 @@ int execprg(int f, int n)
  */
 int filter_buffer(int f, int n)
 {
-	int s;					/* return status from CLI */
-	struct buffer *bp;			/* pointer to buffer to zot */
-	char line[NLINE];			/* command line send to shell */
-	char tmpnam[NFILEN];			/* place to store real file name */
-	static char bname1[] = "fltinp";
+    int s;                  /* return status from CLI */
+    struct buffer *bp;          /* pointer to buffer to zot */
+    char line[NLINE];           /* command line send to shell */
+    char tmpnam[NFILEN];            /* place to store real file name */
+    static char bname1[] = "fltinp";
 
-	static char filnam1[] = "fltinp";
-	static char filnam2[] = "fltout";
+    static char filnam1[] = "fltinp";
+    static char filnam2[] = "fltout";
 
-	/* don't allow this command if restricted */
-	if (restflag)
-		return resterr();
+    /* don't allow this command if restricted */
+    if (restflag)
+        return resterr();
 
-	if (curbp->b_mode & MDVIEW)		/* don't allow this command if      */
-		return rdonly();		/* we are in read only mode     */
+    if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
+        return rdonly();        /* we are in read only mode     */
 
-	/* get the filter name and its args */
-	if ((s = mlreply("#", line, NLINE)) != TRUE)
-		return s;
+    /* get the filter name and its args */
+    if ((s = mlreply("#", line, NLINE)) != TRUE)
+        return s;
 
-	/* setup the proper file names */
-	bp = curbp;
-	strcpy(tmpnam, bp->b_fname);		/* save the original name */
-	strcpy(bp->b_fname, bname1);		/* set it to our new one */
+    /* setup the proper file names */
+    bp = curbp;
+    strcpy(tmpnam, bp->b_fname);        /* save the original name */
+    strcpy(bp->b_fname, bname1);        /* set it to our new one */
 
-	/* write it out, checking for errors */
-	if (writeout(filnam1) != TRUE) {
-		mlwrite("(Cannot write filter file)");
-		strcpy(bp->b_fname, tmpnam);
-		return FALSE;
-	}
-	TTputc('\n');				/* Already have '\r'    */
-	TTflush();
-	TTclose();				/* stty to old modes    */
-	TTkclose();
-	strcat(line, " <fltinp >fltout");
-	system(line);
-	TTopen();
-	TTkopen();
-	TTflush();
-	sgarbf = TRUE;
-	s = TRUE;
+    /* write it out, checking for errors */
+    if (writeout(filnam1) != TRUE) {
+        mlwrite("(Cannot write filter file)");
+        strcpy(bp->b_fname, tmpnam);
+        return FALSE;
+    }
+    TTputc('\n');               /* Already have '\r'    */
+    TTflush();
+    TTclose();              /* stty to old modes    */
+    TTkclose();
+    strcat(line, " <fltinp >fltout");
+    system(line);
+    TTopen();
+    TTkopen();
+    TTflush();
+    sgarbf = TRUE;
+    s = TRUE;
 
-	/* on failure, escape gracefully */
-	if (s != TRUE || (readin(filnam2, FALSE) == FALSE)) {
-		mlwrite("(Execution failed)");
-		strcpy(bp->b_fname, tmpnam);
-		unlink(filnam1);
-		unlink(filnam2);
-		return s;
-	}
+    /* on failure, escape gracefully */
+    if (s != TRUE || (readin(filnam2, FALSE) == FALSE)) {
+        mlwrite("(Execution failed)");
+        strcpy(bp->b_fname, tmpnam);
+        unlink(filnam1);
+        unlink(filnam2);
+        return s;
+    }
 
-	/* reset file name */
-	strcpy(bp->b_fname, tmpnam);		/* restore name */
-	bp->b_flag |= BFCHG;			/* flag it as changed */
+    /* reset file name */
+    strcpy(bp->b_fname, tmpnam);        /* restore name */
+    bp->b_flag |= BFCHG;            /* flag it as changed */
 
-	/* and get rid of the temporary file */
-	unlink(filnam1);
-	unlink(filnam2);
-	return TRUE;
+    /* and get rid of the temporary file */
+    unlink(filnam1);
+    unlink(filnam2);
+    return TRUE;
 }

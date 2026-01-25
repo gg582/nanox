@@ -1,4 +1,4 @@
-/*	window.c
+/*  window.c
  *
  *      Window management. Some of the functions are internal, and some are
  *      attached to keys that the user actually types.
@@ -21,11 +21,11 @@
  */
 int reposition(int f, int n)
 {
-	if (f == FALSE)				/* default to 0 to center screen */
-		n = 0;
-	curwp->w_force = n;
-	curwp->w_flag |= WFFORCE;
-	return TRUE;
+    if (f == FALSE)             /* default to 0 to center screen */
+        n = 0;
+    curwp->w_force = n;
+    curwp->w_flag |= WFFORCE;
+    return TRUE;
 }
 
 /*
@@ -34,75 +34,75 @@ int reposition(int f, int n)
  */
 int redraw(int f, int n)
 {
-	if (f == FALSE)
-		sgarbf = TRUE;
-	else {
-		curwp->w_force = 0;		/* Center dot. */
-		curwp->w_flag |= WFFORCE;
-	}
+    if (f == FALSE)
+        sgarbf = TRUE;
+    else {
+        curwp->w_force = 0;     /* Center dot. */
+        curwp->w_flag |= WFFORCE;
+    }
 
-	return TRUE;
+    return TRUE;
 }
 
 /*
  * resize the screen, re-writing the screen
  *
- * int f;	default flag
- * int n;	numeric argument
+ * int f;   default flag
+ * int n;   numeric argument
  */
 int newsize(int f, int n)
 {
-	struct window *wp;			/* current window being examined */
+    struct window *wp;          /* current window being examined */
 
-	/* if the command defaults, assume the largest */
-	if (f == FALSE)
-		n = term.t_mrow + 1;
+    /* if the command defaults, assume the largest */
+    if (f == FALSE)
+        n = term.t_mrow + 1;
 
-	/* make sure it's in range */
-	if (n < 3 || n > term.t_mrow + 1) {
-		mlwrite("%%Screen size out of range");
-		return FALSE;
-	}
+    /* make sure it's in range */
+    if (n < 3 || n > term.t_mrow + 1) {
+        mlwrite("%%Screen size out of range");
+        return FALSE;
+    }
 
-	if (term.t_nrow == n - 1)
-		return TRUE;
+    if (term.t_nrow == n - 1)
+        return TRUE;
 
-	/* Update the current window as needed */
-	wp = curwp;
-	wp->w_flag |= WFHARD | WFMODE;
+    /* Update the current window as needed */
+    wp = curwp;
+    wp->w_flag |= WFHARD | WFMODE;
 
-	/* screen is garbage */
-	term.t_nrow = n - 1;
-	sgarbf = TRUE;
-	return TRUE;
+    /* screen is garbage */
+    term.t_nrow = n - 1;
+    sgarbf = TRUE;
+    return TRUE;
 }
 
 /*
  * resize the screen, re-writing the screen
  *
- * int f;		default flag
- * int n;		numeric argument
+ * int f;       default flag
+ * int n;       numeric argument
  */
 int newwidth(int f, int n)
 {
-	/* if the command defaults, assume the largest */
-	if (f == FALSE)
-		n = term.t_mcol;
+    /* if the command defaults, assume the largest */
+    if (f == FALSE)
+        n = term.t_mcol;
 
-	/* make sure it's in range */
-	if (n < 10 || n > term.t_mcol) {
-		mlwrite("%%Screen width out of range");
-		return FALSE;
-	}
+    /* make sure it's in range */
+    if (n < 10 || n > term.t_mcol) {
+        mlwrite("%%Screen width out of range");
+        return FALSE;
+    }
 
-	/* otherwise, just re-width it (no big deal) */
-	term.t_ncol = n;
-	term.t_margin = n / 10;
-	term.t_scrsiz = n - (term.t_margin * 2);
+    /* otherwise, just re-width it (no big deal) */
+    term.t_ncol = n;
+    term.t_margin = n / 10;
+    term.t_scrsiz = n - (term.t_margin * 2);
 
-	/* force window to redraw */
-	curwp->w_flag |= WFHARD | WFMOVE | WFMODE;
-	sgarbf = TRUE;
+    /* force window to redraw */
+    curwp->w_flag |= WFHARD | WFMOVE | WFMODE;
+    sgarbf = TRUE;
 
-	return TRUE;
+    return TRUE;
 }

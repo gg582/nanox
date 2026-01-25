@@ -1,21 +1,21 @@
-/*	FILEIO.C
+/*  FILEIO.C
  *
  * The routines in this file read and write ASCII files from the disk. All of
  * the knowledge about files are here.
  *
- *	modified by Petri Kutvonen
+ *  modified by Petri Kutvonen
  */
 
 #include        <stdio.h>
 #include        <stdlib.h>
 #include        <string.h>
-#include       	"estruct.h"
+#include        "estruct.h"
 #include        "edef.h"
-#include	      "efunc.h"
+#include          "efunc.h"
 #include        "util.h"
 
-static FILE *ffp;				/* File pointer, all functions. */
-static int eofflag;				/* end-of-file flag */
+static FILE *ffp;               /* File pointer, all functions. */
+static int eofflag;             /* end-of-file flag */
 extern int flen;
 
 /*
@@ -23,10 +23,10 @@ extern int flen;
  */
 int ffropen(char *fn)
 {
-	if ((ffp = fopen(fn, "r")) == NULL)
-		return FIOFNF;
-	eofflag = FALSE;
-	return FIOSUC;
+    if ((ffp = fopen(fn, "r")) == NULL)
+        return FIOFNF;
+    eofflag = FALSE;
+    return FIOSUC;
 }
 
 /*
@@ -35,11 +35,11 @@ int ffropen(char *fn)
  */
 int ffwopen(char *fn)
 {
-	if ((ffp = fopen(fn, "w")) == NULL) {
-		mlwrite("Cannot open file for writing");
-		return FIOERR;
-	}
-	return FIOSUC;
+    if ((ffp = fopen(fn, "w")) == NULL) {
+        mlwrite("Cannot open file for writing");
+        return FIOERR;
+    }
+    return FIOSUC;
 }
 
 /*
@@ -47,18 +47,18 @@ int ffwopen(char *fn)
  */
 int ffclose(void)
 {
-	/* free this since we do not need it anymore */
-	if (fline) {
-		free(fline);
-		fline = NULL;
-	}
-	eofflag = FALSE;
+    /* free this since we do not need it anymore */
+    if (fline) {
+        free(fline);
+        fline = NULL;
+    }
+    eofflag = FALSE;
 
-	if (fclose(ffp) != FALSE) {
-		mlwrite("Error closing file");
-		return FIOERR;
-	}
-	return FIOSUC;
+    if (fclose(ffp) != FALSE) {
+        mlwrite("Error closing file");
+        return FIOERR;
+    }
+    return FIOSUC;
 }
 
 /*
@@ -68,19 +68,19 @@ int ffclose(void)
  */
 int ffputline(char *buf, int nbuf)
 {
-	int i;
+    int i;
 
-	for (i = 0; i < nbuf; ++i)
-		fputc(buf[i] & 0xFF, ffp);
+    for (i = 0; i < nbuf; ++i)
+        fputc(buf[i] & 0xFF, ffp);
 
-	fputc('\n', ffp);
+    fputc('\n', ffp);
 
-	if (ferror(ffp)) {
-		mlwrite("Write I/O error");
-		return FIOERR;
-	}
+    if (ferror(ffp)) {
+        mlwrite("Write I/O error");
+        return FIOERR;
+    }
 
-	return FIOSUC;
+    return FIOSUC;
 }
 
 /*
@@ -91,93 +91,93 @@ int ffputline(char *buf, int nbuf)
  */
 int ffgetline(void)
 {
-	int c;					/* current character read */
-	int i;					/* current index into fline */
-	char *tmpline;				/* temp storage for expanding line */
+    int c;                  /* current character read */
+    int i;                  /* current index into fline */
+    char *tmpline;              /* temp storage for expanding line */
 
-	/* if we are at the end...return it */
-	if (eofflag)
-		return FIOEOF;
+    /* if we are at the end...return it */
+    if (eofflag)
+        return FIOEOF;
 
-	/* dump fline if it ended up too big */
-	if (flen > NSTRING) {
-		free(fline);
-		fline = NULL;
-	}
+    /* dump fline if it ended up too big */
+    if (flen > NSTRING) {
+        free(fline);
+        fline = NULL;
+    }
 
-	/* if we don't have an fline, allocate one */
-	if (fline == NULL)
-		if ((fline = malloc(flen = NSTRING)) == NULL)
-			return FIOMEM;
+    /* if we don't have an fline, allocate one */
+    if (fline == NULL)
+        if ((fline = malloc(flen = NSTRING)) == NULL)
+            return FIOMEM;
 
-	/* read the line in */
-	if (!nullflag) {
-		if (fgets(fline, NSTRING, ffp) == (char *)NULL) {	/* EOF ? */
-			i = 0;
-			c = EOF;
-		} else {
-			i = strlen(fline);
-			c = 0;
-			if (i > 0) {
-				c = fline[i - 1];
-				i--;
-			}
-		}
-	} else {
-		i = 0;
-		c = fgetc(ffp);
-	}
-	while (c != EOF && c != '\n') {
-		if (c && c != '\r') {
-			fline[i++] = c;
-			/* if it's longer, get more room */
-			if (i >= flen) {
-				if ((tmpline = malloc(flen + NSTRING)) == NULL)
-					return FIOMEM;
-				mystrscpy(tmpline, fline, flen);
-				flen += NSTRING;
-				free(fline);
-				fline = tmpline;
-			}
-		}
-		c = fgetc(ffp);
-	}
+    /* read the line in */
+    if (!nullflag) {
+        if (fgets(fline, NSTRING, ffp) == (char *)NULL) {   /* EOF ? */
+            i = 0;
+            c = EOF;
+        } else {
+            i = strlen(fline);
+            c = 0;
+            if (i > 0) {
+                c = fline[i - 1];
+                i--;
+            }
+        }
+    } else {
+        i = 0;
+        c = fgetc(ffp);
+    }
+    while (c != EOF && c != '\n') {
+        if (c && c != '\r') {
+            fline[i++] = c;
+            /* if it's longer, get more room */
+            if (i >= flen) {
+                if ((tmpline = malloc(flen + NSTRING)) == NULL)
+                    return FIOMEM;
+                mystrscpy(tmpline, fline, flen);
+                flen += NSTRING;
+                free(fline);
+                fline = tmpline;
+            }
+        }
+        c = fgetc(ffp);
+    }
 
-	/* test for any errors that may have occured */
-	if (c == EOF) {
-		if (ferror(ffp)) {
-			mlwrite("File read error");
-			return FIOERR;
-		}
+    /* test for any errors that may have occured */
+    if (c == EOF) {
+        if (ferror(ffp)) {
+            mlwrite("File read error");
+            return FIOERR;
+        }
 
-		if (i != 0)
-			eofflag = TRUE;
-		else
-			return FIOEOF;
-	}
+        if (i != 0)
+            eofflag = TRUE;
+        else
+            return FIOEOF;
+    }
 
-	/* terminate and decrypt the string */
-	fline[i] = 0;
-	return FIOSUC;
+    /* terminate and decrypt the string */
+    fline[i] = 0;
+    return FIOSUC;
 }
 
 /*
  * does <fname> exist on disk?
  *
- * char *fname;		file to check for existance
+ * char *fname;     file to check for existance
  */
 int fexist(char *fname)
 {
-	FILE *fp;
+    FILE *fp;
 
-	/* try to open the file for reading */
-	fp = fopen(fname, "r");
+    /* try to open the file for reading */
+    fp = fopen(fname, "r");
 
-	/* if it fails, just return false! */
-	if (fp == NULL)
-		return FALSE;
+    /* if it fails, just return false! */
+    if (fp == NULL)
+        return FALSE;
 
-	/* otherwise, close it and report true */
-	fclose(fp);
-	return TRUE;
+    /* otherwise, close it and report true */
+    fclose(fp);
+    return TRUE;
 }
