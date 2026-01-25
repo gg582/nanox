@@ -579,6 +579,7 @@ int nanox_help_command(int f, int n)
     help_show_section = false;
     help_section_scroll = 0;
     sgarbf = TRUE;
+    update(TRUE);  /* Force immediate screen redraw when entering help */
     nanox_help_render();
     return TRUE;
 }
@@ -587,6 +588,7 @@ void help_close(void)
 {
     help_active = false;
     sgarbf = TRUE;
+    update(TRUE);  /* Force immediate screen redraw when exiting help */
 }
 
 int nanox_help_handle_key(int key)
