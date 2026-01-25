@@ -32,11 +32,6 @@ extern struct terminal term;
 static struct window *minibuf_wp = NULL;    /* Minibuffer window */
 static struct buffer *minibuf_bp = NULL;    /* Minibuffer buffer */
 
-/* UTF-8 input gate buffer */
-#define GATE_BUF_SIZE 8
-static unsigned char gate_buf[GATE_BUF_SIZE];
-static int gate_len = 0;
-
 /* Initialize the minibuffer window and buffer system */
 static void minibuf_init(void)
 {
@@ -94,9 +89,6 @@ static void minibuf_init(void)
     minibuf_wp->w_marko = 0;
     minibuf_wp->w_force = 0;
     minibuf_wp->w_flag = 0;
-    
-    /* Reset gate buffer */
-    gate_len = 0;
 }
 
 /* Clear minibuffer content */
@@ -123,8 +115,6 @@ static void minibuf_clear(void)
     minibuf_wp->w_doto = 0;
     minibuf_bp->b_dotp = minibuf_bp->b_linep;
     minibuf_bp->b_doto = 0;
-    
-    gate_len = 0;
 }
 
 /* Insert a UTF-8 character into minibuffer using linsert() */
@@ -160,14 +150,11 @@ static int minibuf_delete_char(long n)
     
     /* Move back one UTF-8 character */
     if (minibuf_wp->w_doto > 0) {
-        int byte_offset = minibuf_wp->w_doto;
+        int byte_offset = minibuf_wp->w_doto - 1;
         unsigned char *text = minibuf_wp->w_dotp->l_text;
         
         /* Move back to find UTF-8 character boundary */
-        while (byte_offset > 0 && !is_beginning_utf8(text[byte_offset - 1]))
-            byte_offset--;
-        
-        if (byte_offset > 0)
+        while (byte_offset > 0 && !is_beginning_utf8(text[byte_offset]))
             byte_offset--;
         
         int bytes_to_delete = minibuf_wp->w_doto - byte_offset;
@@ -296,78 +283,6 @@ static void minibuf_get_text(char *dest, int max_len)
         dest[i] = lp->l_text[i];
     }
     dest[i] = '\0';
-}
-
-/* ====================================================================
- * UTF-8 INPUT GATE SYSTEM
- * ==================================================================== */
-
-/* Check if we have a complete UTF-8 character in gate buffer */
-static int gate_is_complete(void)
-{
-    if (gate_len == 0)
-        return 0;
-    
-    unsigned char first = gate_buf[0];
-    int expected_bytes;
-    
-    /* Determine expected UTF-8 sequence length */
-    if ((first & 0x80) == 0) {
-        expected_bytes = 1;  /* ASCII */
-    } else if ((first & 0xE0) == 0xC0) {
-        expected_bytes = 2;  /* 2-byte sequence */
-    } else if ((first & 0xF0) == 0xE0) {
-        expected_bytes = 3;  /* 3-byte sequence */
-    } else if ((first & 0xF8) == 0xF0) {
-        expected_bytes = 4;  /* 4-byte sequence */
-    } else {
-        /* Invalid UTF-8 start byte - treat as complete */
-        return 1;
-    }
-    
-    return (gate_len >= expected_bytes);
-}
-
-/* Add byte to gate buffer and try to commit complete UTF-8 character */
-static int gate_add_byte(int byte)
-{
-    unicode_t uc;
-    int bytes;
-    
-    /* Add byte to gate buffer */
-    if (gate_len < GATE_BUF_SIZE) {
-        gate_buf[gate_len++] = (unsigned char)byte;
-    } else {
-        /* Buffer overflow - reset and start over */
-        gate_len = 0;
-        gate_buf[gate_len++] = (unsigned char)byte;
-    }
-    
-    /* Check if we have a complete UTF-8 character */
-    if (gate_is_complete()) {
-        /* Parse the UTF-8 sequence */
-        bytes = utf8_to_unicode(gate_buf, 0, gate_len, &uc);
-        
-        if (bytes > 0 && bytes <= gate_len) {
-            /* Valid UTF-8 character - commit to minibuffer */
-            int result = minibuf_insert_char(uc);
-            
-            /* Clear gate buffer */
-            gate_len = 0;
-            
-            return result;
-        } else {
-            /* Invalid sequence - insert as-is and reset */
-            for (int i = 0; i < gate_len; i++) {
-                minibuf_insert_char(gate_buf[i]);
-            }
-            gate_len = 0;
-            return TRUE;
-        }
-    }
-    
-    /* Character not complete yet */
-    return TRUE;
 }
 
 /* ====================================================================
@@ -507,7 +422,6 @@ int isearch(int f, int n)
 start_over:
     /* Clear and display minibuffer */
     minibuf_clear();
-    gate_len = 0;
     
     const char *prompt = (n < 0) ? "I-Search backward: " : "I-Search forward: ";
     minibuf_update(prompt);
@@ -602,12 +516,13 @@ start_over:
             }
         }
         
-        /* Add character to search - use gate buffer for UTF-8 */
-        if (c >= ' ' && c < 256) {
-            /* Raw byte - add to gate buffer */
-            gate_add_byte(c);
-        } else {
-            /* Unicode character from extended input */
+        /* Add character to search - clone main editor's logic */
+        /* Match main.c execute() logic: (c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF) */
+        if ((c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF)) {
+            /* Direct insert for printable characters and UTF-8 extended */
+            minibuf_insert_char(c);
+        } else if (c >= ' ' && c < 0x7F) {
+            /* ASCII printable - should not reach here */
             minibuf_insert_char(c);
         }
         
@@ -626,7 +541,7 @@ start_over:
         if (!status) {
             TTputc(BELL);
             TTflush();
-        } else if (!(status = checknext(pat[strlen(pat) - 1], pat, n))) {
+        } else if (strlen(pat) > 0 && !(status = checknext(pat[strlen(pat) - 1], pat, n))) {
             status = scanmore(pat, n);
         }
         
