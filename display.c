@@ -1297,10 +1297,11 @@ void mlforce(char *s)
 void mlputs(char *s)
 {
     unsigned char *ptr = (unsigned char *)s;
+    int remaining = strlen(s);
     
-    while (*ptr != 0) {
+    while (*ptr != 0 && remaining > 0) {
         unicode_t uc;
-        int bytes = utf8_to_unicode(ptr, 0, strlen((char *)ptr), &uc);
+        int bytes = utf8_to_unicode(ptr, 0, remaining, &uc);
         
         if (bytes <= 0) {
             break;
@@ -1314,6 +1315,7 @@ void mlputs(char *s)
         /* Advance vtcol by the visual width of the character */
         vtcol += mystrnlen_raw_w(uc);
         ptr += bytes;
+        remaining -= bytes;
     }
     
     /* Synchronize physical cursor position with virtual cursor */
