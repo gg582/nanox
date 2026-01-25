@@ -35,15 +35,17 @@ void command_mode_activate(void) {
     cmd_buffer[0] = '\0';
     cmd_pos = 0;
     
-    /* Force complete screen reset and redraw */
-    sgarbf = TRUE;  /* Mark screen as garbage */
-    update(TRUE);   /* Full screen redraw */
+    /* Mark current window for full redisplay to synchronize display state */
+    curwp->w_flag |= WFHARD | WFMODE;
     
-    /* Show command prompt in status bar */
+    /* Force complete screen reset and redraw */
+    sgarbf = TRUE;  /* Mark screen as garbage - forces atomic update */
+    update(TRUE);   /* Full screen redraw - ensures buffer doesn't preempt message */
+    
+    /* Show command prompt in status bar - this becomes atomic with the update */
     mlwrite("F1 Command: [number] goto line | Help | Sed s/pattern/replacement/");
     
-    /* Force another update to ensure message is visible */
-    update(TRUE);
+    /* DO NOT call update() here - let the main loop handle it to prevent preemption */
 }
 
 /* Execute goto line command */
@@ -348,12 +350,17 @@ int command_mode_handle_key(int c) {
 void command_mode_render(void) {
     if (!cmd_active) return;
     
+    /* Mark current window for hard redraw to prevent buffer rendering from preempting message */
+    curwp->w_flag |= WFHARD;
+    
     /* Show current command buffer in status bar */
     mlwrite("F1 Command: %s_", cmd_buffer);
     
-    /* Force complete screen redraw to make input visible */
+    /* Force screen garbage flag for atomic display update */
     sgarbf = TRUE;
-    update(TRUE);
+    
+    /* DO NOT call update() here - message will be shown by main loop's update cycle
+     * This prevents the message from being buried by a second buffer redraw */
 }
 
 /* Cleanup command mode */
