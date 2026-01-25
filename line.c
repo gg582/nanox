@@ -322,56 +322,56 @@ int lover(char *ostr)
  */
 int lnewline(void)
 {
-    char *cp1;
-    char *cp2;
-    struct line *lp1;
-    struct line *lp2;
-    int doto;
-    struct window *wp;
+	char *cp1;
+	char *cp2;
+	struct line *lp1;
+	struct line *lp2;
+	int doto;
+	struct window *wp;
 
-    if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
-        return rdonly();        /* we are in read only mode     */
+	if (curbp->b_mode & MDVIEW)		/* don't allow this command if      */
+		return rdonly();		/* we are in read only mode     */
 
-    lp1 = curwp->w_dotp;            /* Get the address and  */
-    doto = curwp->w_doto;           /* offset of "."        */
+	lp1 = curwp->w_dotp;			/* Get the address and  */
+	doto = curwp->w_doto;			/* offset of "."        */
 
-    /* 핵심: UTF-8 문자 중간에서 줄바꿈이 일어나지 않도록 경계 보정 */
-    while (doto > 0 && doto < lp1->l_used && (lp1->l_text[doto] & 0xC0) == 0x80) {
-        doto--;
-    }
+	/* Ensure we don't split a UTF-8 character - adjust to character boundary */
+	while (doto > 0 && doto < lp1->l_used && !is_beginning_utf8((unsigned char)lp1->l_text[doto])) {
+		doto--;
+	}
 
-    lchange(WFHARD);
+	lchange(WFHARD);
 
-    /* Allocate a new line for the second half */
-    if ((lp2 = lalloc(lp1->l_used - doto)) == NULL)
-        return FALSE;
+	/* Allocate a new line for the second half */
+	if ((lp2 = lalloc(lp1->l_used - doto)) == NULL)
+		return FALSE;
 
-    cp1 = &lp1->l_text[doto];
-    cp2 = &lp2->l_text[0];
-    while (cp1 != &lp1->l_text[lp1->l_used])
-        *cp2++ = *cp1++;
+	cp1 = &lp1->l_text[doto];
+	cp2 = &lp2->l_text[0];
+	while (cp1 != &lp1->l_text[lp1->l_used])
+		*cp2++ = *cp1++;
 
-    lp2->l_fp = lp1->l_fp;      /* Link in new line */
-    lp1->l_fp = lp2;
-    lp2->l_fp->l_bp = lp2;
-    lp2->l_bp = lp1;
-    lp1->l_used = doto;
+	lp2->l_fp = lp1->l_fp;		/* Link in new line */
+	lp1->l_fp = lp2;
+	lp2->l_fp->l_bp = lp2;
+	lp2->l_bp = lp1;
+	lp1->l_used = doto;
 
-    /* Update window pointers */
-    wp = curwp;
-    if (wp->w_dotp == lp1) {
-        if (wp->w_doto >= doto) {
-            wp->w_dotp = lp2;
-            wp->w_doto -= doto;
-        }
-    }
-    if (wp->w_markp == lp1) {
-        if (wp->w_marko > doto) {
-            wp->w_markp = lp2;
-            wp->w_marko -= doto;
-        }
-    }
-    return TRUE;
+	/* Update window pointers */
+	wp = curwp;
+	if (wp->w_dotp == lp1) {
+		if (wp->w_doto >= doto) {
+			wp->w_dotp = lp2;
+			wp->w_doto -= doto;
+		}
+	}
+	if (wp->w_markp == lp1) {
+		if (wp->w_marko > doto) {
+			wp->w_markp = lp2;
+			wp->w_marko -= doto;
+		}
+	}
+	return TRUE;
 }
 
 int lgetchar(unicode_t *c)
@@ -419,58 +419,61 @@ int ldelchar(long n, int kflag)
  */
 int ldelete(long n, int kflag)
 {
-    char *cp1;
-    char *cp2;
-    struct line *dotp;
-    int doto;
-    int chunk;
-    struct window *wp;
+	char *cp1;
+	char *cp2;
+	struct line *dotp;
+	int doto;
+	int chunk;
+	struct window *wp;
 
-    if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
-        return rdonly();        /* we are in read only mode     */
-    while (n != 0) {
-        dotp = curwp->w_dotp;
-        doto = curwp->w_doto;
-        if (dotp == curbp->b_linep) /* Hit end of buffer.       */
-            return FALSE;
-        chunk = dotp->l_used - doto;    /* Size of chunk.       */
-        if (chunk > n)
-            chunk = n;
-        if (chunk == 0) {       /* End of line, merge.  */
-            lchange(WFHARD);
-            if (ldelnewline() == FALSE || (kflag != FALSE && kinsert('\n') == FALSE))
-                return FALSE;
-            --n;
-            continue;
-        }
-        lchange(WFHARD);
-        cp1 = &dotp->l_text[doto];  /* Scrunch text.        */
-        cp2 = cp1 + chunk;
-        if (kflag != FALSE) {       /* Kill?                */
-            while (cp1 != cp2) {
-                if (kinsert(*cp1) == FALSE)
-                    return FALSE;
-                ++cp1;
-            }
-            cp1 = &dotp->l_text[doto];
-        }
-        while (cp2 != &dotp->l_text[dotp->l_used])
-            *cp1++ = *cp2++;
-        dotp->l_used -= chunk;
-        wp = curwp;         /* Fix window           */
-        if (wp->w_dotp == dotp && wp->w_doto >= doto) {
-            wp->w_doto -= chunk;
-            if (wp->w_doto < doto)
-                wp->w_doto = doto;
-        }
-        if (wp->w_markp == dotp && wp->w_marko >= doto) {
-            wp->w_marko -= chunk;
-            if (wp->w_marko < doto)
-                wp->w_marko = doto;
-        }
-        n -= chunk;
-    }
-    return TRUE;
+	if (curbp->b_mode & MDVIEW)		/* don't allow this command if      */
+		return rdonly();		/* we are in read only mode     */
+	while (n != 0) {
+		dotp = curwp->w_dotp;
+		doto = curwp->w_doto;
+		if (dotp == curbp->b_linep)	/* Hit end of buffer.       */
+			return FALSE;
+		chunk = dotp->l_used - doto;	/* Size of chunk.       */
+		if (chunk > n)
+			chunk = n;
+		if (chunk == 0) {		/* End of line, merge.  */
+			lchange(WFHARD);
+			if (ldelnewline() == FALSE || (kflag != FALSE && kinsert('\n') == FALSE))
+				return FALSE;
+			--n;
+			continue;
+		}
+		lchange(WFHARD);
+		cp1 = &dotp->l_text[doto];	/* Scrunch text.        */
+		cp2 = cp1 + chunk;
+		if (kflag != FALSE) {		/* Kill?                */
+			while (cp1 != cp2) {
+				/* Cast to unsigned char to prevent sign extension */
+				if (kinsert((unsigned char)*cp1) == FALSE)
+					return FALSE;
+				++cp1;
+			}
+			cp1 = &dotp->l_text[doto];
+		}
+		while (cp2 != &dotp->l_text[dotp->l_used])
+			*cp1++ = *cp2++;
+		dotp->l_used -= chunk;
+		
+		/* Fix window offsets - currently only curwp used in this editor */
+		wp = curwp;
+		if (wp->w_dotp == dotp && wp->w_doto >= doto) {
+			wp->w_doto -= chunk;
+			if (wp->w_doto < doto)
+				wp->w_doto = doto;
+		}
+		if (wp->w_markp == dotp && wp->w_marko >= doto) {
+			wp->w_marko -= chunk;
+			if (wp->w_marko < doto)
+				wp->w_marko = doto;
+		}
+		n -= chunk;
+	}
+	return TRUE;
 }
 
 /*
