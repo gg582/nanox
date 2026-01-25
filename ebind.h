@@ -140,7 +140,7 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | 'c', metafn },
     { SPEC | 'd', backchar },
     { SPEC | 'e', forwline },
-    { SPEC | 'f', gotobob },
+    { SPEC | 'H', gotobob },
     { SPEC | 'i', cex },
     { SPEC | 'P', nanox_help_command },
     { SPEC | 'Q', filesave },
@@ -171,6 +171,8 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | META | 'R', nullproc },    /*  on file read */
     { SPEC | META | 'X', nullproc },    /*  on window change P.K. */
 
+    /* End of file, Beginning of file bindings */
+    { SPEC | 'F', gotoeob},
     { 0, NULL }
 };
 
