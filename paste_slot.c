@@ -180,7 +180,7 @@ void paste_slot_display(void)
     TTputc('+');
     
     /* Show instructions in status bar */
-    mlwrite("Ctrl+Shift+P to paste, ESC to cancel");
+    mlwrite("Press 'p' or Enter to paste, ESC to cancel");
     
     TTflush();
 }
