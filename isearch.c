@@ -28,11 +28,11 @@ extern struct terminal term;
  * ==================================================================== */
 
 /* Minibuffer dedicated structures */
-static struct window *minibuf_wp = NULL;    /* Minibuffer window */
-static struct buffer *minibuf_bp = NULL;    /* Minibuffer buffer */
+struct window *minibuf_wp = NULL;    /* Minibuffer window */
+struct buffer *minibuf_bp = NULL;    /* Minibuffer buffer */
 
 /* Initialize the minibuffer window and buffer system */
-static void minibuf_init(void)
+void minibuf_init(void)
 {
     struct line *lp;
     
@@ -91,7 +91,7 @@ static void minibuf_init(void)
 }
 
 /* Clear minibuffer content */
-static void minibuf_clear(void)
+void minibuf_clear(void)
 {
     if (minibuf_bp == NULL || minibuf_wp == NULL)
         return;
@@ -117,7 +117,7 @@ static void minibuf_clear(void)
 }
 
 /* Insert a UTF-8 character into minibuffer using linsert() */
-static int minibuf_insert_char(unicode_t c)
+int minibuf_insert_char(unicode_t c)
 {
     struct window *save_wp = curwp;
     struct buffer *save_bp = curbp;
@@ -138,7 +138,7 @@ static int minibuf_insert_char(unicode_t c)
 }
 
 /* Delete characters from minibuffer using ldelete() */
-static int minibuf_delete_char(long n)
+int minibuf_delete_char(long n)
 {
     struct window *save_wp = curwp;
     struct buffer *save_bp = curbp;
@@ -179,7 +179,7 @@ static int minibuf_delete_char(long n)
 }
 
 /* Update minibuffer display - cloned from update() and show_line() */
-static void minibuf_update(const char *prompt)
+void minibuf_update(const char *prompt)
 {
     int col = 0;
     int i, len;
@@ -263,7 +263,7 @@ static void minibuf_update(const char *prompt)
 }
 
 /* Get minibuffer content as string */
-static void minibuf_get_text(char *dest, int max_len)
+void minibuf_get_text(char *dest, int max_len)
 {
     struct line *lp;
     int i;
@@ -282,6 +282,66 @@ static void minibuf_get_text(char *dest, int max_len)
         dest[i] = lp->l_text[i];
     }
     dest[i] = '\0';
+}
+
+/* Generic minibuffer input function - returns TRUE if input was accepted, FALSE if cancelled */
+int minibuf_input(const char *prompt, char *dest, int max_len)
+{
+    int c;
+    
+    /* Initialize minibuffer system */
+    minibuf_init();
+    if (minibuf_bp == NULL || minibuf_wp == NULL) {
+        mlwrite("? Cannot initialize minibuffer");
+        return FALSE;
+    }
+    
+    /* Clear and display minibuffer */
+    minibuf_clear();
+    minibuf_update(prompt);
+    
+    /* Main input loop using minibuffer */
+    for (;;) {
+        update(FALSE);
+        c = ectoc(get1key());
+        
+        switch (c) {
+        case IS_ABORT:
+            /* Abort with Ctrl+G */
+            mlerase();
+            return FALSE;
+            
+        case IS_NEWLINE:
+        case '\n':
+            /* Enter/Return - accept input */
+            minibuf_get_text(dest, max_len);
+            minibuf_clear();
+            mlerase();
+            if (dest[0] == '\0')
+                return FALSE;
+            return TRUE;
+            
+        case IS_BACKSP:
+        case IS_RUBOUT:
+            /* Backspace/Delete - remove last character */
+            minibuf_delete_char(1);
+            minibuf_update(prompt);
+            break;
+            
+        case 0x1B: /* ESC - cancel */
+            mlerase();
+            return FALSE;
+            
+        default:
+            /* Add character to minibuffer */
+            /* Match main.c execute() logic: (c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF) */
+            if ((c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF)) {
+                minibuf_insert_char(c);
+                minibuf_update(prompt);
+            }
+            break;
+        }
+    }
 }
 
 /* ====================================================================

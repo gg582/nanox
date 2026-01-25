@@ -200,7 +200,8 @@ static void execute_sed(const char *sed_expr) {
     /* Process each line in the buffer */
     struct line *lp;
     for (lp = lforw(curbp->b_linep); lp != curbp->b_linep; lp = lforw(lp)) {
-        int line_len = llength(lp);
+        int orig_line_len = llength(lp);  /* Save original line length for deletion */
+        int line_len = orig_line_len;
         if (line_len == 0) continue;
         
         char *line_text = malloc(line_len + 1);
@@ -281,9 +282,9 @@ static void execute_sed(const char *sed_expr) {
             curwp->w_dotp = lp;
             curwp->w_doto = 0;
             
-            /* Delete entire line content */
-            if (line_len > 0) {
-                ldelete((long)line_len, FALSE);
+            /* Delete entire ORIGINAL line content (use orig_line_len, not modified line_len) */
+            if (orig_line_len > 0) {
+                ldelete((long)orig_line_len, FALSE);
             }
             
             /* Insert new content at current position (beginning of line) */
@@ -418,7 +419,7 @@ int command_mode_activate_command(int f, int n) {
     return TRUE;
 }
 
-/* F6 Sed Replace - interactive sed-style regex replace */
+/* F6 Sed Replace - interactive sed-style regex replace with minibuffer */
 int sed_replace_command(int f, int n) {
     char sed_expr[256];
     int status;
@@ -427,13 +428,12 @@ int sed_replace_command(int f, int n) {
     if (curbp->b_mode & MDVIEW)
         return rdonly();
     
-    /* Prompt for sed expression */
-    status = mlreply("Sed replace (s/pattern/replacement/[g]): ", sed_expr, sizeof(sed_expr));
+    /* Get input using minibuffer */
+    status = minibuf_input("Sed replace (s/pattern/replacement/[g]): ", sed_expr, sizeof(sed_expr));
     if (status != TRUE)
         return status;
     
     /* Execute the sed replace */
     execute_sed(sed_expr);
-    
     return TRUE;
 }
