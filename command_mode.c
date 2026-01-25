@@ -422,65 +422,18 @@ int command_mode_activate_command(int f, int n) {
 /* F6 Sed Replace - interactive sed-style regex replace with minibuffer */
 int sed_replace_command(int f, int n) {
     char sed_expr[256];
-    int c;
-    int expc;
-    const char *prompt = "Sed replace (s/pattern/replacement/[g]): ";
+    int status;
     
     /* Check for read-only mode */
     if (curbp->b_mode & MDVIEW)
         return rdonly();
     
-    /* Initialize minibuffer system */
-    minibuf_init();
+    /* Get input using minibuffer */
+    status = minibuf_input("Sed replace (s/pattern/replacement/[g]): ", sed_expr, sizeof(sed_expr));
+    if (status != TRUE)
+        return status;
     
-    /* Clear and display minibuffer */
-    minibuf_clear();
-    minibuf_update(prompt);
-    
-    /* Main input loop using minibuffer */
-    for (;;) {
-        update(FALSE);
-        c = ectoc(expc = get1key());
-        
-        switch (c) {
-        case IS_ABORT:
-            /* Abort with Ctrl+G */
-            mlerase();
-            return FALSE;
-            
-        case IS_NEWLINE:
-        case '\n':
-            /* Enter/Return - execute the sed command */
-            minibuf_get_text(sed_expr, sizeof(sed_expr));
-            if (sed_expr[0] == '\0') {
-                mlerase();
-                return FALSE;
-            }
-            /* Execute the sed replace - it will display result message */
-            execute_sed(sed_expr);
-            /* Clear minibuffer after execution for clean state */
-            minibuf_clear();
-            return TRUE;
-            
-        case IS_BACKSP:
-        case IS_RUBOUT:
-            /* Backspace/Delete - remove last character */
-            minibuf_delete_char(1);
-            minibuf_update(prompt);
-            break;
-            
-        case 0x1B: /* ESC - cancel */
-            mlerase();
-            return FALSE;
-            
-        default:
-            /* Add character to minibuffer */
-            /* Match main.c execute() logic: (c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF) */
-            if ((c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF)) {
-                minibuf_insert_char(c);
-                minibuf_update(prompt);
-            }
-            break;
-        }
-    }
+    /* Execute the sed replace */
+    execute_sed(sed_expr);
+    return TRUE;
 }

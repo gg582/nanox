@@ -284,6 +284,66 @@ void minibuf_get_text(char *dest, int max_len)
     dest[i] = '\0';
 }
 
+/* Generic minibuffer input function - returns TRUE if input was accepted, FALSE if cancelled */
+int minibuf_input(const char *prompt, char *dest, int max_len)
+{
+    int c;
+    
+    /* Initialize minibuffer system */
+    minibuf_init();
+    if (minibuf_bp == NULL || minibuf_wp == NULL) {
+        mlwrite("? Cannot initialize minibuffer");
+        return FALSE;
+    }
+    
+    /* Clear and display minibuffer */
+    minibuf_clear();
+    minibuf_update(prompt);
+    
+    /* Main input loop using minibuffer */
+    for (;;) {
+        update(FALSE);
+        c = ectoc(get1key());
+        
+        switch (c) {
+        case IS_ABORT:
+            /* Abort with Ctrl+G */
+            mlerase();
+            return FALSE;
+            
+        case IS_NEWLINE:
+        case '\n':
+            /* Enter/Return - accept input */
+            minibuf_get_text(dest, max_len);
+            minibuf_clear();
+            mlerase();
+            if (dest[0] == '\0')
+                return FALSE;
+            return TRUE;
+            
+        case IS_BACKSP:
+        case IS_RUBOUT:
+            /* Backspace/Delete - remove last character */
+            minibuf_delete_char(1);
+            minibuf_update(prompt);
+            break;
+            
+        case 0x1B: /* ESC - cancel */
+            mlerase();
+            return FALSE;
+            
+        default:
+            /* Add character to minibuffer */
+            /* Match main.c execute() logic: (c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF) */
+            if ((c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF)) {
+                minibuf_insert_char(c);
+                minibuf_update(prompt);
+            }
+            break;
+        }
+    }
+}
+
 /* ====================================================================
  * ISEARCH IMPLEMENTATION
  * ==================================================================== */

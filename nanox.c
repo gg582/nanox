@@ -685,7 +685,7 @@ static int reserve_set(int slot)
     if (slot < 0 || slot >= 4) return FALSE;
 
     snprintf(prompt, sizeof(prompt), "Reserve %s file: ", slot_name(slot));
-    rc = mlreply(prompt, path, sizeof(path));
+    rc = minibuf_input(prompt, path, sizeof(path));
     if (rc != TRUE)
         return rc;
     if (!*path)

@@ -79,7 +79,7 @@ int filefind(int f, int n)
 
     if (restflag)               /* don't allow this command if restricted */
         return resterr();
-    if ((s = mlreply("Find file: ", fname, NFILEN)) != TRUE)
+    if ((s = minibuf_input("Find file: ", fname, NFILEN)) != TRUE)
         return s;
     return getfile(fname, TRUE);
 }
