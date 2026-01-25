@@ -986,6 +986,7 @@ static int updateline(int row, struct video *vp)
         }
 
         TTputc(cell->ch);
+        ttcol += mystrnlen_raw_w(cell->ch);
 
         if (i < analyzed && (array[i] & BAD_WORD_END)) {
             TTputs(SPELLSTOP);
@@ -995,9 +996,6 @@ static int updateline(int row, struct video *vp)
 
     if (started)
         TTputs(SPELLSTOP);
-
-    /* Move to actual end of visible content and clear remaining trash */
-    ttcol = maxchar;
 
     TTputs("\033[0m"); /* Reset */
 
@@ -1292,17 +1290,36 @@ void mlforce(char *s)
 }
 
 /*
- * Write out a string. Update the physical cursor position. This assumes that
- * the characters in the string all have width "1"; if this is not the case
- * things will get screwed up a little.
+ * Write out a string. Update the physical cursor position.
+ * Properly handles multi-byte UTF-8 characters by advancing vtcol
+ * according to the visual width of each character.
  */
 void mlputs(char *s)
 {
-    while (*s != 0) {
-        /* Ensure 8-bit transparency for multi-byte characters */
-        TTputc((unsigned char)*s++);
-        ++ttcol;
+    unsigned char *ptr = (unsigned char *)s;
+    
+    while (*ptr != 0) {
+        unicode_t uc;
+        int bytes = utf8_to_unicode(ptr, 0, strlen((char *)ptr), &uc);
+        
+        if (bytes <= 0) {
+            break;
+        }
+        
+        /* Output the UTF-8 character byte by byte */
+        for (int i = 0; i < bytes; i++) {
+            TTputc(ptr[i]);
+        }
+        
+        /* Advance vtcol by the visual width of the character */
+        vtcol += mystrnlen_raw_w(uc);
+        ptr += bytes;
     }
+    
+    /* Synchronize physical cursor position with virtual cursor */
+    ttcol = vtcol;
+    movecursor(vtrow, ttcol);
+    TTflush();
 }
 
 /*
