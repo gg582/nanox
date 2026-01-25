@@ -35,8 +35,9 @@ void command_mode_activate(void) {
     cmd_buffer[0] = '\0';
     cmd_pos = 0;
     
-    /* Force screen update to show command prompt */
-    update(TRUE);
+    /* Force complete screen reset and redraw */
+    sgarbf = TRUE;  /* Mark screen as garbage */
+    update(TRUE);   /* Full screen redraw */
     
     /* Show command prompt in status bar */
     mlwrite("F1 Command: [number] goto line | Help | Sed s/pattern/replacement/");
@@ -73,6 +74,10 @@ static void execute_goto_line(int line_num) {
 
 /* Execute help command */
 static void execute_help(void) {
+    /* Force complete screen reset before showing help */
+    sgarbf = TRUE;
+    update(TRUE);
+    
     /* Call existing help function */
     nanox_help_command(FALSE, 1);
 }
@@ -346,7 +351,8 @@ void command_mode_render(void) {
     /* Show current command buffer in status bar */
     mlwrite("F1 Command: %s_", cmd_buffer);
     
-    /* Force screen update to make input visible */
+    /* Force complete screen redraw to make input visible */
+    sgarbf = TRUE;
     update(TRUE);
 }
 
