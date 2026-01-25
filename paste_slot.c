@@ -103,9 +103,7 @@ int paste_slot_is_active(void)
 void paste_slot_display(void)
 {
     extern void mlwrite(const char *fmt, ...);
-    int row, col;
-    int max_rows = term.t_nrow - 4;  /* Leave room for border and status */
-    int max_cols = term.t_ncol - 4;
+    int col;
     char *content = paste_slot_buffer;
     int content_len = paste_slot_size;
     int line_start = 0;

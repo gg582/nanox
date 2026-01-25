@@ -276,9 +276,6 @@ static void execute_sed(const char *sed_expr) {
         
         /* Replace the line if modified */
         if (line_modified && new_line) {
-            /* Save current cursor position */
-            struct line *old_dotp = curwp->w_dotp;
-            int old_doto = curwp->w_doto;
             
             /* Move cursor to the beginning of this line */
             curwp->w_dotp = lp;

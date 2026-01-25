@@ -24,6 +24,7 @@ A BUFFER is a named area containing a FILE being edited. Many buffers may
 be active at once. Many WINDOWS may be active at once on the screen. All
 windows may show different parts of the same buffer, or each may display a
 different one.
+F6 Replace Mode accepts regular expression and apply.
 -------------------------------------------------------------------------------
 =>                      CURSOR MOVEMENT
 Backward character ....      ^B         Forward character .....      ^F
