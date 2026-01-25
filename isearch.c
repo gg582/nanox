@@ -29,6 +29,8 @@
 #include "edef.h"
 #include "efunc.h"
 #include "line.h"
+#include "utf8.h"
+#include "util.h"
 
 extern struct terminal term;
 
@@ -396,20 +398,26 @@ int promptpattern(char *prompt)
 /*
  * routine to echo i-search characters
  *
- * int c;       character to be echoed
+ * int c;       character to be echoed (byte value)
  * int col;     column to be echoed in
  */
 static int echo_char(int c, int col)
 {
+    static unsigned char utf8_buf[4];
+    static int utf8_len = 0;
+    
     movecursor(term.t_nrow, col);       /* Position the cursor        */
     if ((c < ' ') || (c == 0x7F)) {     /* Control character?           */
+        /* Reset UTF-8 buffer for control characters */
+        utf8_len = 0;
+        
         switch (c) {            /* Yes, dispatch special cases */
         case '\n':          /* Newline                    */
             TTputc('<');
             TTputc('N');
             TTputc('L');
             TTputc('>');
-            col += 3;
+            col += 4;
             break;
 
         case '\t':          /* Tab                        */
@@ -418,24 +426,51 @@ static int echo_char(int c, int col)
             TTputc('A');
             TTputc('B');
             TTputc('>');
-            col += 4;
+            col += 5;
             break;
 
         case 0x7F:          /* Rubout:                    */
             TTputc('^');        /* Output a funny looking     */
             TTputc('?');        /*  indication of Rubout      */
-            col++;          /* Count the extra char       */
+            col += 2;
             break;
 
         default:            /* Vanilla control char       */
             TTputc('^');        /* Yes, output prefix         */
             TTputc(c + 0x40);   /* Make it "^X"               */
-            col++;          /* Count this char            */
+            col += 2;
         }
-    } else
-        TTputc(c);          /* Otherwise, output raw char */
+    } else {
+        /* Handle UTF-8 multi-byte sequences */
+        TTputc(c);          /* Output the byte */
+        
+        if (c < 0x80) {
+            /* ASCII character - width is 1 */
+            utf8_len = 0;   /* Reset buffer */
+            col++;
+        } else if (is_beginning_utf8((unsigned char)c)) {
+            /* Start of UTF-8 sequence - don't increment col yet */
+            utf8_buf[0] = (unsigned char)c;
+            utf8_len = 1;
+        } else {
+            /* Continuation byte */
+            if (utf8_len > 0 && utf8_len < 4) {
+                utf8_buf[utf8_len++] = (unsigned char)c;
+                
+                /* Try to decode */
+                unicode_t uc;
+                int bytes = utf8_to_unicode(utf8_buf, 0, utf8_len, &uc);
+                
+                if (bytes > 0 && bytes == utf8_len) {
+                    /* Complete UTF-8 character */
+                    col += mystrnlen_raw_w(uc);
+                    utf8_len = 0;  /* Reset for next character */
+                }
+            }
+        }
+    }
     TTflush();              /* Flush the output           */
-    return ++col;               /* return the new column no   */
+    return col;             /* return the new column no   */
 }
 
 /*
