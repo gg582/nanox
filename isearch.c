@@ -4,10 +4,9 @@
  * 
  * This implementation provides:
  * - Dedicated 1-line minibuffer window/buffer at term.t_nrow
- * - Cloned update() and updateline() logic for minibuffer rendering
+ * - Cloned show_line() and updateline() logic for minibuffer rendering  
  * - Native linsert()/ldelete() for all string manipulations
- * - UTF-8 gate buffer for proper character completion
- * - Sign-extension masking with TTputc((unsigned char)c & 0xFF)
+ * - Direct Unicode code point output via TTputc() (no double-encoding)
  * - CJK width tracking via mystrnlen_raw_w
  */
 
@@ -179,7 +178,7 @@ static int minibuf_delete_char(long n)
     return FALSE;
 }
 
-/* Update minibuffer display - cloned from update() and updateline() */
+/* Update minibuffer display - cloned from update() and show_line() */
 static void minibuf_update(const char *prompt)
 {
     int col = 0;
@@ -194,7 +193,7 @@ static void minibuf_update(const char *prompt)
     /* Move to bottom line */
     movecursor(term.t_nrow, 0);
     
-    /* Output prompt - mask each byte to prevent sign extension */
+    /* Output prompt - each byte with sign-extension masking */
     while (prompt && *prompt) {
         TTputc((unsigned char)*prompt & 0xFF);
         prompt++;
@@ -212,12 +211,13 @@ static void minibuf_update(const char *prompt)
         return;
     }
     
-    /* Display buffer content with proper UTF-8 and CJK width handling */
+    /* Display buffer content - CLONED from show_line() logic */
     text = lp->l_text;
     len = lp->l_used;
     i = 0;
     
     while (i < len && col < term.t_ncol - 1) {
+        /* Convert UTF-8 bytes to Unicode code point */
         int bytes = utf8_to_unicode(text, i, len, &c);
         
         if (bytes <= 0)
@@ -229,10 +229,9 @@ static void minibuf_update(const char *prompt)
         if (col + char_width >= term.t_ncol - 1)
             break;
         
-        /* Output each byte with sign-extension masking */
-        for (int j = 0; j < bytes; j++) {
-            TTputc((unsigned char)text[i + j] & 0xFF);
-        }
+        /* CRITICAL: Pass Unicode code point to TTputc, NOT raw bytes!
+         * TTputc() internally converts Unicode to UTF-8 bytes with proper masking */
+        TTputc(c);
         
         col += char_width;
         i += bytes;

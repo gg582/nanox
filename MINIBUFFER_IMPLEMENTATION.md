@@ -1,5 +1,40 @@
 # Minibuffer Window Implementation for UTF-8 ISearch
 
+## Critical Fix: Stop Latin-1 Ghosting (Double-Encoding Bug)
+
+### The Bug
+The minibuffer was causing Latin-1 artifacts because it was **double-encoding UTF-8**:
+1. Read UTF-8 bytes from buffer: `0xED 0x95 0x9C` (한)
+2. Pass each byte to `TTputc()`: `TTputc(0xED)`, `TTputc(0x95)`, `TTputc(0x9C)`
+3. `TTputc()` treats each as a Unicode code point and encodes AGAIN
+4. Result: Mojibake corruption
+
+### The Fix (Surgical Clone from display.c)
+
+Studied `show_line()` in `display.c` (lines 510-536) and cloned the exact logic:
+
+```c
+/* BEFORE (BROKEN - Double encoding): */
+for (int j = 0; j < bytes; j++) {
+    TTputc((unsigned char)text[i + j] & 0xFF);  // Each UTF-8 byte
+}
+
+/* AFTER (FIXED - Single encoding): */
+unicode_t c;
+int bytes = utf8_to_unicode(text, i, len, &c);  // Convert to Unicode
+TTputc(c);  // TTputc handles Unicode→UTF-8 internally
+```
+
+**Key Insight:** `TTputc()` in `posix.c` line 106 internally calls `unicode_to_utf8()`. If you pass it UTF-8 bytes, it double-encodes them!
+
+### Verification
+
+The correct flow is:
+1. Buffer stores UTF-8 bytes: `0xED 0x95 0x9C`
+2. `utf8_to_unicode()` converts to Unicode: `0xD55C` (한)
+3. `TTputc(0xD55C)` internally converts back to UTF-8 and outputs: `0xED 0x95 0x9C`
+4. Terminal receives correct bytes and displays: **한**
+
 ## Overview
 
 This document describes the implementation of a dedicated Minibuffer Window System for UTF-8 ISearch in the nanox editor. The implementation follows the Clone Protocol by studying and replicating the editor's main update() and updateline() logic.
