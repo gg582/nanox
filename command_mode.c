@@ -455,8 +455,10 @@ int sed_replace_command(int f, int n) {
                 mlerase();
                 return FALSE;
             }
-            /* Execute the sed replace */
+            /* Execute the sed replace - it will display result message */
             execute_sed(sed_expr);
+            /* Clear minibuffer after execution for clean state */
+            minibuf_clear();
             return TRUE;
             
         case IS_BACKSP:
