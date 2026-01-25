@@ -73,8 +73,8 @@ int backchar(int f, int n)
 			curwp->w_doto = llength(lp);
 			curwp->w_flag |= WFMOVE;
 		} else {
+			unsigned char c;
 			do {
-				unsigned char c;
 				curwp->w_doto--;
 				c = lgetc(curwp->w_dotp, curwp->w_doto);
 				if (is_beginning_utf8(c))
