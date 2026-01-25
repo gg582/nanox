@@ -100,7 +100,6 @@ static void mlbuf_puts(struct mlbuf *dest, const char *text)
 static void draw_hint_row(int row, const char *left, const char *status)
 {
 	int width = term.t_ncol;
-	int i;
 
 	if (width > MAXCOL)
 		width = MAXCOL;
@@ -109,65 +108,59 @@ static void draw_hint_row(int row, const char *left, const char *status)
 
 	vtmove(row, 0);
 	
-	// Draw left string
-	int col = 0;
+	// Draw left string and track display columns
+	int display_col = 0;
 	if (left && *left) {
 		int left_len = strlen(left);
 		int left_i = 0;
 		
-		while (left_i < left_len && col < width) {
+		while (left_i < left_len && display_col < width) {
 			unicode_t c;
 			int bytes = utf8_to_unicode((char *)left, left_i, left_len, &c);
 			int char_width = unicode_width(c);
 			
-			if (col + char_width > width)
+			if (display_col + char_width > width)
 				break;
 			
 			vtputc(c);
-			col += char_width;
+			display_col += char_width;
 			left_i += bytes;
 		}
 	}
 	
-	// Calculate status display width and position
+	// Calculate status display width
 	int status_width = 0;
 	if (status && *status) {
 		status_width = utf8_display_width(status, strlen(status));
 	}
 	
-	// Fill middle with spaces
-	int status_start = width - status_width;
-	if (status_start < col)
-		status_start = col;
+	// Fill middle with spaces to position status at the right
+	int status_start_col = width - status_width;
+	if (status_start_col < display_col)
+		status_start_col = display_col;
 	
-	while (col < status_start) {
+	while (display_col < status_start_col) {
 		vtputc(' ');
-		col++;
+		display_col++;
 	}
 	
 	// Draw status string
-	if (status && *status && col < width) {
+	if (status && *status && display_col < width) {
 		int status_len = strlen(status);
 		int status_i = 0;
 		
-		while (status_i < status_len && col < width) {
+		while (status_i < status_len && display_col < width) {
 			unicode_t c;
 			int bytes = utf8_to_unicode((char *)status, status_i, status_len, &c);
 			int char_width = unicode_width(c);
 			
-			if (col + char_width > width)
+			if (display_col + char_width > width)
 				break;
 			
 			vtputc(c);
-			col += char_width;
+			display_col += char_width;
 			status_i += bytes;
 		}
-	}
-	
-	// Fill rest with spaces
-	while (col < width) {
-		vtputc(' ');
-		col++;
 	}
 	
 	vteeol();
