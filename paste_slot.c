@@ -3,6 +3,8 @@
  * 
  * This module implements a paste slot window that allows users to preview
  * and edit pasted content before inserting it into the document.
+ * 
+ * UTF-8 compatible implementation.
  */
 
 #include <stdio.h>
@@ -11,6 +13,7 @@
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
+#include "utf8.h"
 
 /* Paste slot buffer */
 static char *paste_slot_buffer = NULL;
@@ -99,15 +102,15 @@ int paste_slot_is_active(void)
     return paste_slot_active;
 }
 
-/* Display paste slot window */
+/* Display paste slot window - UTF-8 compatible */
 void paste_slot_display(void)
 {
     extern void mlwrite(const char *fmt, ...);
     int col;
     char *content = paste_slot_buffer;
     int content_len = paste_slot_size;
-    int line_start = 0;
     int current_row = 0;
+    int byte_pos = 0;
     
     /* Clear screen */
     movecursor(0, 0);
@@ -133,31 +136,50 @@ void paste_slot_display(void)
         TTputc('-');
     TTputc('+');
     
-    /* Display content */
+    /* Display content with UTF-8 awareness */
     current_row = 3;
-    for (int i = 0; i < content_len && current_row < term.t_nrow - 1; i++) {
-        if (i == line_start || i == 0) {
-            movecursor(current_row, 0);
-            TTputc('|');
-            movecursor(current_row, 1);
+    col = 1;
+    
+    while (byte_pos < content_len && current_row < term.t_nrow - 1) {
+        /* Start new line */
+        movecursor(current_row, 0);
+        TTputc('|');
+        col = 1;
+        
+        /* Display characters until newline or end of line */
+        while (byte_pos < content_len && col < term.t_ncol - 1) {
+            char c = content[byte_pos];
+            
+            if (c == '\n' || c == '\r') {
+                /* Handle newline */
+                if (c == '\r' && byte_pos + 1 < content_len && content[byte_pos + 1] == '\n')
+                    byte_pos++;  /* Skip \r in \r\n */
+                byte_pos++;
+                break;
+            } else {
+                /* Display UTF-8 character */
+                unicode_t uc;
+                int bytes = utf8_to_unicode((unsigned char *)content, byte_pos, content_len, &uc);
+                
+                /* Output the UTF-8 bytes */
+                for (int b = 0; b < bytes && byte_pos + b < content_len; b++) {
+                    TTputc((unsigned char)content[byte_pos + b]);
+                }
+                
+                byte_pos += bytes;
+                col++;  /* Simplified: assume 1 column per character */
+            }
         }
         
-        char c = content[i];
-        if (c == '\n' || c == '\r') {
-            /* Fill rest of line */
-            while (col < term.t_ncol - 1) {
-                TTputc(' ');
-                col++;
-            }
-            movecursor(current_row, term.t_ncol - 1);
-            TTputc('|');
-            current_row++;
-            line_start = i + 1;
-            if (c == '\r' && i + 1 < content_len && content[i + 1] == '\n')
-                i++;  /* Skip \r\n */
-        } else {
-            TTputc(c);
+        /* Fill rest of line with spaces */
+        while (col < term.t_ncol - 1) {
+            TTputc(' ');
+            col++;
         }
+        
+        movecursor(current_row, term.t_ncol - 1);
+        TTputc('|');
+        current_row++;
     }
     
     /* Fill remaining lines */
@@ -183,7 +205,7 @@ void paste_slot_display(void)
     TTflush();
 }
 
-/* Insert paste slot content into document without auto-indent */
+/* Insert paste slot content into document without auto-indent - UTF-8 compatible */
 int paste_slot_insert(void)
 {
     extern int linsert(int n, int c);
@@ -192,22 +214,34 @@ int paste_slot_insert(void)
     if (paste_slot_buffer == NULL || paste_slot_size == 0)
         return 1;
     
-    /* Insert content byte by byte */
-    for (int i = 0; i < paste_slot_size; i++) {
-        char c = paste_slot_buffer[i];
+    /* Insert content with UTF-8 awareness */
+    int byte_pos = 0;
+    while (byte_pos < paste_slot_size) {
+        char c = paste_slot_buffer[byte_pos];
         
         if (c == '\r') {
             if (lnewline() == 0)
                 return 0;
+            byte_pos++;
             /* Skip \n if present */
-            if (i + 1 < paste_slot_size && paste_slot_buffer[i + 1] == '\n')
-                i++;
+            if (byte_pos < paste_slot_size && paste_slot_buffer[byte_pos] == '\n')
+                byte_pos++;
         } else if (c == '\n') {
             if (lnewline() == 0)
                 return 0;
+            byte_pos++;
         } else {
-            if (linsert(1, (unsigned char)c) == 0)
-                return 0;
+            /* Insert UTF-8 character byte by byte */
+            unicode_t uc;
+            int bytes = utf8_to_unicode((unsigned char *)paste_slot_buffer, byte_pos, paste_slot_size, &uc);
+            
+            /* Insert each byte of the UTF-8 sequence */
+            for (int b = 0; b < bytes; b++) {
+                if (linsert(1, (unsigned char)paste_slot_buffer[byte_pos + b]) == 0)
+                    return 0;
+            }
+            
+            byte_pos += bytes;
         }
     }
     
