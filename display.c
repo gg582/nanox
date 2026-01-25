@@ -117,6 +117,8 @@ static void draw_hint_row(int row, const char *left, const char *status)
 		while (left_i < left_len && display_col < width) {
 			unicode_t c;
 			int bytes = utf8_to_unicode((char *)left, left_i, left_len, &c);
+			if (bytes <= 0)
+				break;
 			int char_width = unicode_width(c);
 			
 			if (display_col + char_width > width)
@@ -152,6 +154,8 @@ static void draw_hint_row(int row, const char *left, const char *status)
 		while (status_i < status_len && display_col < width) {
 			unicode_t c;
 			int bytes = utf8_to_unicode((char *)status, status_i, status_len, &c);
+			if (bytes <= 0)
+				break;
 			int char_width = unicode_width(c);
 			
 			if (display_col + char_width > width)

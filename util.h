@@ -46,6 +46,8 @@ static inline int utf8_display_width(const char *str, int byte_len)
 	while (i < byte_len && str[i]) {
 		unicode_t c;
 		int bytes = utf8_to_unicode((char *)str, i, byte_len, &c);
+		if (bytes <= 0)
+			break;
 		width += unicode_width(c);
 		i += bytes;
 	}
