@@ -10,4 +10,3 @@ return   = fg=#ff5c6c bold=true
 ternary  = fg=#8b90ff bold=true
 error    = fg=#ff5c6c underline=true
 notice   = fg=#d19a66 bold=true
-selection=bg=#333333

@@ -132,11 +132,11 @@ configs-install:
 	done
 
 editorconfig-install:
-	$(E) "  EDITORCONFIG " "configs/nanox/.editorconfig -> " $(HOME)/.editorconfig
+	$(E) "  EDITORCONFIG " ".editorconfig -> " $(HOME)/.editorconfig
 	$(Q) if [ -f "$(HOME)/.editorconfig" ]; then \
 		cp "$(HOME)/.editorconfig" "$(HOME)/.editorconfig.bak"; \
 	fi
-	$(Q) cp "configs/nanox/.editorconfig" "$(HOME)/.editorconfig"
+	$(Q) cp ".editorconfig" "$(HOME)/.editorconfig"
 
 backups-clean:
 	$(E) "  CLEAN BACKUPS"

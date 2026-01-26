@@ -403,6 +403,7 @@ extern int minibuf_delete_char(long n);
 extern void minibuf_update(const char *prompt);
 extern void minibuf_get_text(char *dest, int max_len);
 extern int minibuf_input(const char *prompt, char *dest, int max_len);
+extern void minibuf_show(const char *msg);
 
 /* eval.c */
 extern void varinit(void);

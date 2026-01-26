@@ -676,6 +676,7 @@ static int reserve_set(int slot)
 {
     char prompt[64];
     char path[PATH_MAX];
+    char msg[PATH_MAX + 64];
     int rc;
 
     if (slot < 0 || slot >= 4) return FALSE;
@@ -687,25 +688,29 @@ static int reserve_set(int slot)
     if (!*path)
         return FALSE;
     mystrscpy(file_reserve[slot], path, sizeof(file_reserve[slot]));
-    mlwrite("Reserved %s = %s", slot_name(slot), path);
+    snprintf(msg, sizeof(msg), "Reserved %s = %s", slot_name(slot), path);
+    minibuf_show(msg);
     return TRUE;
 }
 
 static int reserve_jump(int slot)
 {
     int rc;
+    char msg[PATH_MAX + 64];
 
     if (slot < 0 || slot >= 4) return FALSE;
 
     if (!file_reserve[slot][0]) {
         nanox_set_lamp(NANOX_LAMP_WARN);
-        mlwrite("%s is empty (use Ctrl+%s to reserve)",
+        snprintf(msg, sizeof(msg), "%s is empty (use Ctrl+%s to reserve)",
             slot_name(slot), slot_name(slot));
+        minibuf_show(msg);
         return FALSE;
     }
     rc = getfile(file_reserve[slot], TRUE);
     if (rc == TRUE) {
-        mlwrite("Jump %s -> %s", slot_name(slot), file_reserve[slot]);
+        snprintf(msg, sizeof(msg), "Jump %s -> %s", slot_name(slot), file_reserve[slot]);
+        minibuf_show(msg);
         nanox_set_lamp(NANOX_LAMP_OFF);
     } else {
         nanox_set_lamp(NANOX_LAMP_ERROR);
@@ -789,7 +794,7 @@ int paste_slot_handle_key(int c)
     }
     
     /* For now, just show message for other keys */
-    mlwrite("Press 'p' or Enter to paste, ESC to cancel");
+    mlwrite("Press 'p', then Enter to paste, ESC then Enter to cancel");
     return TRUE;
 }
 

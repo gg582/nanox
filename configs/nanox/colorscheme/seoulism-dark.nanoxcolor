@@ -33,5 +33,3 @@ return   = fg=#e05a55 bold=true
 ; ERROR: Safflower red dye (warm and vivid)
 error    = fg=#e77e79 underline=true
 
-; UI: Reflective selection (bright paper-like canvas spotlight)
-selection = fg=#111116 bg=#efeeea

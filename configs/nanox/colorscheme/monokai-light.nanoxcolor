@@ -9,4 +9,3 @@ keyword = fg=#d73a49 bold=true
 return  = fg=#d73a49 bold=true
 ternary = fg=#d73a49 bold=true
 error   = fg=#d73a49 underline=true
-selection=bg=#e0e0e0
