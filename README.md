@@ -16,7 +16,7 @@ Nanox(/na.noks/) is a modern, feature-rich fork of **uEmacs/PK** that brings the
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
 [![License](https://img.shields.io/badge/license-Custom-blue)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/yourusername/nanox?style=social)](https://github.com/yourusername/nanox)
+[![Stars](https://img.shields.io/github/stars/gg582/nanox?style=social)](https://github.com/gg582/nanox)
 ![Hangeul Ready](https://img.shields.io/badge/Hangeul-UTF--8%20Ready-red)
 
 ---
