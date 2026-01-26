@@ -7,7 +7,7 @@ variant = light
 ; High-key UI palette where opposition drives clarity.
 
 ; Base: White Paper (Hanji tone) / Black Ink
-normal   = fg=#111111 bg=#fdfbf5
+normal   = fg=#111116 bg=#dddbd5
 
 ; WATER: Graphite (seeps into the earthy store)
 comment  = fg=#4c4943
