@@ -404,6 +404,234 @@ static bool is_control(unsigned char c)
     return (c < 32 && c != '\t' && c != '\n' && c != '\r') || c == 127;
 }
 
+/* Check if file extension matches markdown */
+static bool is_markdown_profile(const HighlightProfile *profile)
+{
+    if (!profile) return false;
+    return (strcasecmp(profile->name, "markdown") == 0);
+}
+
+/* Check if file extension matches HTML */
+static bool is_html_profile(const HighlightProfile *profile)
+{
+    if (!profile) return false;
+    return (strcasecmp(profile->name, "html") == 0);
+}
+
+/* Find closing delimiter for markdown formatting
+ * Returns end position (after closing delimiter) or -1 if not found
+ */
+static int find_md_closing(const char *text, int len, int start, const char *delim, int delim_len)
+{
+    int pos = start;
+    while (pos <= len - delim_len) {
+        if (strncmp(text + pos, delim, delim_len) == 0) {
+            /* Check it's not escaped */
+            int backslash_count = 0;
+            int check = pos - 1;
+            while (check >= start && text[check] == '\\') {
+                backslash_count++;
+                check--;
+            }
+            if (backslash_count % 2 == 0) {
+                return pos + delim_len;
+            }
+        }
+        pos++;
+    }
+    return -1;
+}
+
+/* Parse hex digit value (0-15) or -1 if invalid */
+static int hex_digit_value(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return -1;
+}
+
+/* Check if position is a hex color code (#RGB or #RRGGBB)
+ * Returns length of color code (4 or 7) or 0 if not a color
+ */
+static int is_hex_color(const char *text, int len, int pos)
+{
+    if (pos >= len || text[pos] != '#') return 0;
+    
+    /* Check #RRGGBB (7 chars) */
+    if (pos + 7 <= len) {
+        bool valid = true;
+        for (int i = 1; i <= 6; i++) {
+            if (hex_digit_value(text[pos + i]) < 0) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) {
+            /* Make sure not followed by more hex digits */
+            if (pos + 7 >= len || hex_digit_value(text[pos + 7]) < 0)
+                return 7;
+        }
+    }
+    
+    /* Check #RGB (4 chars) */
+    if (pos + 4 <= len) {
+        bool valid = true;
+        for (int i = 1; i <= 3; i++) {
+            if (hex_digit_value(text[pos + i]) < 0) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) {
+            /* Make sure not followed by more hex digits */
+            if (pos + 4 >= len || hex_digit_value(text[pos + 4]) < 0)
+                return 4;
+        }
+    }
+    
+    return 0;
+}
+
+/* Check if position is an rgb() or rgba() color code
+ * Returns length of color code or 0 if not a color
+ */
+static int is_rgb_color(const char *text, int len, int pos)
+{
+    /* Check for rgb( or rgba( */
+    int start_paren;
+    
+    if (pos + 4 <= len && strncmp(text + pos, "rgb(", 4) == 0) {
+        start_paren = pos + 4;
+    } else if (pos + 5 <= len && strncmp(text + pos, "rgba(", 5) == 0) {
+        start_paren = pos + 5;
+    } else {
+        return 0;
+    }
+    
+    /* Find closing parenthesis */
+    int search = start_paren;
+    int paren_depth = 1;
+    while (search < len && paren_depth > 0) {
+        if (text[search] == '(') paren_depth++;
+        else if (text[search] == ')') paren_depth--;
+        search++;
+    }
+    
+    if (paren_depth == 0) {
+        return search - pos;
+    }
+    return 0;
+}
+
+/* Check if position starts an hsl() or hsla() color code */
+static int is_hsl_color(const char *text, int len, int pos)
+{
+    int start_paren;
+    
+    if (pos + 4 <= len && strncmp(text + pos, "hsl(", 4) == 0) {
+        start_paren = pos + 4;
+    } else if (pos + 5 <= len && strncmp(text + pos, "hsla(", 5) == 0) {
+        start_paren = pos + 5;
+    } else {
+        return 0;
+    }
+    
+    /* Find closing parenthesis */
+    int search = start_paren;
+    int paren_depth = 1;
+    while (search < len && paren_depth > 0) {
+        if (text[search] == '(') paren_depth++;
+        else if (text[search] == ')') paren_depth--;
+        search++;
+    }
+    
+    if (paren_depth == 0) {
+        return search - pos;
+    }
+    return 0;
+}
+
+/* Parse a hex color code and extract RGB values */
+static bool parse_hex_color(const char *text, int pos, int len, int *r, int *g, int *b)
+{
+    if (len == 7) {
+        /* #RRGGBB */
+        *r = hex_digit_value(text[pos + 1]) * 16 + hex_digit_value(text[pos + 2]);
+        *g = hex_digit_value(text[pos + 3]) * 16 + hex_digit_value(text[pos + 4]);
+        *b = hex_digit_value(text[pos + 5]) * 16 + hex_digit_value(text[pos + 6]);
+        return true;
+    } else if (len == 4) {
+        /* #RGB -> expand to #RRGGBB */
+        int rv = hex_digit_value(text[pos + 1]);
+        int gv = hex_digit_value(text[pos + 2]);
+        int bv = hex_digit_value(text[pos + 3]);
+        *r = rv * 16 + rv;
+        *g = gv * 16 + gv;
+        *b = bv * 16 + bv;
+        return true;
+    }
+    return false;
+}
+
+/* Parse rgb(r, g, b) or rgba(r, g, b, a) and extract RGB values */
+static bool parse_rgb_color(const char *text, int pos, int color_len, int *r, int *g, int *b)
+{
+    /* Find the opening parenthesis */
+    int paren = pos;
+    while (paren < pos + color_len && text[paren] != '(') paren++;
+    if (paren >= pos + color_len) return false;
+    paren++; /* skip '(' */
+    
+    int values[4] = {0, 0, 0, 255};
+    int value_count = 0;
+    int current_value = 0;
+    bool in_number = false;
+    bool has_percent = false;
+    
+    while (paren < pos + color_len && text[paren] != ')' && value_count < 4) {
+        char c = text[paren];
+        if (c >= '0' && c <= '9') {
+            current_value = current_value * 10 + (c - '0');
+            in_number = true;
+        } else if (c == '%') {
+            has_percent = true;
+        } else if (c == ',' || c == ' ' || c == '/') {
+            if (in_number) {
+                if (has_percent) {
+                    current_value = current_value * 255 / 100;
+                    has_percent = false;
+                }
+                values[value_count++] = current_value;
+                current_value = 0;
+                in_number = false;
+            }
+        } else if (c == '.') {
+            /* Handle decimal (for alpha), just skip the decimal part */
+            paren++;
+            while (paren < pos + color_len && text[paren] >= '0' && text[paren] <= '9') paren++;
+            continue;
+        }
+        paren++;
+    }
+    
+    /* Get last value */
+    if (in_number && value_count < 4) {
+        if (has_percent) {
+            current_value = current_value * 255 / 100;
+        }
+        values[value_count++] = current_value;
+    }
+    
+    if (value_count >= 3) {
+        *r = values[0] > 255 ? 255 : values[0];
+        *g = values[1] > 255 ? 255 : values[1];
+        *b = values[2] > 255 ? 255 : values[2];
+        return true;
+    }
+    return false;
+}
+
 void highlight_line(const char *text, int len, HighlightState start, const HighlightProfile *profile, SpanVec *out, HighlightState *end)
 {
     out->count = 0;
@@ -414,7 +642,28 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
     if (!text) len = 0;
     if (len < 0 && text) len = strlen(text);
     
-    if (!profile) return;
+    /* Check for markdown or HTML for special handling */
+    bool is_md = is_markdown_profile(profile);
+    bool is_html = is_html_profile(profile);
+    
+    /* If no profile, still process color codes for all files */
+    if (!profile) {
+        /* Scan for color codes even without a profile */
+        int pos = 0;
+        while (pos < len) {
+            int color_len = is_hex_color(text, len, pos);
+            if (color_len == 0) color_len = is_rgb_color(text, len, pos);
+            if (color_len == 0) color_len = is_hsl_color(text, len, pos);
+            
+            if (color_len > 0) {
+                add_span(out, pos, pos + color_len, HL_NUMBER);
+                pos += color_len;
+            } else {
+                pos++;
+            }
+        }
+        return;
+    }
 
     HighlightState state = start;
     int pos = 0;
@@ -443,6 +692,63 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     add_span(out, pos, len, HL_CONTROL);
                     pos = len;
                     continue;
+                }
+            }
+            
+            /* 0c. Color codes (for all file types) */
+            int color_len = is_hex_color(text, len, pos);
+            if (color_len == 0) color_len = is_rgb_color(text, len, pos);
+            if (color_len == 0) color_len = is_hsl_color(text, len, pos);
+            if (color_len > 0) {
+                add_span(out, pos, pos + color_len, HL_NUMBER);
+                pos += color_len;
+                continue;
+            }
+            
+            /* 0d. Markdown formatting (bold, italic) */
+            if (is_md) {
+                /* Check for bold (**text** or __text__) */
+                if ((pos + 4 <= len) && 
+                    ((text[pos] == '*' && text[pos+1] == '*') ||
+                     (text[pos] == '_' && text[pos+1] == '_'))) {
+                    char delim[3] = {text[pos], text[pos], 0};
+                    int end_pos = find_md_closing(text, len, pos + 2, delim, 2);
+                    if (end_pos > 0) {
+                        add_span(out, pos, end_pos, HL_MD_BOLD);
+                        pos = end_pos;
+                        continue;
+                    }
+                }
+                
+                /* Check for italic (*text* or _text_) - must not be bold */
+                if ((pos + 2 <= len) && (text[pos] == '*' || text[pos] == '_')) {
+                    /* Make sure it's not double (bold) */
+                    if (pos + 1 >= len || text[pos+1] != text[pos]) {
+                        char delim[2] = {text[pos], 0};
+                        int end_pos = find_md_closing(text, len, pos + 1, delim, 1);
+                        if (end_pos > 0) {
+                            add_span(out, pos, end_pos, HL_MD_ITALIC);
+                            pos = end_pos;
+                            continue;
+                        }
+                    }
+                }
+            }
+            
+            /* 0e. HTML underline (<u>text</u>) for HTML and Markdown */
+            if (is_html || is_md) {
+                if (pos + 3 <= len && strncasecmp(text + pos, "<u>", 3) == 0) {
+                    /* Find closing </u> */
+                    int search = pos + 3;
+                    while (search + 4 <= len) {
+                        if (strncasecmp(text + search, "</u>", 4) == 0) {
+                            add_span(out, pos, search + 4, HL_MD_UNDERLINE);
+                            pos = search + 4;
+                            break;
+                        }
+                        search++;
+                    }
+                    if (pos == search + 4) continue;
                 }
             }
 
@@ -706,4 +1012,68 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
         }
     }
     *end = state;
+}
+
+/* Scan a line for color codes and return count of colors found */
+int highlight_find_colors(const char *text, int len, ColorInfo *colors, int max_colors)
+{
+    if (!text || len <= 0 || !colors || max_colors <= 0)
+        return 0;
+    
+    int count = 0;
+    int pos = 0;
+    
+    while (pos < len && count < max_colors) {
+        int color_len = 0;
+        int r = 0, g = 0, b = 0;
+        
+        /* Check for hex color (#RGB or #RRGGBB) */
+        color_len = is_hex_color(text, len, pos);
+        if (color_len > 0) {
+            if (parse_hex_color(text, pos, color_len, &r, &g, &b)) {
+                colors[count].start = pos;
+                colors[count].end = pos + color_len;
+                colors[count].r = r;
+                colors[count].g = g;
+                colors[count].b = b;
+                count++;
+            }
+            pos += color_len;
+            continue;
+        }
+        
+        /* Check for rgb() or rgba() */
+        color_len = is_rgb_color(text, len, pos);
+        if (color_len > 0) {
+            if (parse_rgb_color(text, pos, color_len, &r, &g, &b)) {
+                colors[count].start = pos;
+                colors[count].end = pos + color_len;
+                colors[count].r = r;
+                colors[count].g = g;
+                colors[count].b = b;
+                count++;
+            }
+            pos += color_len;
+            continue;
+        }
+        
+        /* Check for hsl() or hsla() - convert to RGB */
+        color_len = is_hsl_color(text, len, pos);
+        if (color_len > 0) {
+            /* For simplicity, we'll just show it as a color indicator without full HSL parsing */
+            /* Mark it but leave r,g,b as 0 which will show as black preview */
+            colors[count].start = pos;
+            colors[count].end = pos + color_len;
+            colors[count].r = 128;  /* Show as gray for unimplemented HSL */
+            colors[count].g = 128;
+            colors[count].b = 128;
+            count++;
+            pos += color_len;
+            continue;
+        }
+        
+        pos++;
+    }
+    
+    return count;
 }

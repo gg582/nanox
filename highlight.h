@@ -77,4 +77,16 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
 bool highlight_is_enabled(void);
 void span_vec_free(SpanVec *vec);
 
+/* Color code detection for preview */
+#define MAX_COLORS_PER_LINE 16
+
+typedef struct {
+    int start;      /* Start position in line */
+    int end;        /* End position in line */
+    int r, g, b;    /* RGB values 0-255 */
+} ColorInfo;
+
+/* Scan a line for color codes and return count of colors found */
+int highlight_find_colors(const char *text, int len, ColorInfo *colors, int max_colors);
+
 #endif /* HIGHLIGHT_H_ */
