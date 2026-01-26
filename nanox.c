@@ -897,7 +897,7 @@ int paste_slot_handle_key(int c)
     }
     
     /* For now, just show message for other keys */
-    mlwrite("Press 'p', then Enter to paste, ESC then Enter to cancel");
+    mlwrite("Press 'p' to paste, ESC to cancel");
     return TRUE;
 }
 
