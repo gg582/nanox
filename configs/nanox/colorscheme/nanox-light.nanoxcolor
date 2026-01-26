@@ -1,11 +1,12 @@
 [styles]
-normal  = fg=#24292e bg=#ffffff
-comment = fg=#6a737d
-string  = fg=#b5694d
-number  = fg=#005cc5
-bracket = fg=#959da5
-operator= fg=#24292e
-keyword = fg=#d73a49 bold=true
-return  = fg=#d73a49 bold=true
-ternary = fg=#d73a49 bold=true
-error   = fg=#cf222e underline=true
+; 1. 배경: 순수 화이트에서 3% 정도 명도를 낮춰 '눈부심' 차단
+normal   = fg=#24292e bg=#f7f7f7
+keyword  = fg=#b91d1d bold=true
+flow     = fg=#b91d1d bold=true
+return   = fg=#b91d1d bold=true
+string   = fg=#926600
+number   = fg=#926600
+function = fg=#005ab5 bold=true
+type     = fg=#6346c1
+bracket  = fg=#6a737d
+operator = fg=#0074d9
