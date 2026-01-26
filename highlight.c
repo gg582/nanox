@@ -639,8 +639,12 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
     out->capacity = 0;
     *end = start;
 
-    if (!text) len = 0;
+    // Prevent null pointer access
+    if (text == NULL) return;
     if (len < 0 && text) len = strlen(text);
+
+    // No highlight when empty line
+    if(len == 0) return;
     
     /* Check for markdown or HTML for special handling */
     bool is_md = is_markdown_profile(profile);

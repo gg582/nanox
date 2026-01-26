@@ -53,9 +53,49 @@ static int help_selected;
 static int help_scroll;
 static bool help_show_section;
 static int help_section_scroll;
+static int help_section_sub_scroll;
 
 static struct nanox_help_topic *dynamic_topics = NULL;
 static size_t dynamic_topic_count = 0;
+
+static int get_visual_row_count(const char *line, int width)
+{
+    if (!line || !*line) return 1; /* Empty line takes 1 row */
+    if (width < 1) width = 1;
+
+    int rows = 0;
+    size_t len = strlen(line);
+    size_t current_pos = 0;
+
+    while (current_pos < len) {
+        rows++;
+        int chunk_width = 0;
+        size_t idx = current_pos;
+        int chunk_len = 0;
+
+        while (idx < len) {
+             unicode_t u;
+             unsigned bytes = utf8_to_unicode((unsigned char*)line, idx, len, &u);
+             if (bytes == 0) bytes = 1;
+             int w = unicode_width(u);
+             if (w < 0) w = 0;
+
+             if (chunk_width + w > width) break;
+
+             chunk_width += w;
+             chunk_len += bytes;
+             idx += bytes;
+        }
+
+        if (chunk_len == 0 && idx < len) {
+             unicode_t u;
+             unsigned bytes = utf8_to_unicode((unsigned char*)line, idx, len, &u);
+             chunk_len = bytes;
+        }
+        current_pos += chunk_len;
+    }
+    return rows;
+}
 
 static void load_help_file(void)
 {
@@ -70,6 +110,17 @@ static void load_help_file(void)
     }
     if (!path)
         path = flook("emacs.hlp", TRUE);
+
+    /* Fallback: Check User Config Directory */
+    static char config_path[PATH_MAX];
+    if (!path) {
+        char dir[512];
+        nanox_get_user_config_dir(dir, sizeof(dir));
+        nanox_path_join(config_path, sizeof(config_path), dir, "emacs.hlp");
+        if (nanox_file_exists(config_path))
+            path = config_path;
+    }
+
     if (!path) return;
 
     FILE *fp = fopen(path, "r");
@@ -457,6 +508,12 @@ static void help_puts(const char *text)
         ttputc(*text++);
 }
 
+static void help_putsn(const char *text, int n)
+{
+    for (int i = 0; i < n && text[i]; i++)
+        ttputc(text[i]);
+}
+
 /* Help System Enhancements */
 
 void nanox_help_render(void)
@@ -471,49 +528,15 @@ void nanox_help_render(void)
         newscreensize(chg_height, chg_width);
     }
 
-    HighlightStyle normal = colorscheme_get(HL_NORMAL);
-
-    /* Reset all attributes first */
-    help_puts("\033[0m");
-
-    /* Set foreground */
-    if (normal.fg != -1) {
-        if (normal.fg & 0x01000000) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "\033[38;2;%d;%d;%dm",
-                (normal.fg >> 16) & 0xFF, (normal.fg >> 8) & 0xFF, normal.fg & 0xFF);
-            help_puts(buf);
-        } else if (normal.fg >= 8 && normal.fg < 16) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 90 + (normal.fg - 8));
-            help_puts(buf);
-        } else {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 30 + normal.fg);
-            help_puts(buf);
-        }
-    }
-
-    /* Set background */
-    if (normal.bg != -1) {
-        if (normal.bg & 0x01000000) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
-                (normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
-            help_puts(buf);
-        } else if (normal.bg >= 8 && normal.bg < 16) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
-            help_puts(buf);
-        } else {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
-            help_puts(buf);
-        }
-    }
+    /* Force Clean White Screen (Black FG, White BG) */
+    help_puts("\033[0m");       /* Reset */
+    help_puts("\033[30;47m");   /* Black on White */
+    help_puts("\033[H");        /* Home Cursor */
+    help_puts("\033[2J");       /* Clear Screen */
 
     int visible_rows = nanox_hint_top_row() - 3;
     if (visible_rows < 1) visible_rows = 1;
+    int max_r = nanox_hint_top_row() - 1;
 
     movecursor(0, 0);
     if (help_show_section) {
@@ -525,13 +548,74 @@ void nanox_help_render(void)
         movecursor(1, 0);
         for (int i = 0; i < term.t_ncol; i++) help_puts("-");
 
-        /* Content */
+        /* Content with Visual Wrapping */
         int r = 2;
         struct nanox_help_topic *topic = &dynamic_topics[help_selected];
-        for (size_t i = help_section_scroll; i < topic->line_count && r < nanox_hint_top_row() - 1; ++i, ++r) {
-            movecursor(r, 0);
-            help_puts("  ");
-            help_puts(topic->lines[i]);
+        
+        for (size_t i = help_section_scroll; i < topic->line_count && r < max_r; ++i) {
+            char *line = topic->lines[i];
+            size_t len = strlen(line);
+
+            /* If empty line, print nothing but move down */
+            if (len == 0) {
+                if (i == help_section_scroll && help_section_sub_scroll > 0) {
+                    /* Should not happen for empty line, but safety check */
+                } else {
+                    movecursor(r, 0);
+                    help_puts("  ");
+                    r++;
+                }
+                continue;
+            }
+
+            size_t current_pos = 0;
+            int avail_width = term.t_ncol - 2;
+            if (avail_width < 1) avail_width = 1;
+            int current_sub_line = 0;
+
+            while (current_pos < len && r < max_r) {
+                int chunk_len = 0;
+                int chunk_width = 0;
+                size_t idx = current_pos;
+
+                /* Calculate how much fits */
+                while (idx < len) {
+                    unicode_t u;
+                    unsigned bytes = utf8_to_unicode((unsigned char*)line, idx, len, &u);
+                    if (bytes == 0) bytes = 1; 
+
+                    int w = unicode_width(u);
+                    if (w < 0) w = 0;
+
+                    if (chunk_width + w > avail_width) break;
+
+                    chunk_width += w;
+                    chunk_len += bytes;
+                    idx += bytes;
+                }
+                
+                /* Ensure progress */
+                if (chunk_len == 0 && idx < len) {
+                     unicode_t u;
+                     unsigned bytes = utf8_to_unicode((unsigned char*)line, idx, len, &u);
+                     chunk_len = bytes;
+                }
+
+                /* Check if we should skip this visual line due to scrolling */
+                if (i == help_section_scroll && current_sub_line < help_section_sub_scroll) {
+                    current_sub_line++;
+                    current_pos += chunk_len;
+                    continue;
+                }
+
+                movecursor(r, 0);
+                help_puts("  ");
+                help_putsn(line + current_pos, chunk_len);
+
+                current_pos += chunk_len;
+                current_sub_line++;
+                r++;
+            }
         }
 
         /* Footer */
@@ -548,7 +632,7 @@ void nanox_help_render(void)
 
         /* Menu */
         int r = 2;
-        for (size_t i = help_scroll; i < dynamic_topic_count && r < nanox_hint_top_row() - 1; ++i, ++r) {
+        for (size_t i = help_scroll; i < dynamic_topic_count && r < max_r; ++i, ++r) {
             movecursor(r, 0);
             if ((int)i == help_selected) {
                 help_puts(" > ");
@@ -570,13 +654,24 @@ void nanox_help_render(void)
 }
 int nanox_help_command(int f, int n)
 {
+    load_help_file();
+    if (!dynamic_topics) {
+        mlwrite("Error: Help file (emacs.hlp) not found!");
+        nanox_set_lamp(NANOX_LAMP_ERROR);
+        return FALSE;
+    }
+
     help_active = true;
     help_selected = 0;
     help_scroll = 0;
     help_show_section = false;
     help_section_scroll = 0;
+    help_section_sub_scroll = 0;
+
+    /* * Do NOT call update(TRUE) here. On large multi-byte files, 
+     * update() hangs calculating columns. We skip it and draw directly.
+     */
     sgarbf = TRUE;
-    update(TRUE);  /* Force immediate screen redraw when entering help */
     nanox_help_render();
     return TRUE;
 }
@@ -634,7 +729,14 @@ int nanox_help_handle_key(int key)
 
     case 'i': /* Up */
         if (help_show_section) {
-            if (help_section_scroll > 0) help_section_scroll--;
+            if (help_section_sub_scroll > 0) {
+                help_section_sub_scroll--;
+            } else if (help_section_scroll > 0) {
+                help_section_scroll--;
+                struct nanox_help_topic *topic = &dynamic_topics[help_selected];
+                int rows = get_visual_row_count(topic->lines[help_section_scroll], term.t_ncol - 2);
+                help_section_sub_scroll = rows > 0 ? rows - 1 : 0;
+            }
         } else {
             if (help_selected > 0) {
                 --help_selected;
@@ -646,8 +748,14 @@ int nanox_help_handle_key(int key)
     case 'k': /* Down */
         if (help_show_section) {
             struct nanox_help_topic *topic = &dynamic_topics[help_selected];
-            if (help_section_scroll + visible_rows < (int)topic->line_count)
+            int rows = get_visual_row_count(topic->lines[help_section_scroll], term.t_ncol - 2);
+            
+            if (help_section_sub_scroll + 1 < rows) {
+                help_section_sub_scroll++;
+            } else if (help_section_scroll < (int)topic->line_count - 1) {
                 help_section_scroll++;
+                help_section_sub_scroll = 0;
+            }
         } else {
             if (help_selected < (int)dynamic_topic_count - 1) {
                 ++help_selected;

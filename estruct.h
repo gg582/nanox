@@ -209,12 +209,13 @@ struct buffer {
 #define NUMMODES    10          /* # of defined modes           */
 
 #define MDWRAP  0x0001              /* word wrap                    */
-#define MDCMOD  0x0002              /* C indentation and fence match */
-#define MDSPELL 0x0004              /* spell error parsing          */
-#define MDEXACT 0x0008              /* Exact matching for searches  */
-#define MDVIEW  0x0010              /* read-only buffer             */
-#define MDOVER  0x0020              /* overwrite mode               */
-#define MDMAGIC 0x0040              /* regular expressions in search */
+#define MDSOFTWRAP 0x0002           /* soft word wrap               */
+#define MDCMOD  0x0004              /* C indentation and fence match */
+#define MDSPELL 0x0008              /* spell error parsing          */
+#define MDEXACT 0x0010              /* Exact matching for searches  */
+#define MDVIEW  0x0020              /* read-only buffer             */
+#define MDOVER  0x0040              /* overwrite mode               */
+#define MDMAGIC 0x0080              /* regular expressions in search */
 #define MDASAVE 0x0800              /* auto-save mode               */
 
 /*

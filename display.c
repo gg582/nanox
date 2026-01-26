@@ -46,9 +46,45 @@ int chg_width, chg_height;
 static int reframe(struct window *wp);
 static void updone(struct window *wp);
 static void updall(struct window *wp);
-static void updext(void);
 static int updateline(int row, struct video *vp);
 static void modeline(struct window *wp);
+static void show_line_wrapped(struct window *wp, struct line *lp);
+
+
+static int get_char_width(unicode_t c, int col)
+{
+    if (c == '\t') {
+        return (tab_width + 1) - ((col + taboff) & tab_width);
+    }
+    if (c < 0x20 || c == 0x7f)
+        return 2;
+    return mystrnlen_raw_w(c);
+}
+
+static int get_line_height(struct line *lp)
+{
+    if (lp == curbp->b_linep)
+        return 0;
+
+    int len = llength(lp);
+    int col = 0;
+    int height = 1;
+    int i = 0;
+    while (i < len) {
+        unicode_t c;
+        int bytes = utf8_to_unicode((unsigned char *)lp->l_text, i, len, &c);
+        int w = get_char_width(c, col);
+        if (col + w > term.t_ncol) {
+            height++;
+            col = 4;
+            w = get_char_width(c, col);
+        }
+        col += w;
+        i += bytes;
+    }
+    return height;
+}
+
 void vtputc(int c);
 void vteeol(void);
 struct mlbuf {
@@ -203,6 +239,7 @@ void vtinit(void)
     TTkopen();              /* open the keyboard */
     TTrev(FALSE);
     vscreen = xmalloc(term.t_mrow * sizeof(struct video *));
+    memset(vscreen, 0, term.t_mrow * sizeof(struct video *));
 
     current_color_fg = -1;
     current_color_bg = -1;
@@ -211,6 +248,7 @@ void vtinit(void)
 
     for (i = 0; i < term.t_mrow; ++i) {
         vp = xmalloc(sizeof(struct video) + term.t_mcol * sizeof(video_cell));
+        memset(vp, 0, sizeof(struct video) + term.t_mcol * sizeof(video_cell));
         vp->v_flag = 0;
         vscreen[i] = vp;
     }
@@ -262,18 +300,8 @@ void vtmove(int row, int col)
  */
 void vtputc(int c)
 {
-    struct video *vp;           /* ptr to line being updated */
-
-    vp = vscreen[vtrow];
-    if (vtcol >= term.t_ncol) {
-        ++vtcol;
-        vp->v_text[term.t_ncol - 1].ch = '$';
-        vp->v_text[term.t_ncol - 1].fg = current_color_fg;
-        vp->v_text[term.t_ncol - 1].bg = current_color_bg;
-        vp->v_text[term.t_ncol - 1].bold = current_color_bold;
-        vp->v_text[term.t_ncol - 1].underline = current_color_underline;
-        return;
-    }
+    struct video *vp;
+    int char_width;
 
     if (c == '\t') {
         do {
@@ -294,15 +322,27 @@ void vtputc(int c)
         return;
     }
 
+    char_width = mystrnlen_raw_w(c);
 
+    if (vtcol + char_width > term.t_ncol) {
+        if (vtrow < nanox_text_rows() - 1) {
+            vtrow++;
+            vtcol = 0;
+            vscreen[vtrow]->v_flag |= VFCHG;
+            for (int i = 0; i < 4; i++)
+                vtputc(' ');
+        } else {
+            vscreen[vtrow]->v_text[term.t_ncol - 1].ch = '$';
+            vtcol += char_width;
+            return;
+        }
+    }
 
+    vp = vscreen[vtrow];
     if (vtcol >= 0) {
-        int char_width = mystrnlen_raw_w(c);
         int i;
-
         for (i = 0; i < char_width; i++) {
             if (vtcol + i < term.t_ncol) {
-                /* Set only the first cell with actual character, others with 0 */
                 vp->v_text[vtcol + i].ch = (i == 0) ? c : 0;
                 vp->v_text[vtcol + i].fg = current_color_fg;
                 vp->v_text[vtcol + i].bg = current_color_bg;
@@ -321,6 +361,9 @@ void vtputc(int c)
 void vteeol(void)
 {
     video_cell *vcp = vscreen[vtrow]->v_text;
+
+    if (vtcol < 0) vtcol = 0;
+    if (vtcol > term.t_ncol) vtcol = term.t_ncol;
 
     while (vtcol < term.t_ncol) {
         vcp[vtcol].ch = ' ';
@@ -387,9 +430,6 @@ int update(int force)
     /* recalc the current hardware cursor location */
     updpos();
 
-    /* check for lines to de-extend */
-    upddex();
-
     /* if screen is garbage, re-plot it */
     if (sgarbf != FALSE)
         updgar();
@@ -413,68 +453,58 @@ int update(int force)
  */
 static int reframe(struct window *wp)
 {
-    struct line *lp, *lp0;
+    struct line *lp;
     int i = 0;
     int rows = nanox_text_rows();
 
     /* if not a requested reframe, check for a needed one */
     if ((wp->w_flag & WFFORCE) == 0) {
-        /* loop from one line above the window to one line after */
         lp = wp->w_linep;
-        lp0 = lback(lp);
-        if (lp0 == wp->w_bufp->b_linep)
-            i = 0;
-        else {
-            i = -1;
-            lp = lp0;
-        }
-        for (; i < rows; i++) {
-            /* if the line is in the window, no reframe */
+        int vrow = 0;
+        while (vrow < rows && lp != wp->w_bufp->b_linep) {
             if (lp == wp->w_dotp) {
-                /* if not _quite_ in, we'll reframe gently */
-                if (i < 0 || i == rows - 1) {
-                    break;
+                /* Dot is on this line. Calculate its subrow. */
+                int dot_vrow = vrow;
+                int col = 0;
+                int char_idx = 0;
+                while (char_idx < wp->w_doto) {
+                    unicode_t c;
+                    int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, wp->w_doto, &c);
+                    int w = get_char_width(c, col);
+                    if (col + w > term.t_ncol) {
+                        dot_vrow++;
+                        col = 4;
+                        w = get_char_width(c, col);
+                    }
+                    col += w;
+                    char_idx += bytes;
                 }
-                return TRUE;
+                
+                if (dot_vrow < rows)
+                    return TRUE;
+                else
+                    break; /* Need reframe */
             }
-
-            /* if we are at the end of the file, reframe */
-            if (lp == wp->w_bufp->b_linep)
-                break;
-
-            /* on to the next line */
+            vrow += get_line_height(lp);
             lp = lforw(lp);
         }
     }
-    if (i == -1) {              /* we're just above the window */
-        i = scrollcount;        /* put dot at first line */
-    } else if (i == rows - 1) { /* we're just below the window */
-        i = -scrollcount;       /* put dot at last line */
-    } else                  /* put dot where requested */
-        i = wp->w_force;        /* (is 0, unless reposition() was called) */
 
-    wp->w_flag |= WFMODE;
+    /* Force a reframe. Determine how many lines above the dot to show. */
+    if (wp->w_flag & WFFORCE)
+        i = wp->w_force;
+    else
+        i = rows / 2; /* Center dot by default */
 
-    /* how far back to reframe? */
-    if (i > 0) {                /* only one screen worth of lines max */
-        if (--i >= rows - 1)
-            i = rows - 2;
-    } else if (i < 0) {         /* negative update???? */
-        i += rows - 1;
-        if (i < 0)
-            i = 0;
-    } else
-        i = (rows - 1) / 2;
-
-    /* backup to new line at top of window */
-    lp = wp->w_dotp;
-    while (i != 0 && lback(lp) != wp->w_bufp->b_linep) {
-        --i;
-        lp = lback(lp);
+    /*
+     * Build the new window.
+     */
+    wp->w_linep = wp->w_dotp;
+    while (i > 0 && lback(wp->w_linep) != wp->w_bufp->b_linep) {
+        wp->w_linep = lback(wp->w_linep);
+        i--;
     }
 
-    /* and reset the current line at top of window */
-    wp->w_linep = lp;
     wp->w_flag |= WFHARD;
     wp->w_flag &= ~WFFORCE;
     return TRUE;
@@ -579,6 +609,108 @@ static void show_line(struct window *wp, struct line *lp)
     }
 }
 
+static void show_line_wrapped(struct window *wp, struct line *lp)
+{
+    int len = llength(lp);
+    if (len == 0) {
+        return;
+    }
+
+    SpanVec spans;
+    HighlightState end_state;
+    const char *fname = wp->w_bufp->b_fname;
+    if (!fname || !*fname)
+        fname = wp->w_bufp->b_bname;
+    const HighlightProfile *profile = highlight_get_profile(fname);
+
+    highlight_line((const char *)lp->l_text, len, lp->hl_start_state, profile, &spans, &end_state);
+
+    if (memcmp(&lp->hl_end_state, &end_state, sizeof(HighlightState)) != 0) {
+        lp->hl_end_state = end_state;
+        struct line *next = lforw(lp);
+        if (next != curbp->b_linep) {
+            next->hl_start_state = end_state;
+            lchange(WFHARD);
+        }
+    }
+
+    int current_span_idx = 0;
+    int line_start_idx = 0;
+
+    while(line_start_idx < len) {
+        int char_idx = line_start_idx;
+        int current_col = vtcol;
+        int last_space_idx = -1;
+
+        // Determine the segment to render
+        int segment_end_idx = len;
+        while(char_idx < len) {
+            unicode_t c;
+            int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
+            int char_width = get_char_width(c, current_col);
+
+            if (c == ' ' || c == '\t') {
+                last_space_idx = char_idx;
+            }
+
+            if (current_col + char_width > term.t_ncol && char_idx > line_start_idx) {
+                if (last_space_idx != -1) {
+                    segment_end_idx = last_space_idx + 1;
+                } else {
+                    segment_end_idx = char_idx;
+                }
+                goto render_segment;
+            }
+            current_col += char_width;
+            char_idx += bytes;
+        }
+
+render_segment:
+        // Render the segment
+        char_idx = line_start_idx;
+        while(char_idx < segment_end_idx) {
+            int style = HL_NORMAL;
+            while (current_span_idx < spans.count) {
+                Span *s = (spans.heap_spans) ? &spans.heap_spans[current_span_idx] : &spans.spans[current_span_idx];
+                if (char_idx >= s->end) {
+                    current_span_idx++;
+                    continue;
+                }
+                if (char_idx >= s->start) {
+                    style = s->style;
+                }
+                break;
+            }
+
+            unicode_t c;
+            int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
+            HighlightStyle style_def = colorscheme_get(style);
+            current_color_fg = style_def.fg;
+            current_color_bg = style_def.bg;
+            current_color_bold = style_def.bold;
+            current_color_underline = style_def.underline;
+            
+            vtputc(c);
+            char_idx += bytes;
+        }
+
+        line_start_idx = segment_end_idx;
+
+        if (line_start_idx < len) {
+            vtrow++;
+            if(vtrow >= nanox_text_rows()) {
+                break;
+            }
+            vtcol = 0;
+            vscreen[vtrow]->v_flag |= VFCHG;
+            for (int i = 0; i < 4; i++) vtputc(' ');
+        }
+    }
+
+    span_vec_free(&spans);
+    // The color boxes logic is omitted for simplicity, as it would need to be adjusted for wrapping as well.
+}
+
 /*
  * updone:
  *  update the current line to the virtual screen
@@ -587,25 +719,29 @@ static void show_line(struct window *wp, struct line *lp)
  */
 static void updone(struct window *wp)
 {
-    struct line *lp;            /* line to update */
-    int sline;              /* physical screen line to update */
+    struct line *lp;
+    int sline;
     int rows = nanox_text_rows();
 
-    /* search down the line we want */
+    /* find the right sline for the dotp line */
     lp = wp->w_linep;
     sline = 0;
     while (lp != wp->w_dotp && sline < rows) {
-        ++sline;
+        sline += get_line_height(lp);
         lp = lforw(lp);
     }
 
-    /* and update the virtual line */
-    if (sline < rows && sline < term.t_mrow) {
+    if (sline < rows) {
         vscreen[sline]->v_flag |= VFCHG;
         vscreen[sline]->v_flag &= ~VFREQ;
         vtmove(sline, 0);
-        show_line(wp, lp);
+        if (wp->w_bufp->b_mode & MDSOFTWRAP)
+            show_line_wrapped(wp, lp);
+        else
+            show_line(wp, lp);
         vteeol();
+        if (vtrow != sline)
+            updall(wp);
     }
 }
 
@@ -632,8 +768,12 @@ static void updall(struct window *wp)
         vtmove(sline, 0);
         if (lp != wp->w_bufp->b_linep) {
             /* if we are not at the end */
-            show_line(wp, lp);
+            if (wp->w_bufp->b_mode & MDSOFTWRAP)
+                show_line_wrapped(wp, lp);
+            else
+                show_line(wp, lp);
             lp = lforw(lp);
+            sline = vtrow;
         }
 
         /* on to the next one */
@@ -658,14 +798,11 @@ void updpos(void)
     lp = curwp->w_linep;
     currow = 0;
     while (lp != curwp->w_dotp && currow < rows) {
-        ++currow;
+        currow += get_line_height(lp);
         lp = lforw(lp);
     }
 
-    if (currow >= rows || currow >= term.t_mrow)
-        currow = 0;
-
-    /* find the current column */
+    /* find the current column and subrow */
     curcol = 0;
     i = 0;
     lp = curwp->w_dotp;
@@ -674,18 +811,17 @@ void updpos(void)
         int bytes;
 
         bytes = utf8_to_unicode((unsigned char *)lp->l_text, i, curwp->w_doto, &c);
+        int w = get_char_width(c, curcol);
+        if (curcol + w > term.t_ncol) {
+            currow++;
+            curcol = 4;
+            w = get_char_width(c, curcol);
+        }
+        curcol += w;
         i += bytes;
-        curcol = next_column(curcol, c, tab_width);
     }
 
-    /* if extended, flag so and update the virtual line image */
-    if (curcol >= term.t_ncol - 1) {
-        if (currow < term.t_mrow) {
-            vscreen[currow]->v_flag |= (VFEXT | VFCHG);
-            updext();
-        }
-    } else
-        lbound = 0;
+    lbound = 0;
 }
 
 /*
@@ -1445,11 +1581,14 @@ int newscreensize(int h, int w)
         return FALSE;
     }
     chg_width = chg_height = 0;
-    if (h - 1 < term.t_mrow)
+
+    if (h - 1 != term.t_mrow)
         newsize(TRUE, h);
-    if (w < term.t_mcol)
+
+    if (w != term.t_mcol)
         newwidth(TRUE, w);
 
     update(TRUE);
     return TRUE;
 }
+

@@ -447,6 +447,7 @@ void edinit(char *bname)
     if (bp == NULL || wp == NULL || blistp == NULL)
         exit(1);
     curbp = bp;                /* Make this current    */
+    bp->b_mode |= MDSOFTWRAP;
     curwp = wp;
     wp->w_bufp = bp;            /* Initialize window    */
     bp->b_nwnd = 1;                /* Displayed.            */

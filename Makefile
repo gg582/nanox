@@ -41,7 +41,20 @@ HDR=	command_mode.h ebind.h edef.h efunc.h epath.h estruct.h evar.h line.h paste
 # DO NOT ADD OR MODIFY ANY LINES ABOVE THIS -- make source creates them
 
 CC=gcc
-WARNINGS=-Wall -Wstrict-prototypes
+WARNINGS=-Wall -Wstrict-prototypes -Wuninitialized
+
+# Extra warnings for static analysis (no debug/sanitizer, keeps binary small)
+EXTRA_WARNINGS = -Wextra -Wpedantic -Wshadow -Wformat=2 -Wcast-qual -Wcast-align \
+                 -Wwrite-strings -Wconversion -Wsign-conversion -Wundef -Wvla \
+                 -Wpointer-arith -Wbad-function-cast -Wmissing-prototypes \
+                 -Wstrict-prototypes -Wold-style-definition
+
+# Treat warnings as errors
+WERROR ?= 1
+ifeq ($(WERROR),1)
+    EXTRA_WARNINGS += -Werror
+endif
+
 DEFINES=-DPOSIX -D_GNU_SOURCE
 
 CFLAGS=-Os -ffunction-sections -fdata-sections $(WARNINGS) $(DEFINES)

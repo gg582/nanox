@@ -421,9 +421,7 @@ static int decode_csi_sequence(int cmask)
                             */
 int getcmd(void)
 {
-        int c_int;              /* fetched keystroke as int */
-        unsigned char c_byte; /* processed byte value */
-    
+
     int cmask = 0;
     int c;
     /* get initial character */
@@ -506,7 +504,7 @@ proc_metac:
 int getstring(char *prompt, char *buf, int nbuf, int eolchar)
 {
     int cpos;               /* current character position in string */
-    int c;
+    int c = 0;
     int c_int;
     unsigned char c_byte;
     int quotef;             /* are we quoting the next char? */
