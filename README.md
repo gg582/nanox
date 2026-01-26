@@ -35,6 +35,30 @@ Unlike other `uEmacs` forks that suffer from broken CJK input in the message lin
 * **Perfect CJK Sync:** Integrated with `mystrnlen_raw_w` for precise cursor positioning on double-width Korean/Chinese/Japanese characters.
 * **Race-Condition Free:** Implements an atomic "Gate Buffer" logic for ISearch and Replace, ensuring your terminal never "beeps" due to incomplete UTF-8 fragments.
 
+### 4. [NEW] Markdown & HTML Rich Text Rendering
+Nanox brings **visual formatting** to Markdown and HTML files directly in the terminal:
+
+* **Bold Text:** `**text**` or `__text__` is rendered with bold styling
+* **Italic Text:** `*text*` or `_text_` is rendered with distinctive highlighting
+* **Underline:** `<u>text</u>` in HTML and Markdown files shows underlined text
+* All formatting is purely visual and preserves the raw markup in the file
+
+### 5. [NEW] Live Color Code Preview
+For developers working with colors, Nanox provides **inline color preview boxes**:
+
+* **Hex Colors:** `#RGB` and `#RRGGBB` formats are detected and previewed
+* **RGB/RGBA:** `rgb(r, g, b)` and `rgba(r, g, b, a)` show color boxes
+* **HSL/HSLA:** `hsl()` and `hsla()` color formats are also supported
+* Preview boxes appear at the end of lines containing color codes
+* Works in **any file type** - CSS, JavaScript, HTML, Python, and more!
+
+### 6. [NEW] Smart Horizontal Scrolling
+For long lines that extend beyond the terminal width:
+
+* **Auto-scroll:** The view automatically scrolls to keep the cursor visible
+* **Unicode-aware:** Correctly handles CJK characters and emoji widths
+* **Visual indicator:** A `$` marker shows when content extends off-screen
+
 
 ## Key Features
 

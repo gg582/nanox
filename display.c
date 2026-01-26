@@ -493,7 +493,7 @@ static void show_line(struct window *wp, struct line *lp)
         fname = wp->w_bufp->b_bname;
     const HighlightProfile *profile = highlight_get_profile(fname);
 
-    highlight_line(lp->l_text, len, lp->hl_start_state, profile, &spans, &end_state);
+    highlight_line((const char *)lp->l_text, len, lp->hl_start_state, profile, &spans, &end_state);
 
     if (memcmp(&lp->hl_end_state, &end_state, sizeof(HighlightState)) != 0) {
         lp->hl_end_state = end_state;
@@ -536,6 +536,38 @@ static void show_line(struct window *wp, struct line *lp)
     }
 
     span_vec_free(&spans);
+
+    /* Detect color codes in the line and show preview boxes */
+    ColorInfo colors[MAX_COLORS_PER_LINE];
+    int color_count = highlight_find_colors((const char *)lp->l_text, len, colors, MAX_COLORS_PER_LINE);
+    
+    if (color_count > 0) {
+        /* Add a space separator, then color preview boxes */
+        HighlightStyle normal = colorscheme_get(HL_NORMAL);
+        current_color_fg = normal.fg;
+        current_color_bg = normal.bg;
+        current_color_bold = false;
+        current_color_underline = false;
+        
+        vtputc(' ');
+        
+        /* Show color preview boxes (using block character with background color) */
+        for (int i = 0; i < color_count && i < 8; i++) {
+            /* Pack RGB as 0x01RRGGBB for true color */
+            int packed_color = 0x01000000 | (colors[i].r << 16) | (colors[i].g << 8) | colors[i].b;
+            current_color_bg = packed_color;
+            current_color_fg = packed_color;
+            vtputc(' ');  /* Space with colored background acts as color box */
+            vtputc(' ');
+            
+            /* Reset to normal for separator */
+            current_color_bg = normal.bg;
+            current_color_fg = normal.fg;
+            if (i < color_count - 1 && i < 7) {
+                vtputc(' ');
+            }
+        }
+    }
 
     /* Fill trailing whitespace using the default style colors */
     {
