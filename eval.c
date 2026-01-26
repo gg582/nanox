@@ -355,7 +355,7 @@ int setvar(int f, int n)
 
     /* first get the variable to set.. */
     if (clexec == FALSE) {
-        status = mlreply("Variable to set: ", &var[0], NVSIZE);
+        status = minibuf_input("Variable to set: ", &var[0], NVSIZE);
         if (status != TRUE)
             return status;
     } else {                /* macro line argument */
@@ -376,7 +376,7 @@ int setvar(int f, int n)
     if (f == TRUE)
         strcpy(value, itoa(n));
     else {
-        status = mlreply("Value: ", &value[0], NSTRING);
+        status = minibuf_input("Value: ", &value[0], NSTRING);
         if (status != TRUE)
             return status;
     }

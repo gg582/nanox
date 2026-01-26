@@ -1164,7 +1164,7 @@ int adjustmode(int kind, int global)
 
     /* prompt the user and get an answer */
 
-    status = mlreply(prompt, cbuf, NPAT - 1);
+    status = minibuf_input(prompt, cbuf, NPAT - 1);
     if (status != TRUE)
         return status;
 
@@ -1229,7 +1229,7 @@ int writemsg(int f, int n)
     char buf[NPAT];             /* buffer to recieve message into */
     char nbuf[NPAT * 2];            /* buffer to expand string into */
 
-    if ((status = mlreply("Message to write: ", buf, NPAT - 1)) != TRUE)
+    if ((status = minibuf_input("Message to write: ", buf, NPAT - 1)) != TRUE)
         return status;
 
     /* expand all '%' to "%%" so mlwrite won't expect arguments */

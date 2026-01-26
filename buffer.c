@@ -34,7 +34,7 @@ int usebuffer(int f, int n)
     int s;
     char bufn[NBUFN];
 
-    if ((s = mlreply("Use buffer: ", bufn, NBUFN)) != TRUE)
+    if ((s = minibuf_input("Use buffer: ", bufn, NBUFN)) != TRUE)
         return s;
     if ((bp = bfind(bufn, TRUE, 0)) == NULL)
         return FALSE;
@@ -128,7 +128,7 @@ int killbuffer(int f, int n)
     int s;
     char bufn[NBUFN];
 
-    if ((s = mlreply("Kill buffer: ", bufn, NBUFN)) != TRUE)
+    if ((s = minibuf_input("Kill buffer: ", bufn, NBUFN)) != TRUE)
         return s;
     if ((bp = bfind(bufn, FALSE, 0)) == NULL)   /* Easy if unknown.     */
         return TRUE;
@@ -200,7 +200,7 @@ int namebuffer(int f, int n)
     char bufn[NBUFN];           /* buffer to hold buffer name */
 
     /* prompt for and get the new buffer name */
- ask:   if (mlreply("Change buffer name to: ", bufn, NBUFN) != TRUE)
+ ask:   if (minibuf_input("Change buffer name to: ", bufn, NBUFN) != TRUE)
         return FALSE;
 
     /* and check for duplicates */
