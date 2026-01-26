@@ -1,5 +1,4 @@
 [styles]
-; 1. 배경: 순수 화이트에서 3% 정도 명도를 낮춰 '눈부심' 차단
 normal   = fg=#24292e bg=#f7f7f7
 keyword  = fg=#b91d1d bold=true
 flow     = fg=#b91d1d bold=true
