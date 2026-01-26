@@ -262,6 +262,62 @@ void minibuf_update(const char *prompt)
     TTflush();
 }
 
+/* Display a UTF-8 message string at the bottom line with proper Unicode handling.
+ * This function uses the same encoding logic as minibuf_update() to prevent
+ * UTF-8 corruption (double-encoding/mojibake). */
+void minibuf_show(const char *msg)
+{
+    int col = 0;
+    int i, len;
+    unicode_t c;
+    unsigned char *text;
+    
+    /* Move to bottom line */
+    movecursor(term.t_nrow, 0);
+    
+    if (msg == NULL || *msg == '\0') {
+        TTeeol();
+        TTflush();
+        return;
+    }
+    
+    /* Display message content with proper UTF-8 handling */
+    text = (unsigned char *)msg;
+    len = strlen(msg);
+    i = 0;
+    
+    while (i < len && col < term.t_ncol - 1) {
+        /* Convert UTF-8 bytes to Unicode code point */
+        int bytes = utf8_to_unicode(text, i, len, &c);
+        
+        if (bytes <= 0) {
+            /* Invalid UTF-8 - output as raw byte */
+            TTputc(text[i] & 0xFF);
+            col++;
+            i++;
+            continue;
+        }
+        
+        /* Check display width using mystrnlen_raw_w for CJK */
+        int char_width = mystrnlen_raw_w(c);
+        
+        if (col + char_width >= term.t_ncol - 1)
+            break;
+        
+        /* CRITICAL: Pass Unicode code point to TTputc, NOT raw bytes!
+         * TTputc() internally converts Unicode to UTF-8 bytes with proper masking */
+        TTputc(c);
+        
+        col += char_width;
+        i += bytes;
+    }
+    
+    /* Clear to end of line */
+    TTeeol();
+    TTflush();
+    mpresf = TRUE;  /* Mark message line as having content */
+}
+
 /* Get minibuffer content as string */
 void minibuf_get_text(char *dest, int max_len)
 {
