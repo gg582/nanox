@@ -109,7 +109,8 @@ endif
 #
 # - `install` installs only the binary to $(INSTALL_BIN).
 # - `configs-install` installs configs/nanox/* into $(INSTALL_CONF).
-# - `install-all` runs both.
+# - `editorconfig-install` installs global .editorconfig to ~/.editorconfig.
+# - `install-all` runs all install targets.
 # -----------------------------------------------------------------------------
 
 install: $(PROGRAM)
@@ -120,7 +121,7 @@ install: $(PROGRAM)
 configs-install:
 	$(E) "  CONFIG  " "configs/nanox -> " $(INSTALL_CONF)
 	$(Q) install -d "$(INSTALL_CONF)"
-	$(Q) find configs/nanox -type f | while read f; do \
+	$(Q) find configs/nanox -type f -not -name '.editorconfig' | while read f; do \
 		rel=$${f#configs/nanox/}; \
 		dir=$(INSTALL_CONF)/$$(dirname $$rel); \
 		install -d "$$dir"; \
@@ -130,11 +131,19 @@ configs-install:
 		cp "$$f" "$(INSTALL_CONF)/$$rel"; \
 	done
 
+editorconfig-install:
+	$(E) "  EDITORCONFIG " "configs/nanox/.editorconfig -> " $(HOME)/.editorconfig
+	$(Q) if [ -f "$(HOME)/.editorconfig" ]; then \
+		cp "$(HOME)/.editorconfig" "$(HOME)/.editorconfig.bak"; \
+	fi
+	$(Q) cp "configs/nanox/.editorconfig" "$(HOME)/.editorconfig"
+
 backups-clean:
 	$(E) "  CLEAN BACKUPS"
 	$(Q) find "$(INSTALL_CONF)" -name "*.bak" -delete
+	$(Q) rm -f "$(HOME)/.editorconfig.bak"
 
-install-all: install configs-install
+install-all: install configs-install editorconfig-install
 
 source:
 	@mv makefile makefile.bak

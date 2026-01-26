@@ -43,6 +43,7 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | 'X', cex },
     { CONTROL | 'Y', yank },
     { CONTROL | 'Z', backpage },
+    { CONTROL | '[', ctrlg },           /* ESC (^[) - abort/cancel */
     { CONTROL | ']', metafn },
     { CTLX | CONTROL | 'C', quit },     /* Hard quit.           */
     { CTLX | CONTROL | 'A', detab },
@@ -142,6 +143,7 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | 'e', forwline },
     { SPEC | 'H', gotobob },
     { SPEC | 'i', cex },
+    { SPEC | 'L', insspace },           /* Insert key */
     { SPEC | 'P', nanox_help_command },
     { SPEC | 'Q', filesave },
     { SPEC | 'R', filefind },
@@ -164,6 +166,7 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | META | '}', reserve_set_4 },
 
     { 0x7F, backdel },
+    { SPEC | 0x7F, forwdel },           /* Delete key (VT100 CSI 3 ~) */
 
     /* special internal bindings */
     { SPEC | META | 'W', wrapword },    /* called on word wrap */

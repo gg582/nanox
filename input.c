@@ -310,26 +310,45 @@ static int apply_modifier_bits(int modifier, int cmask)
 static int map_csi_function(int code)
 {
     switch (code) {
-    case 15:
-        return 'U';
-    case 17:
-        return 'W';
-    case 18:
-        return 'X';
-    case 19:
-        return 'Y';
-    case 20:
-        return '`';
-    case 21:
-        return 'a';
-    case 23:
-        return '{';
-    case 24:
-        return '}';
+    /* Navigation keys (CSI 1~ to CSI 6~) */
+    case 1:
+        return 'H';     /* Home */
+    case 2:
+        return 'L';     /* Insert */
+    case 3:
+        return 127;     /* Delete - map to DEL */
+    case 4:
+        return 'F';     /* End */
     case 5:
-        return '5';
+        return '5';     /* Page Up */
     case 6:
-        return '6';
+        return '6';     /* Page Down */
+    /* VT100/xterm function keys F1-F4 (some terminals send CSI 11~ to 14~) */
+    case 11:
+        return 'P';     /* F1 */
+    case 12:
+        return 'Q';     /* F2 */
+    case 13:
+        return 'R';     /* F3 */
+    case 14:
+        return 'S';     /* F4 */
+    /* Function keys F5-F12 (CSI 15~ to CSI 24~, with gaps) */
+    case 15:
+        return 'U';     /* F5 */
+    case 17:
+        return 'W';     /* F6 */
+    case 18:
+        return 'X';     /* F7 */
+    case 19:
+        return 'Y';     /* F8 */
+    case 20:
+        return '`';     /* F9 */
+    case 21:
+        return 'a';     /* F10 */
+    case 23:
+        return '{';     /* F11 */
+    case 24:
+        return '}';     /* F12 */
     default:
         return 0;
     }
@@ -416,8 +435,19 @@ proc_metac:
         if (code)
             return code;
     }
-    /* process META prefix */
+    /* process META prefix (ESC key = ^[ in VT100) */
     if (c == (CONTROL | '[')) {
+        /*
+         * VT100 compatibility: Check if more characters are waiting.
+         * If not, this is a standalone ESC key press (^[).
+         * If characters are waiting, treat ESC as META prefix.
+         * Note: typahead() returns 0 on ioctl failure, which safely
+         * treats ESC as standalone in edge cases.
+         */
+        if (!typahead()) {
+            /* Standalone ESC key - return as ^[ */
+            return c;
+        }
         c = get1key();
         if (c == '[') {
             int code = decode_csi_sequence(cmask);
