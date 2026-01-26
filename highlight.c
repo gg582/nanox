@@ -644,9 +644,11 @@ static bool parse_rgb_color(const char *text, int pos, int color_len, int *r, in
 
 void highlight_line(const char *text, int len, HighlightState start, const HighlightProfile *profile, SpanVec *out, HighlightState *end)
 {
-    out->count = 0;
-    out->heap_spans = NULL;
-    out->capacity = 0;
+    if (out) {
+        out->count = 0;
+        out->heap_spans = NULL;
+        out->capacity = 0;
+    }
     *end = start;
 
     // Prevent null pointer access
@@ -670,7 +672,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             if (color_len == 0) color_len = is_hsl_color(text, len, pos);
             
             if (color_len > 0) {
-                add_span(out, pos, pos + color_len, HL_NUMBER);
+                if (out) add_span(out, pos, pos + color_len, HL_NUMBER);
                 pos += color_len;
             } else {
                 pos++;
@@ -688,7 +690,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
         if (state.state == HS_NORMAL) {
             /* 0. Control characters */
             if (is_control(c)) {
-                add_span(out, pos, pos + 1, HL_CONTROL);
+                if (out) add_span(out, pos, pos + 1, HL_CONTROL);
                 pos++;
                 continue;
             }
@@ -703,7 +705,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     }
                 }
                 if (trailing) {
-                    add_span(out, pos, len, HL_CONTROL);
+                    if (out) add_span(out, pos, len, HL_CONTROL);
                     pos = len;
                     continue;
                 }
@@ -714,7 +716,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             if (color_len == 0) color_len = is_rgb_color(text, len, pos);
             if (color_len == 0) color_len = is_hsl_color(text, len, pos);
             if (color_len > 0) {
-                add_span(out, pos, pos + color_len, HL_NUMBER);
+                if (out) add_span(out, pos, pos + color_len, HL_NUMBER);
                 pos += color_len;
                 continue;
             }
@@ -728,7 +730,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     char delim[3] = {text[pos], text[pos], 0};
                     int end_pos = find_md_closing(text, len, pos + 2, delim, 2);
                     if (end_pos > 0) {
-                        add_span(out, pos, end_pos, HL_MD_BOLD);
+                        if (out) add_span(out, pos, end_pos, HL_MD_BOLD);
                         pos = end_pos;
                         continue;
                     }
@@ -741,7 +743,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                         char delim[2] = {text[pos], 0};
                         int end_pos = find_md_closing(text, len, pos + 1, delim, 1);
                         if (end_pos > 0) {
-                            add_span(out, pos, end_pos, HL_MD_ITALIC);
+                            if (out) add_span(out, pos, end_pos, HL_MD_ITALIC);
                             pos = end_pos;
                             continue;
                         }
@@ -756,7 +758,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     int search = pos + 3;
                     while (search + 4 <= len) {
                         if (strncasecmp(text + search, "</u>", 4) == 0) {
-                            add_span(out, pos, search + 4, HL_MD_UNDERLINE);
+                            if (out) add_span(out, pos, search + 4, HL_MD_UNDERLINE);
                             pos = search + 4;
                             break;
                         }
@@ -770,7 +772,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     int search = pos + 3;
                     while (search + 4 <= len) {
                         if (strncasecmp(text + search, "</b>", 4) == 0) {
-                            add_span(out, pos, search + 4, HL_MD_BOLD);
+                            if (out) add_span(out, pos, search + 4, HL_MD_BOLD);
                             pos = search + 4;
                             break;
                         }
@@ -784,7 +786,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     int search = pos + 3;
                     while (search + 4 <= len) {
                         if (strncasecmp(text + search, "</i>", 4) == 0) {
-                            add_span(out, pos, search + 4, HL_MD_ITALIC);
+                            if (out) add_span(out, pos, search + 4, HL_MD_ITALIC);
                             pos = search + 4;
                             break;
                         }
@@ -817,11 +819,11 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     }
 
                     if (found_end) {
-                        add_span(out, pos, search_pos, HL_COMMENT);
+                        if (out) add_span(out, pos, search_pos, HL_COMMENT);
                         pos = search_pos;
                         state.state = HS_NORMAL;
                     } else {
-                        add_span(out, pos, len, HL_COMMENT);
+                        if (out) add_span(out, pos, len, HL_COMMENT);
                         pos = len;
                     }
                     matched_block = true;
@@ -834,7 +836,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             bool matched_line = false;
             for (int i = 0; i < profile->line_comment_count; i++) {
                 if (starts_with(text + pos, profile->line_comments[i])) {
-                    add_span(out, pos, len, HL_COMMENT);
+                    if (out) add_span(out, pos, len, HL_COMMENT);
                     pos = len;
                     matched_line = true;
                     break;
@@ -848,7 +850,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                 while (search < len && (isalnum((unsigned char)text[search]) || text[search] == '_')) {
                     search++;
                 }
-                add_span(out, pos, search, HL_PREPROC);
+                if (out) add_span(out, pos, search, HL_PREPROC);
                 pos = search;
                 continue;
             }
@@ -857,7 +859,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             if (profile->enable_triple_quotes && strncmp(text + pos, "\"\"\"", 3) == 0) {
                 state.state = HS_TRIPLE_STRING;
                 state.sub_id = '\"';
-                add_span(out, pos, pos + 3, HL_STRING);
+                if (out) add_span(out, pos, pos + 3, HL_STRING);
                 pos += 3;
                 continue;
             }
@@ -866,7 +868,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             if (delim_ptr && *delim_ptr) {
                 state.state = HS_STRING;
                 state.sub_id = c;
-                add_span(out, pos, pos + 1, HL_STRING);
+                if (out) add_span(out, pos, pos + 1, HL_STRING);
                 pos++;
                 continue;
             }
@@ -899,24 +901,24 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                 /* Suffixes */
                 while (search < len && strchr("uUlLfF", text[search])) search++;
                 
-                add_span(out, pos, search, HL_NUMBER);
+                if (out) add_span(out, pos, search, HL_NUMBER);
                 pos = search;
                 continue;
             }
 
             /* 6. Punctuation and Operators */
             if (profile->enable_bracket_highlight && (c == '?' || c == ':')) {
-                add_span(out, pos, pos + 1, HL_TERNARY);
+                if (out) add_span(out, pos, pos + 1, HL_TERNARY);
                 pos++;
                 continue;
             }
             if (profile->enable_bracket_highlight && is_punct(c)) {
-                add_span(out, pos, pos + 1, HL_BRACKET);
+                if (out) add_span(out, pos, pos + 1, HL_BRACKET);
                 pos++;
                 continue;
             }
             if (profile->enable_bracket_highlight && is_operator(c)) {
-                add_span(out, pos, pos + 1, HL_OPERATOR);
+                if (out) add_span(out, pos, pos + 1, HL_OPERATOR);
                 pos++;
                 continue;
             }
@@ -928,66 +930,68 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             }
 
             if (next_stop > pos) {
-                char word[MAX_TOKEN_LEN];
-                int word_len = next_stop - pos;
-                HighlightStyleID style = HL_NORMAL;
+                if (out) {
+                    char word[MAX_TOKEN_LEN];
+                    int word_len = next_stop - pos;
+                    HighlightStyleID style = HL_NORMAL;
 
-                if (word_len < MAX_TOKEN_LEN) {
-                    memcpy(word, text + pos, word_len);
-                    word[word_len] = 0;
+                    if (word_len < MAX_TOKEN_LEN) {
+                        memcpy(word, text + pos, word_len);
+                        word[word_len] = 0;
 
-                    bool found = false;
-                    /* Order of precedence: Return > Flow > Preproc > Type > Keyword */
-                    for (int i = 0; i < profile->return_keyword_count; i++) {
-                        if (strcmp(word, profile->return_keywords[i]) == 0) {
-                            style = HL_RETURN; found = true; break;
+                        bool found = false;
+                        /* Order of precedence: Return > Flow > Preproc > Type > Keyword */
+                        for (int i = 0; i < profile->return_keyword_count; i++) {
+                            if (strcmp(word, profile->return_keywords[i]) == 0) {
+                                style = HL_RETURN; found = true; break;
+                            }
                         }
-                    }
-                    if (!found) {
-                        for (int i = 0; i < profile->flow_keyword_count; i++) {
-                            if (strcmp(word, profile->flow_keywords[i]) == 0) {
-                                style = HL_FLOW; found = true; break;
+                        if (!found) {
+                            for (int i = 0; i < profile->flow_keyword_count; i++) {
+                                if (strcmp(word, profile->flow_keywords[i]) == 0) {
+                                    style = HL_FLOW; found = true; break;
+                                }
+                            }
+                        }
+                        if (!found) {
+                            for (int i = 0; i < profile->preproc_keyword_count; i++) {
+                                if (strcmp(word, profile->preproc_keywords[i]) == 0) {
+                                    style = HL_PREPROC; found = true; break;
+                                }
+                            }
+                        }
+                        if (!found) {
+                            for (int i = 0; i < profile->type_keyword_count; i++) {
+                                if (strcmp(word, profile->type_keywords[i]) == 0) {
+                                    style = HL_TYPE; found = true; break;
+                                }
+                            }
+                        }
+                        if (!found) {
+                            for (int i = 0; i < profile->keyword_count; i++) {
+                                if (strcmp(word, profile->keywords[i]) == 0) {
+                                    style = HL_KEYWORD; found = true; break;
+                                }
+                            }
+                        }
+                        
+                        /* Function detection: identifier followed by '(' */
+                        if (!found) {
+                            int s = next_stop;
+                            while (s < len && isspace((unsigned char)text[s])) s++;
+                            if (s < len && text[s] == '(') {
+                                style = HL_FUNCTION;
                             }
                         }
                     }
-                    if (!found) {
-                        for (int i = 0; i < profile->preproc_keyword_count; i++) {
-                            if (strcmp(word, profile->preproc_keywords[i]) == 0) {
-                                style = HL_PREPROC; found = true; break;
-                            }
-                        }
-                    }
-                    if (!found) {
-                        for (int i = 0; i < profile->type_keyword_count; i++) {
-                            if (strcmp(word, profile->type_keywords[i]) == 0) {
-                                style = HL_TYPE; found = true; break;
-                            }
-                        }
-                    }
-                    if (!found) {
-                        for (int i = 0; i < profile->keyword_count; i++) {
-                            if (strcmp(word, profile->keywords[i]) == 0) {
-                                style = HL_KEYWORD; found = true; break;
-                            }
-                        }
-                    }
-                    
-                    /* Function detection: identifier followed by '(' */
-                    if (!found) {
-                        int s = next_stop;
-                        while (s < len && isspace((unsigned char)text[s])) s++;
-                        if (s < len && text[s] == '(') {
-                            style = HL_FUNCTION;
-                        }
-                    }
+                    add_span(out, pos, next_stop, style);
                 }
-                add_span(out, pos, next_stop, style);
                 pos = next_stop;
                 continue;
             }
 
             /* Fallback for other characters */
-            add_span(out, pos, pos + 1, HL_NORMAL);
+            if (out) add_span(out, pos, pos + 1, HL_NORMAL);
             pos++;
 
         } else if (state.state == HS_BLOCK_COMMENT) {
@@ -1005,11 +1009,11 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                 search++;
             }
             if (found_end) {
-                add_span(out, pos, search, HL_COMMENT);
+                if (out) add_span(out, pos, search, HL_COMMENT);
                 pos = search;
                 state.state = HS_NORMAL;
             } else {
-                add_span(out, pos, len, HL_COMMENT);
+                if (out) add_span(out, pos, len, HL_COMMENT);
                 pos = len;
             }
         } else if (state.state == HS_STRING || state.state == HS_TRIPLE_STRING) {
@@ -1027,21 +1031,21 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                         while (pos + esc_len < len && isdigit((unsigned char)text[pos+esc_len]) && esc_len < 4) esc_len++;
                     }
                 }
-                add_span(out, pos, pos + esc_len, HL_ESCAPE);
+                if (out) add_span(out, pos, pos + esc_len, HL_ESCAPE);
                 pos += esc_len;
                 continue;
             }
             
             if (is_triple) {
                 if (starts_with(text + pos, "\"\"\"")) {
-                    add_span(out, pos, pos + 3, HL_STRING);
+                    if (out) add_span(out, pos, pos + 3, HL_STRING);
                     pos += 3;
                     state.state = HS_NORMAL;
                     continue;
                 }
             } else {
                 if (text[pos] == delim) {
-                    add_span(out, pos, pos + 1, HL_STRING);
+                    if (out) add_span(out, pos, pos + 1, HL_STRING);
                     pos++;
                     state.state = HS_NORMAL;
                     continue;
@@ -1049,7 +1053,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             }
             
             /* Just normal string character */
-            add_span(out, pos, pos + 1, HL_STRING);
+            if (out) add_span(out, pos, pos + 1, HL_STRING);
             pos++;
         }
     }

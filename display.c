@@ -390,6 +390,46 @@ int upscreen(int f, int n)
     return TRUE;
 }
 
+static void update_syntax_highlighting(struct buffer *bp) {
+    if (!highlight_is_enabled()) return;
+    
+    const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
+    const HighlightProfile *profile = highlight_get_profile(fname);
+    if (!profile) return;
+
+    struct line *lp = lforw(bp->b_linep);
+    HighlightState current_state = {HS_NORMAL, 0};
+    
+    while (lp != bp->b_linep) {
+        // Check if we can skip
+        if (memcmp(&lp->hl_start_state, &current_state, sizeof(HighlightState)) == 0) {
+            // Start state matches. Now check if end state is consistent.
+            HighlightState computed_end;
+            highlight_line((const char *)lp->l_text, lp->l_used, current_state, profile, NULL, &computed_end);
+            
+            if (memcmp(&lp->hl_end_state, &computed_end, sizeof(HighlightState)) == 0) {
+                // Stable. We can stop propagation!
+                break;
+            }
+            
+            // Output changed. Update and continue.
+            lp->hl_end_state = computed_end;
+            current_state = computed_end;
+        } else {
+            // Start state mismatch. Update and continue.
+            lp->hl_start_state = current_state;
+            
+            HighlightState computed_end;
+            highlight_line((const char *)lp->l_text, lp->l_used, current_state, profile, NULL, &computed_end);
+            
+            lp->hl_end_state = computed_end;
+            current_state = computed_end;
+        }
+        
+        lp = lforw(lp);
+    }
+}
+
 /*
  * Make sure that the display is right. This is a three part process. First,
  * scan through all of the windows looking for dirty ones. Check the framing,
@@ -419,6 +459,11 @@ int update(int force)
     /* update any windows that need refreshing */
     wp = curwp;
     if (wp->w_flag) {
+        /* Update syntax highlighting for the whole buffer if hard refresh */
+        if (wp->w_flag & WFHARD) {
+            update_syntax_highlighting(wp->w_bufp);
+        }
+
         /* if the window has changed, service it */
         reframe(wp);        /* check the framing */
 
