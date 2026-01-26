@@ -24,6 +24,7 @@ export E Q
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
 PROGRAM=nanox
+LINK_NAME=nx
 
 SRC=	basic.c bind.c buffer.c colorscheme.c command_mode.c display.c eval.c exec.c file.c \
 	fileio.c highlight.c input.c isearch.c line.c lock.c globals.c main.c \
@@ -129,6 +130,8 @@ install: $(PROGRAM)
 	$(E) "  INSTALL " $(PROGRAM) " -> " $(INSTALL_BIN)
 	$(Q) install -d "$(INSTALL_BIN)"
 	$(Q) install -m 755 "$(PROGRAM)$(PROG_EXT)" "$(INSTALL_BIN)/$(PROGRAM)$(PROG_EXT)"
+	$(E) "  LINK    " "$(LINK_NAME) -> $(PROGRAM)"
+	$(Q) ln -f "$(INSTALL_BIN)/$(PROGRAM)$(PROG_EXT)" "$(INSTALL_BIN)/$(LINK_NAME)$(PROG_EXT)"
 
 configs-install:
 	$(E) "  CONFIG  " "configs/nanox -> " $(INSTALL_CONF)

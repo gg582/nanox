@@ -4,6 +4,14 @@
 
 **Minimalist, Nano-inspired UI Layer for the Legendary MicroEmacs**
 
+## Fast Guide
+
+```bash
+nx
+# or nanox
+# Press F1 to see emacs guide
+```
+
 Nanox(/na.noks/) is a modern, feature-rich fork of **uEmacs/PK** that brings the intuitive user experience of `nano` to the professional power of `MicroEmacs`. It's designed to be ultra-fast, lightweight, and fully UTF-8 aware, making it the perfect choice for terminal-based editing on any system.
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
