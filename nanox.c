@@ -889,6 +889,8 @@ int paste_slot_handle_key(int c)
     if (action_taken) {
         paste_slot_set_active(0);
         paste_slot_clear();
+        /* Force full window and modeline redraw to restore editor UI immediately */
+        curwp->w_flag |= WFHARD | WFMODE;
         sgarbf = TRUE;
         update(TRUE);
         return TRUE;
