@@ -468,9 +468,14 @@ static int is_hex_color(const char *text, int len, int pos)
             }
         }
         if (valid) {
-            /* Make sure not followed by more hex digits */
-            if (pos + 7 >= len || hex_digit_value(text[pos + 7]) < 0)
-                return 7;
+            /* Make sure not followed by more hex digits OR identifier characters */
+            if (pos + 7 >= len) return 7;
+            
+            char next = text[pos + 7];
+            if (hex_digit_value(next) >= 0) return 7; /* Followed by hex digit, handled by greedy check later? No, usually breaks */
+            if (isalnum((unsigned char)next) || next == '_') return 0; /* Part of a word */
+            
+            return 7;
         }
     }
     
@@ -484,9 +489,14 @@ static int is_hex_color(const char *text, int len, int pos)
             }
         }
         if (valid) {
-            /* Make sure not followed by more hex digits */
-            if (pos + 4 >= len || hex_digit_value(text[pos + 4]) < 0)
-                return 4;
+            /* Make sure not followed by more hex digits OR identifier characters */
+            if (pos + 4 >= len) return 4;
+            
+            char next = text[pos + 4];
+            if (hex_digit_value(next) >= 0) return 0; /* If followed by hex, it might be 6-digit or invalid 5-digit */
+            if (isalnum((unsigned char)next) || next == '_') return 0; /* Part of a word */
+            
+            return 4;
         }
     }
     
