@@ -45,7 +45,7 @@ int taboff = 0;         /* tab offset for display       */
 int metac = CONTROL | '[';      /* current meta character */
 int ctlxc = CONTROL | 'X';      /* current control X prefix char */
 int reptc = CONTROL | 'U';      /* current universal repeat char */
-int abortc = CONTROL | 'G';     /* current abort command char   */
+int abortc = 0x1F;     /* current abort command char   */
 
 int quotec = 0x11;          /* quote char during mlreply() */
 int tab_width = 7;          /* tabulator width */

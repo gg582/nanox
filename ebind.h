@@ -23,7 +23,6 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | 'D', forwdel },
     { CONTROL | 'E', gotoeol },
     { CONTROL | 'F', forwchar },
-    { CONTROL | 'G', ctrlg },
     { CONTROL | 'H', backdel },
     { CONTROL | 'I', insert_tab },
     { CONTROL | 'J', indent },
@@ -45,7 +44,6 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | 'Z', backpage },
     { CONTROL | '[', ctrlg },           /* ESC (^[) - abort/cancel */
     { CONTROL | ']', metafn },
-    { CTLX | CONTROL | 'C', quit },     /* Hard quit.           */
     { CTLX | CONTROL | 'A', detab },
     { CTLX | CONTROL | 'D', filesave }, /* alternative          */
     { CTLX | CONTROL | 'E', entab },

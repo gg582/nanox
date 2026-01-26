@@ -40,9 +40,6 @@ int mlyesno(char *prompt)
         /* get the responce */
         c = tgetc();
 
-        if (c == ectoc(abortc))     /* Bail out! */
-            return ABORT;
-
         if (c == 'y' || c == 'Y')
             return TRUE;
 
@@ -135,12 +132,6 @@ fn_t getname(void)
 
             /* and match it off */
             return fncmatch(&buf[0]);
-
-        } else if (c == ectoc(abortc)) {    /* Bell, abort */
-            ctrlg(FALSE, 0);
-            TTflush();
-            return NULL;
-
         } else if (c == 0x7F || c == 0x08) {    /* rubout/erase */
             if (cpos != 0) {
                 TTputc('\b');
@@ -552,12 +543,7 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
         /* change from command form back to character form */
         c = ectoc(c);
 
-        if (c == ectoc(abortc) && quotef == FALSE) {
-            /* Abort the input? */
-            ctrlg(FALSE, 0);
-            TTflush();
-            return ABORT;
-        } else if ((c == 0x7F || c == 0x08) && quotef == FALSE) {
+        if ((c == 0x7F || c == 0x08) && quotef == FALSE) {
             /* rubout/erase */
             if (cpos != 0) {
                 outstring("\b \b");
