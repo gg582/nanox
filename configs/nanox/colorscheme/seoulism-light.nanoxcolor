@@ -32,6 +32,3 @@ return   = fg=#b0231b bold=true
 
 ; ERROR: Saturated Cinnabar
 error    = fg=#e4252c bold=true underline=true
-
-; UI: Burnished Hanji (chalk dust over paper)
-selection = fg=#111111 bg=#f0eadd

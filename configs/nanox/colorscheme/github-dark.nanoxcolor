@@ -15,4 +15,3 @@ escape  = fg=#79c0ff
 control = fg=#f85149 underline=true
 ternary = fg=#ff7b72 bold=true
 error   = fg=#f85149 underline=true
-selection=bg=#264f78
