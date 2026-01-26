@@ -619,6 +619,8 @@ static int readpattern(char *prompt, char *apat, int srch)
         if ((curwp->w_bufp->b_mode & MDMAGIC) == 0) {
             mcclear();
             rmcclear();
+            if (!srch)
+                status = rmcstr();
         } else
             status = srch ? mcstr() : rmcstr();
     } else if (status == FALSE && apat[0] != 0) /* Old one */
@@ -912,13 +914,15 @@ int delins(int dlength, char *instr, int use_meta)
      */
     if ((status = ldelete((long)dlength, FALSE)) != TRUE)
         mlwrite("%%ERROR while deleting");
-    else if ((rmagical && use_meta) && (curwp->w_bufp->b_mode & MDMAGIC) != 0) {
+    else if (rmagical && use_meta) {
         rmcptr = &rmcpat[0];
         while (rmcptr->mc_type != MCNIL && status == TRUE) {
             if (rmcptr->mc_type == LITCHAR)
                 status = linstr(rmcptr->rstr);
-            else
+            else if ((curwp->w_bufp->b_mode & MDMAGIC) != 0)
                 status = linstr(patmatch);
+            else
+                status = linsert(1, MC_DITTO);
             rmcptr++;
         }
     } else
@@ -1171,13 +1175,6 @@ static int rmcstr(void)
     while (*patptr && status == TRUE) {
         switch (*patptr) {
         case MC_DITTO:
-
-            /* If there were non-magical characters
-             * in the string before reaching this
-             * character, plunk it in the replacement
-             * array before processing the current
-             * meta-character.
-             */
             if (mj != 0) {
                 rmcptr->mc_type = LITCHAR;
                 if ((rmcptr->rstr = malloc(mj + 1)) == NULL) {
@@ -1195,30 +1192,38 @@ static int rmcstr(void)
             break;
 
         case MC_ESC:
-            rmcptr->mc_type = LITCHAR;
+            if (mj != 0) {
+                rmcptr->mc_type = LITCHAR;
+                if ((rmcptr->rstr = malloc(mj + 1)) == NULL) {
+                    mlwrite("%%Out of memory");
+                    status = FALSE;
+                    break;
+                }
+                mystrscpy(rmcptr->rstr, patptr - mj, mj);
+                rmcptr++;
+                mj = 0;
+            }
 
-            /* We malloc mj plus two here, instead
-             * of one, because we have to count the
-             * current character.
-             */
-            if ((rmcptr->rstr = malloc(mj + 2)) == NULL) {
+            rmcptr->mc_type = LITCHAR;
+            if ((rmcptr->rstr = malloc(2)) == NULL) {
                 mlwrite("%%Out of memory");
                 status = FALSE;
                 break;
             }
 
-            mystrscpy(rmcptr->rstr, patptr - mj, mj + 1);
-
-            /* If MC_ESC is not the last character
-             * in the string, find out what it is
-             * escaping, and overwrite the last
-             * character with it.
-             */
-            if (*(patptr + 1) != '\0')
-                *((rmcptr->rstr) + mj) = *++patptr;
+            if (*(patptr + 1) != '\0') {
+                patptr++;
+                if (*patptr == 't') *(rmcptr->rstr) = '\t';
+                else if (*patptr == 'n') *(rmcptr->rstr) = '\n';
+                else if (*patptr == 'r') *(rmcptr->rstr) = '\r';
+                else *(rmcptr->rstr) = *patptr;
+                *((rmcptr->rstr) + 1) = '\0';
+            } else {
+                *(rmcptr->rstr) = MC_ESC;
+                *((rmcptr->rstr) + 1) = '\0';
+            }
 
             rmcptr++;
-            mj = 0;
             rmagical = TRUE;
             break;
 
@@ -1228,14 +1233,15 @@ static int rmcstr(void)
         patptr++;
     }
 
-    if (rmagical && mj > 0) {
+    if (mj > 0) {
         rmcptr->mc_type = LITCHAR;
         if ((rmcptr->rstr = malloc(mj + 1)) == NULL) {
             mlwrite("%%Out of memory.");
             status = FALSE;
+        } else {
+            mystrscpy(rmcptr->rstr, patptr - mj, mj);
+            rmcptr++;
         }
-        mystrscpy(rmcptr->rstr, patptr - mj, mj);
-        rmcptr++;
     }
 
     rmcptr->mc_type = MCNIL;

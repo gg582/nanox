@@ -199,11 +199,13 @@ struct buffer {
     char b_flag;                /* Flags                        */
     char b_fname[NFILEN];           /* File name                    */
     char b_bname[NBUFN];            /* Buffer name                  */
+    int b_tabsize;                  /* Tab size (0: use real tabs)  */
 };
 
 #define BFINVS  0x01                /* Internal invisable buffer    */
 #define BFCHG   0x02                /* Changed since last write     */
 #define BFTRUNC 0x04                /* buffer was truncated when read */
+#define BFMAKE  0x08                /* buffer is a Makefile */
 
 /*  mode flags  */
 #define NUMMODES    10          /* # of defined modes           */

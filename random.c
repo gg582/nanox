@@ -526,7 +526,7 @@ int insert_tab(int f, int n)
                     while (last_idx >= 0 && (lgetc(lp, last_idx) == ' ' || lgetc(lp, last_idx) == '\t'))
                         last_idx--;
                     if (last_idx >= 0 && lgetc(lp, last_idx) == '{')
-                        target += (tabsize ? tabsize : (tab_width + 1));
+                        target += (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
                     break;
                 }
                 lp = lback(lp);
@@ -537,12 +537,14 @@ int insert_tab(int f, int n)
     }
 
     if (n == 0 || n > 1) {
-        tabsize = n;
+        curbp->b_tabsize = n;
+        if (!(curbp->b_flag & BFMAKE))
+            tabsize = n;
         return TRUE;
     }
-    if (!tabsize)
+    if (!curbp->b_tabsize)
         return linsert(1, '\t');
-    return linsert(tabsize - (getccol(FALSE) % tabsize), ' ');
+    return linsert(curbp->b_tabsize - (getccol(FALSE) % curbp->b_tabsize), ' ');
 }
 
 /*
@@ -790,7 +792,7 @@ int cinsert(void)
 
     /* and one level of indentation for an open brace */
     if (bracef) {
-        int step = (tabsize ? tabsize : (tab_width + 1));
+        int step = (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
         if (step == 8 && !nanox_cfg.soft_tab) linsert(1, '\t');
         else {
             for (int i = 0; i < step; i++) linsert(1, ' ');
@@ -1001,7 +1003,7 @@ int indent(int f, int n)
             tptr--;
         
         if (tptr >= 0 && lgetc(curwp->w_dotp, tptr) == '{') {
-            target_indent += (tabsize ? tabsize : (tab_width + 1));
+            target_indent += (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
         }
 
         if (lnewline() == FALSE)

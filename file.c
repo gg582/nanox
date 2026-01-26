@@ -202,6 +202,15 @@ int readin(char *fname, int lockfl)
         bp->b_mode |= MDCMOD;
     }
 
+    /* Force hard tabs for Makefiles */
+    const char *bname = strrchr(fname, '/');
+    if (bname) bname++;
+    else bname = fname;
+    if (strcasecmp(bname, "makefile") == 0 || strncasecmp(bname, "makefile.", 9) == 0) {
+        bp->b_tabsize = 0;
+        bp->b_flag |= BFMAKE;
+    }
+
     /* let a user macro get hold of things...if he wants */
     execute(META | SPEC | 'R', FALSE, 1);
 

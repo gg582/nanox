@@ -93,6 +93,8 @@ int swbuffer(struct buffer *bp)
         curbp->b_marko = curwp->w_marko;
     }
     curbp = bp;             /* Switch.              */
+    if (!(curbp->b_flag & BFMAKE))
+        tabsize = curbp->b_tabsize;
     if (curbp->b_active != TRUE) {      /* buffer not active yet */
         /* read it in and activate it */
         readin(curbp->b_fname, TRUE);
@@ -336,6 +338,7 @@ struct buffer *bfind(char *bname, int cflag, int bflag)
         bp->b_mode = gmode;
         bp->b_nwnd = 0;
         bp->b_linep = lp;
+        bp->b_tabsize = tabsize;
         strcpy(bp->b_fname, "");
         strcpy(bp->b_bname, bname);
         lp->l_fp = lp;

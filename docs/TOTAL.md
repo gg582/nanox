@@ -36,4 +36,5 @@ The documentation is divided into the following categories:
 - **[Signal Handling](platform/SIGNALS.md)**: Technical details on handling `SIGWINCH` (resize) and emergency saves (`SIGTERM`/`SIGHUP`).
 
 ## 6. Development & Tooling
-- **[EditorConfig Guide](development/EDITORCONFIG.md)**: Guide to using EditorConfig for consistent coding styles across editors.
+- **[Buffer & Window Management](core/BUFFER_WINDOW_MANAGEMENT.md)**: Details how NanoX handles buffers, windows, and their interactions.
+- **[Status System](ui/STATUS_SYSTEM.md)**: Exploration of the status bar and message line implementation.

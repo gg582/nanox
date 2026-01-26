@@ -45,14 +45,14 @@ WARNINGS=-Wall -Wstrict-prototypes -Wuninitialized
 
 # Extra warnings for static analysis (no debug/sanitizer, keeps binary small)
 EXTRA_WARNINGS = -Wextra -Wpedantic -Wshadow -Wformat=2 -Wcast-qual -Wcast-align \
-                 -Wwrite-strings -Wconversion -Wsign-conversion -Wundef -Wvla \
-                 -Wpointer-arith -Wbad-function-cast -Wmissing-prototypes \
-                 -Wstrict-prototypes -Wold-style-definition
+	             -Wwrite-strings -Wconversion -Wsign-conversion -Wundef -Wvla \
+	             -Wpointer-arith -Wbad-function-cast -Wmissing-prototypes \
+	             -Wstrict-prototypes -Wold-style-definition
 
 # Treat warnings as errors
 WERROR ?= 1
 ifeq ($(WERROR),1)
-    EXTRA_WARNINGS += -Werror
+	EXTRA_WARNINGS += -Werror
 endif
 
 DEFINES=-DPOSIX -D_GNU_SOURCE
@@ -122,7 +122,6 @@ endif
 #
 # - `install` installs only the binary to $(INSTALL_BIN).
 # - `configs-install` installs configs/nanox/* into $(INSTALL_CONF).
-# - `editorconfig-install` installs global .editorconfig to ~/.editorconfig.
 # - `install-all` runs all install targets.
 # -----------------------------------------------------------------------------
 
@@ -144,19 +143,11 @@ configs-install:
 		cp "$$f" "$(INSTALL_CONF)/$$rel"; \
 	done
 
-editorconfig-install:
-	$(E) "  EDITORCONFIG " ".editorconfig -> " $(HOME)/.editorconfig
-	$(Q) if [ -f "$(HOME)/.editorconfig" ]; then \
-		cp "$(HOME)/.editorconfig" "$(HOME)/.editorconfig.bak"; \
-	fi
-	$(Q) cp ".editorconfig" "$(HOME)/.editorconfig"
-
 backups-clean:
 	$(E) "  CLEAN BACKUPS"
 	$(Q) find "$(INSTALL_CONF)" -name "*.bak" -delete
-	$(Q) rm -f "$(HOME)/.editorconfig.bak"
 
-install-all: install configs-install editorconfig-install
+install-all: install configs-install
 
 source:
 	@mv makefile makefile.bak

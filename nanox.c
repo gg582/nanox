@@ -872,31 +872,24 @@ int paste_slot_handle_key(int c)
     extern void paste_slot_clear(void);
     extern int paste_slot_insert(void);
     extern int update(int force);
+    extern int sgarbf;
+    int action_taken = FALSE;
     
-    /* Check for 'p' or 'P' key - insert paste */
-    if (c == 'p' || c == 'P') {
+    /* Check for 'p' or 'P' key or Enter - insert paste */
+    if (c == 'p' || c == 'P' || c == '\r' || c == '\n' || c == 13) {
         /* Insert the paste slot content */
         paste_slot_insert();
-        paste_slot_set_active(0);
-        paste_slot_clear();
-        update(TRUE);
-        return TRUE;
+        action_taken = TRUE;
     }
-    
-    /* Check for Enter key - also insert */
-    if (c == '\r' || c == '\n' || c == 13) {
-        /* Insert the paste slot content */
-        paste_slot_insert();
-        paste_slot_set_active(0);
-        paste_slot_clear();
-        update(TRUE);
-        return TRUE;
-    }
-    
     /* ESC key - cancel */
-    if (c == (CONTROL | '[') || c == 27) {
+    else if (c == (CONTROL | '[') || c == 27) {
+        action_taken = TRUE;
+    }
+    
+    if (action_taken) {
         paste_slot_set_active(0);
         paste_slot_clear();
+        sgarbf = TRUE;
         update(TRUE);
         return TRUE;
     }
