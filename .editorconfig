@@ -3,6 +3,7 @@
 
 root = true
 
-# Makefiles must use hard tabs (matches any file with Makefile or makefile in the name)
-[*{M,m}akefile*]
+# Makefiles must use hard tabs (case-insensitive match for makefile/Makefile/MAKEFILE/etc.)
+# EditorConfig globs are case-sensitive, so we use character classes to match all variations
+[*[Mm][Aa][Kk][Ee][Ff][Ii][Ll][Ee]*]
 indent_style = tab
