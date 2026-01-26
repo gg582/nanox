@@ -55,7 +55,7 @@ int execcmd(int f, int n)
     char cmdstr[NSTRING];           /* string holding command to execute */
 
     /* get the line wanted */
-    if ((status = mlreply(": ", cmdstr, NSTRING)) != TRUE)
+    if ((status = minibuf_input(": ", cmdstr, NSTRING)) != TRUE)
         return status;
 
     execlevel = 0;
@@ -312,7 +312,7 @@ int storeproc(int f, int n)
         return storemac(f, n);
 
     /* get the name of the procedure */
-    if ((status = mlreply("Procedure name: ", &bname[1], NBUFN - 2)) != TRUE)
+    if ((status = minibuf_input("Procedure name: ", &bname[1], NBUFN - 2)) != TRUE)
         return status;
 
     /* construct the macro buffer name */
@@ -347,7 +347,7 @@ int execproc(int f, int n)
     char bufn[NBUFN + 2];           /* name of buffer to execute */
 
     /* find out what buffer the user wants to execute */
-    if ((status = mlreply("Execute procedure: ", &bufn[1], NBUFN)) != TRUE)
+    if ((status = minibuf_input("Execute procedure: ", &bufn[1], NBUFN)) != TRUE)
         return status;
 
     /* construct the buffer name */
@@ -380,7 +380,7 @@ int execbuf(int f, int n)
     char bufn[NSTRING];         /* name of buffer to execute */
 
     /* find out what buffer the user wants to execute */
-    if ((status = mlreply("Execute buffer: ", bufn, NBUFN)) != TRUE)
+    if ((status = minibuf_input("Execute buffer: ", bufn, NBUFN)) != TRUE)
         return status;
 
     /* find the pointer to that buffer */
@@ -782,7 +782,7 @@ int execfile(int f, int n)
     char fname[NSTRING];            /* name of file to execute */
     char *fspec;                /* full file spec */
 
-    if ((status = mlreply("File to execute: ", fname, NSTRING - 1)) != TRUE)
+    if ((status = minibuf_input("File to execute: ", fname, NSTRING - 1)) != TRUE)
         return status;
 
     /* look up the path for the file */

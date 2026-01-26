@@ -90,7 +90,7 @@ int spawn(int f, int n)
     if (restflag)
         return resterr();
 
-    if ((s = mlreply("!", line, NLINE)) != TRUE)
+    if ((s = minibuf_input("!", line, NLINE)) != TRUE)
         return s;
     TTflush();
     TTclose();              /* stty to old modes    */
@@ -125,7 +125,7 @@ int execprg(int f, int n)
     if (restflag)
         return resterr();
 
-    if ((s = mlreply("!", line, NLINE)) != TRUE)
+    if ((s = minibuf_input("!", line, NLINE)) != TRUE)
         return s;
     TTputc('\n');               /* Already have '\r'    */
     TTflush();
@@ -164,7 +164,7 @@ int filter_buffer(int f, int n)
         return rdonly();        /* we are in read only mode     */
 
     /* get the filter name and its args */
-    if ((s = mlreply("#", line, NLINE)) != TRUE)
+    if ((s = minibuf_input("#", line, NLINE)) != TRUE)
         return s;
 
     /* setup the proper file names */

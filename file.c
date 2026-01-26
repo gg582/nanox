@@ -35,7 +35,7 @@ int fileread(int f, int n)
 
     if (restflag)               /* don't allow this command if restricted */
         return resterr();
-    if ((s = mlreply("Read file: ", fname, NFILEN)) != TRUE)
+    if ((s = minibuf_input("Read file: ", fname, NFILEN)) != TRUE)
         return s;
     return readin(fname, TRUE);
 }
@@ -56,7 +56,7 @@ int insfile(int f, int n)
         return resterr();
     if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
         return rdonly();        /* we are in read only mode     */
-    if ((s = mlreply("Insert file: ", fname, NFILEN)) != TRUE)
+    if ((s = minibuf_input("Insert file: ", fname, NFILEN)) != TRUE)
         return s;
     if ((s = ifile(fname)) != TRUE)
         return s;
@@ -91,7 +91,7 @@ int viewfile(int f, int n)
 
     if (restflag)               /* don't allow this command if restricted */
         return resterr();
-    if ((s = mlreply("View file: ", fname, NFILEN)) != TRUE)
+    if ((s = minibuf_input("View file: ", fname, NFILEN)) != TRUE)
         return s;
     s = getfile(fname, FALSE);
     if (s) {                /* if we succeed, put it in view mode */
@@ -131,7 +131,7 @@ int getfile(char *fname, int lockfl)
     makename(bname, fname);         /* New buffer name.     */
     while ((bp = bfind(bname, FALSE, 0)) != NULL) {
         /* old buffer name conflict code */
-        s = mlreply("Buffer name: ", bname, NBUFN);
+        s = minibuf_input("Buffer name: ", bname, NBUFN);
         if (s == ABORT)         /* ^G to just quit      */
             return s;
         if (s == FALSE) {       /* CR to clobber it     */
@@ -337,7 +337,7 @@ int filewrite(int f, int n)
 
     if (restflag)               /* don't allow this command if restricted */
         return resterr();
-    if ((s = mlreply("Write file: ", fname, NFILEN)) != TRUE)
+    if ((s = minibuf_input("Write file: ", fname, NFILEN)) != TRUE)
         return s;
     if ((s = writeout(fname)) == TRUE) {
         strcpy(curbp->b_fname, fname);
@@ -453,7 +453,7 @@ int filename(int f, int n)
 
     if (restflag)               /* don't allow this command if restricted */
         return resterr();
-    if ((s = mlreply("Name: ", fname, NFILEN)) == ABORT)
+    if ((s = minibuf_input("Name: ", fname, NFILEN)) == ABORT)
         return s;
     if (s == FALSE)
         strcpy(curbp->b_fname, "");
