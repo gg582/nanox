@@ -9,6 +9,7 @@ The documentation is divided into the following categories:
 - **UI**: Rendering engine, syntax highlighting, and status indicators.
 - **Interaction**: Input systems, selection logic, and help viewer.
 - **Platform**: OS-level integration such as signal handling.
+- **Development**: Developer guidelines and tooling setup.
 
 ---
 
@@ -33,3 +34,6 @@ The documentation is divided into the following categories:
 
 ## 5. Platform & System
 - **[Signal Handling](platform/SIGNALS.md)**: Technical details on handling `SIGWINCH` (resize) and emergency saves (`SIGTERM`/`SIGHUP`).
+
+## 6. Development & Tooling
+- **[EditorConfig Guide](development/EDITORCONFIG.md)**: Guide to using EditorConfig for consistent coding styles across editors.
