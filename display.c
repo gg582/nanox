@@ -36,6 +36,7 @@ static int current_color_fg = -1;
 static int current_color_bg = -1;
 static bool current_color_bold = false;
 static bool current_color_underline = false;
+static bool current_color_italic = false;
 
 static int displaying = TRUE;
 #include <signal.h>
@@ -245,6 +246,7 @@ void vtinit(void)
     current_color_bg = -1;
     current_color_bold = false;
     current_color_underline = false;
+    current_color_italic = false;
 
     for (i = 0; i < term.t_mrow; ++i) {
         vp = xmalloc(sizeof(struct video) + term.t_mcol * sizeof(video_cell));
@@ -348,6 +350,7 @@ void vtputc(int c)
                 vp->v_text[vtcol + i].bg = current_color_bg;
                 vp->v_text[vtcol + i].bold = current_color_bold;
                 vp->v_text[vtcol + i].underline = current_color_underline;
+                vp->v_text[vtcol + i].italic = current_color_italic;
             }
         }
         vtcol += char_width;
@@ -371,6 +374,7 @@ void vteeol(void)
         vcp[vtcol].bg = current_color_bg;
         vcp[vtcol].bold = current_color_bold;
         vcp[vtcol].underline = current_color_underline;
+        vcp[vtcol].italic = current_color_italic;
         vtcol++;
     }
 }
@@ -410,6 +414,7 @@ int update(int force)
     current_color_bg = normal.bg;
     current_color_bold = normal.bold;
     current_color_underline = normal.underline;
+    current_color_italic = normal.italic;
 
     /* update any windows that need refreshing */
     wp = curwp;
@@ -555,11 +560,13 @@ static void show_line(struct window *wp, struct line *lp)
         int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
 
         HighlightStyle style_def = colorscheme_get(style);
+        HighlightStyle normal_def = colorscheme_get(HL_NORMAL);
 
-        current_color_fg = style_def.fg;
-        current_color_bg = style_def.bg;
+        current_color_fg = (style_def.fg == -1) ? normal_def.fg : style_def.fg;
+        current_color_bg = (style_def.bg == -1) ? normal_def.bg : style_def.bg;
         current_color_bold = style_def.bold;
         current_color_underline = style_def.underline;
+        current_color_italic = style_def.italic;
 
         vtputc(c);
         char_idx += bytes;
@@ -606,6 +613,7 @@ static void show_line(struct window *wp, struct line *lp)
         current_color_bg = normal.bg;
         current_color_bold = normal.bold;
         current_color_underline = normal.underline;
+        current_color_italic = normal.italic;
     }
 }
 
@@ -685,10 +693,13 @@ render_segment:
             unicode_t c;
             int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
             HighlightStyle style_def = colorscheme_get(style);
-            current_color_fg = style_def.fg;
-            current_color_bg = style_def.bg;
+            HighlightStyle normal_def = colorscheme_get(HL_NORMAL);
+
+            current_color_fg = (style_def.fg == -1) ? normal_def.fg : style_def.fg;
+            current_color_bg = (style_def.bg == -1) ? normal_def.bg : style_def.bg;
             current_color_bold = style_def.bold;
             current_color_underline = style_def.underline;
+            current_color_italic = style_def.italic;
             
             vtputc(c);
             char_idx += bytes;
@@ -1061,13 +1072,14 @@ static int updateline(int row, struct video *vp)
     int phys_bg = -1;
     bool phys_bold = false;
     bool phys_underline = false;
+    bool phys_italic = false;
 
     /* scan through the line and dump it to the the
        virtual screen array, finding where the last non-space is  */
     for (int i = 0; i < term.t_ncol; i++) {
         text_buf[i] = vp->v_text[i].ch;
         /* Exclude dummy cells (ch == 0) from maxchar calculation */
-        if (text_buf[i] != 0 && (text_buf[i] != ' ' || vp->v_text[i].bg != -1 || vp->v_text[i].underline))
+        if (text_buf[i] != 0 && (text_buf[i] != ' ' || vp->v_text[i].bg != -1 || vp->v_text[i].underline || vp->v_text[i].italic))
             maxchar = i + 1;
     }
 
@@ -1093,8 +1105,8 @@ static int updateline(int row, struct video *vp)
             continue;
 
         /* Attribute Handling */
-        if (cell->bold != phys_bold || cell->underline != phys_underline) {
-            if (!cell->bold && !cell->underline) {
+        if (cell->bold != phys_bold || cell->underline != phys_underline || cell->italic != phys_italic) {
+            if (!cell->bold && !cell->underline && !cell->italic) {
                 TTputs("\033[0m");
                 phys_fg = -1; phys_bg = -1;
             } else {
@@ -1102,9 +1114,12 @@ static int updateline(int row, struct video *vp)
                 if (!cell->bold && phys_bold) TTputs("\033[22m");
                 if (cell->underline && !phys_underline) TTputs("\033[4m");
                 if (!cell->underline && phys_underline) TTputs("\033[24m");
+                if (cell->italic && !phys_italic) TTitalic(TRUE);
+                if (!cell->italic && phys_italic) TTitalic(FALSE);
             }
             phys_bold = cell->bold;
             phys_underline = cell->underline;
+            phys_italic = cell->italic;
         }
 
         /* Color Handling */
@@ -1265,6 +1280,7 @@ void mlerase(void)
     current_color_bg = normal.bg;
     current_color_bold = normal.bold;
     current_color_underline = normal.underline;
+    current_color_italic = normal.italic;
 
     /* Set foreground */
     if (normal.fg != -1) {

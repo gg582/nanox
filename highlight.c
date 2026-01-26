@@ -749,14 +749,42 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                 }
             }
             
-            /* 0e. HTML underline (<u>text</u>) for HTML and Markdown */
+            /* 0e. HTML formatting (<u>, <b>, <i>) for HTML and Markdown */
             if (is_html || is_md) {
+                /* Underline */
                 if (pos + 3 <= len && strncasecmp(text + pos, "<u>", 3) == 0) {
-                    /* Find closing </u> */
                     int search = pos + 3;
                     while (search + 4 <= len) {
                         if (strncasecmp(text + search, "</u>", 4) == 0) {
                             add_span(out, pos, search + 4, HL_MD_UNDERLINE);
+                            pos = search + 4;
+                            break;
+                        }
+                        search++;
+                    }
+                    if (pos == search + 4) continue;
+                }
+                
+                /* Bold */
+                if (pos + 3 <= len && strncasecmp(text + pos, "<b>", 3) == 0) {
+                    int search = pos + 3;
+                    while (search + 4 <= len) {
+                        if (strncasecmp(text + search, "</b>", 4) == 0) {
+                            add_span(out, pos, search + 4, HL_MD_BOLD);
+                            pos = search + 4;
+                            break;
+                        }
+                        search++;
+                    }
+                    if (pos == search + 4) continue;
+                }
+                
+                /* Italic */
+                if (pos + 3 <= len && strncasecmp(text + pos, "<i>", 3) == 0) {
+                    int search = pos + 3;
+                    while (search + 4 <= len) {
+                        if (strncasecmp(text + search, "</i>", 4) == 0) {
+                            add_span(out, pos, search + 4, HL_MD_ITALIC);
                             pos = search + 4;
                             break;
                         }

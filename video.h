@@ -6,6 +6,7 @@ typedef struct {
     int bg;
     bool bold;
     bool underline;
+    bool italic;
 } video_cell;
 
 struct video {

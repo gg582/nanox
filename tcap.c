@@ -44,9 +44,11 @@ static void putpad(char *str);
 
 #define TCAPSLEN 315
 static char tcapbuf[TCAPSLEN];
-static char *UP, PC, *CM, *CE, *CL, *SO, *SE;
+static char *UP, PC, *CM, *CE, *CL, *SO, *SE, *ZH, *ZR;
 
 static char *TI, *TE;
+
+static void tcapitalic(int state);
 
 struct terminal term = {
     0,                  /* These four values are set dynamically at open time. */
@@ -68,6 +70,7 @@ struct terminal term = {
     tcapeeop,
     tcapbeep,
     tcaprev,
+    tcapitalic,
     tcapcres,
 };
 
@@ -121,6 +124,8 @@ void tcapopen(void)
     UP = tgetstr("up", &p);
     SE = tgetstr("se", &p);
     SO = tgetstr("so", &p);
+    ZH = tgetstr("ZH", &p);
+    ZR = tgetstr("ZR", &p);
     if (SO != NULL)
         revexist = TRUE;
 
@@ -198,6 +203,26 @@ void tcaprev(int state)
             putpad(SO);
     } else if (SE != NULL)
         putpad(SE);
+}
+
+/*
+ * Change italic video status
+ *
+ * @state: FALSE = normal video, TRUE = italic video.
+ */
+static void tcapitalic(int state)
+{
+    if (state) {
+        if (ZH != NULL)
+            putpad(ZH);
+        else
+            putpad("\033[3m");
+    } else {
+        if (ZR != NULL)
+            putpad(ZR);
+        else
+            putpad("\033[23m");
+    }
 }
 
 /* Change screen resolution. */

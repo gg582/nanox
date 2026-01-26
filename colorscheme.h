@@ -36,6 +36,7 @@ typedef struct {
     int bg;         /* -1 = default */
     bool bold;
     bool underline;
+    bool italic;
 } HighlightStyle;
 
 void colorscheme_init(const char *scheme_name);

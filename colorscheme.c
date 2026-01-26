@@ -15,47 +15,47 @@ static HighlightStyle styles[HL_COUNT];
 /* Built-in fallback scheme */
 static void set_default_scheme(void) {
     /* Normal: default fg/bg */
-    styles[HL_NORMAL] = (HighlightStyle){-1, -1, false, false};
+    styles[HL_NORMAL] = (HighlightStyle){-1, -1, false, false, false};
     /* Comment: Bright Black (Gray) */
-    styles[HL_COMMENT] = (HighlightStyle){8, -1, false, false};
+    styles[HL_COMMENT] = (HighlightStyle){8, -1, false, false, false};
     /* String: Green */
-    styles[HL_STRING] = (HighlightStyle){2, -1, false, false};
+    styles[HL_STRING] = (HighlightStyle){2, -1, false, false, false};
     /* Number: Magenta */
-    styles[HL_NUMBER] = (HighlightStyle){5, -1, false, false};
+    styles[HL_NUMBER] = (HighlightStyle){5, -1, false, false, false};
     /* Bracket: Cyan */
-    styles[HL_BRACKET] = (HighlightStyle){6, -1, false, false};
+    styles[HL_BRACKET] = (HighlightStyle){6, -1, false, false, false};
     /* Operator: Cyan */
-    styles[HL_OPERATOR] = (HighlightStyle){6, -1, false, false};
+    styles[HL_OPERATOR] = (HighlightStyle){6, -1, false, false, false};
     /* Keyword: Yellow */
-    styles[HL_KEYWORD] = (HighlightStyle){3, -1, true, false};
+    styles[HL_KEYWORD] = (HighlightStyle){3, -1, true, false, false};
     /* Type: Cyan */
-    styles[HL_TYPE] = (HighlightStyle){6, -1, false, false};
+    styles[HL_TYPE] = (HighlightStyle){6, -1, false, false, false};
     /* Function: Blue */
-    styles[HL_FUNCTION] = (HighlightStyle){4, -1, false, false};
+    styles[HL_FUNCTION] = (HighlightStyle){4, -1, false, false, false};
     /* Flow: Yellow */
-    styles[HL_FLOW] = (HighlightStyle){3, -1, true, false};
+    styles[HL_FLOW] = (HighlightStyle){3, -1, true, false, false};
     /* Preproc: Red */
-    styles[HL_PREPROC] = (HighlightStyle){1, -1, false, false};
+    styles[HL_PREPROC] = (HighlightStyle){1, -1, false, false, false};
     /* Return: Bright Red */
-    styles[HL_RETURN] = (HighlightStyle){9, -1, true, false};
+    styles[HL_RETURN] = (HighlightStyle){9, -1, true, false, false};
     /* Escape: Bright Cyan */
-    styles[HL_ESCAPE] = (HighlightStyle){14, -1, false, false};
+    styles[HL_ESCAPE] = (HighlightStyle){14, -1, false, false, false};
     /* Control: Bright Red */
-    styles[HL_CONTROL] = (HighlightStyle){9, -1, false, true};
+    styles[HL_CONTROL] = (HighlightStyle){9, -1, false, true, false};
     /* Ternary: Yellow */
-    styles[HL_TERNARY] = (HighlightStyle){3, -1, true, false};
+    styles[HL_TERNARY] = (HighlightStyle){3, -1, true, false, false};
     /* Error: Bright Red */
-    styles[HL_ERROR] = (HighlightStyle){9, -1, false, false};
+    styles[HL_ERROR] = (HighlightStyle){9, -1, false, false, false};
     /* Notice: Orange/Gold */
-    styles[HL_NOTICE] = (HighlightStyle){208, -1, true, false};
+    styles[HL_NOTICE] = (HighlightStyle){208, -1, true, false, false};
     /* Selection: Black on Bright Yellow */
-    styles[HL_SELECTION] = (HighlightStyle){0, 11, false, false};
+    styles[HL_SELECTION] = (HighlightStyle){0, 11, false, false, false};
     /* Markdown Bold: Bold text */
-    styles[HL_MD_BOLD] = (HighlightStyle){-1, -1, true, false};
-    /* Markdown Italic: use color 3 (yellow) to simulate italic since terminal italic is limited */
-    styles[HL_MD_ITALIC] = (HighlightStyle){3, -1, false, false};
+    styles[HL_MD_BOLD] = (HighlightStyle){-1, -1, true, false, false};
+    /* Markdown Italic: Italic text */
+    styles[HL_MD_ITALIC] = (HighlightStyle){6, -1, false, false, true};
     /* HTML Underline: Underlined text */
-    styles[HL_MD_UNDERLINE] = (HighlightStyle){-1, -1, false, true};
+    styles[HL_MD_UNDERLINE] = (HighlightStyle){-1, -1, false, true, false};
 }
 
 static int parse_color(const char *val) {
@@ -99,6 +99,8 @@ static void parse_attributes(char *value, HighlightStyle *style) {
             style->bold = true;
         } else if (strcmp(token, "underline=true") == 0) {
             style->underline = true;
+        } else if (strcmp(token, "italic=true") == 0) {
+            style->italic = true;
         }
         token = strtok(NULL, " ");
     }
