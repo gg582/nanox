@@ -24,6 +24,9 @@ typedef enum {
     HL_ERROR,
     HL_NOTICE,
     HL_SELECTION,
+    HL_MD_BOLD,        /* Markdown bold **text** */
+    HL_MD_ITALIC,      /* Markdown italic *text* */
+    HL_MD_UNDERLINE,   /* HTML underline <u>text</u> */
     HL_COUNT
 } HighlightStyleID;
 

@@ -326,6 +326,7 @@ int lnewline(void)
 	char *cp2;
 	struct line *lp1;
 	struct line *lp2;
+	struct line *lp3;
 	int doto;
 	struct window *wp;
 
@@ -335,12 +336,30 @@ int lnewline(void)
 	lp1 = curwp->w_dotp;			/* Get the address and  */
 	doto = curwp->w_doto;			/* offset of "."        */
 
+	lchange(WFHARD);
+
+	/* Special case: at end of buffer (on sentinel line) */
+	if (lp1 == curbp->b_linep) {
+		if (doto != 0) {
+			mlwrite("bug: lnewline at sentinel");
+			return FALSE;
+		}
+		/* Allocate an empty new line */
+		if ((lp2 = lalloc(0)) == NULL)
+			return FALSE;
+		lp3 = lp1->l_bp;		/* Previous line        */
+		lp3->l_fp = lp2;		/* Link in              */
+		lp2->l_fp = lp1;
+		lp1->l_bp = lp2;
+		lp2->l_bp = lp3;
+		/* Cursor stays on sentinel (end of buffer) */
+		return TRUE;
+	}
+
 	/* Ensure we don't split a UTF-8 character - adjust to character boundary */
 	while (doto > 0 && doto < lp1->l_used && !is_beginning_utf8((unsigned char)lp1->l_text[doto])) {
 		doto--;
 	}
-
-	lchange(WFHARD);
 
 	/* Allocate a new line for the second half */
 	if ((lp2 = lalloc(lp1->l_used - doto)) == NULL)

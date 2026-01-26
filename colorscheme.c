@@ -50,6 +50,12 @@ static void set_default_scheme(void) {
     styles[HL_NOTICE] = (HighlightStyle){208, -1, true, false};
     /* Selection: Black on Bright Yellow */
     styles[HL_SELECTION] = (HighlightStyle){0, 11, false, false};
+    /* Markdown Bold: Bold text */
+    styles[HL_MD_BOLD] = (HighlightStyle){-1, -1, true, false};
+    /* Markdown Italic: use color 3 (yellow) to simulate italic since terminal italic is limited */
+    styles[HL_MD_ITALIC] = (HighlightStyle){3, -1, false, false};
+    /* HTML Underline: Underlined text */
+    styles[HL_MD_UNDERLINE] = (HighlightStyle){-1, -1, false, true};
 }
 
 static int parse_color(const char *val) {
@@ -155,6 +161,9 @@ static void load_scheme_file(const char *path) {
             else if (strcmp(key, "error") == 0) id = HL_ERROR;
             else if (strcmp(key, "notice") == 0) id = HL_NOTICE;
             else if (strcmp(key, "selection") == 0) id = HL_SELECTION;
+            else if (strcmp(key, "md_bold") == 0) id = HL_MD_BOLD;
+            else if (strcmp(key, "md_italic") == 0) id = HL_MD_ITALIC;
+            else if (strcmp(key, "md_underline") == 0) id = HL_MD_UNDERLINE;
             
                     if (id != HL_COUNT) {                parse_attributes(val, &styles[id]);
             }
