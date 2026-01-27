@@ -521,7 +521,7 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
             nskip = -1;
         didtry = 0;
         c_int = get1key();
-            c_byte = (unsigned char)c_int;        /* If it is a <ret>, change it to a <NL> */
+        c_byte = (unsigned char)c_int;        /* If it is a <ret>, change it to a <NL> */
         if (c == (CONTROL | 0x4d) && !quotef)
             c = CONTROL | 0x40 | '\n';
 
@@ -546,35 +546,49 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
         if ((c == 0x7F || c == 0x08) && quotef == FALSE) {
             /* rubout/erase */
             if (cpos != 0) {
-                outstring("\b \b");
-                --ttcol;
-
-                if (buf[--cpos] < 0x20) {
+                /* Find the start of the character to delete */
+                int start_pos = cpos;
+                do {
+                    start_pos--;
+                } while (start_pos > 0 && !is_beginning_utf8((unsigned char)buf[start_pos]));
+                
+                /* Calculate width of the character */
+                unicode_t uc;
+                utf8_to_unicode((unsigned char*)buf, start_pos, cpos - start_pos, &uc);
+                int width = unicode_width(uc);
+                
+                /* Backspace properly on screen */
+                for (int i = 0; i < width; i++) {
                     outstring("\b \b");
                     --ttcol;
                 }
-                if (buf[cpos] == '\n') {
-                    outstring("\b\b  \b\b");
-                    ttcol -= 2;
-                }
-
+                
+                /* Adjust cpos to new end */
+                cpos = start_pos;
+                
                 TTflush();
             }
 
         } else if (c == 0x15 && quotef == FALSE) {
             /* C-U, kill */
             while (cpos != 0) {
-                outstring("\b \b");
-                --ttcol;
-
-                if (buf[--cpos] < 0x20) {
+                /* Find the start of the character to delete */
+                int start_pos = cpos;
+                do {
+                    start_pos--;
+                } while (start_pos > 0 && !is_beginning_utf8((unsigned char)buf[start_pos]));
+                
+                /* Calculate width of the character */
+                unicode_t uc;
+                utf8_to_unicode((unsigned char*)buf, start_pos, cpos - start_pos, &uc);
+                int width = unicode_width(uc);
+                
+                /* Backspace properly on screen */
+                for (int i = 0; i < width; i++) {
                     outstring("\b \b");
                     --ttcol;
                 }
-                if (buf[cpos] == '\n') {
-                    outstring("\b\b  \b\b");
-                    ttcol -= 2;
-                }
+                cpos = start_pos;
             }
             TTflush();
 
@@ -675,8 +689,27 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
                          outstring("<NL>");
                          ttcol += 3;
                     } else { // Printable ASCII or UTF-8 byte
-                         TTputc(c_byte);
-                         ttcol++;
+                         // Fix double-encoding by writing raw byte
+                         write(1, &c_byte, 1);
+                         
+                         // Update ttcol only if we completed a UTF-8 sequence
+                         // Find start of current char
+                         int start_pos = cpos - 1;
+                         while (start_pos > 0 && !is_beginning_utf8((unsigned char)buf[start_pos]))
+                             start_pos--;
+                         
+                         // Check if the sequence ending at cpos-1 is valid/complete
+                         unicode_t uc;
+                         unsigned len = utf8_to_unicode((unsigned char*)buf, start_pos, cpos - start_pos, &uc);
+                         
+                         // utf8_to_unicode returns 1 for invalid/partial if it can't decode, 
+                         // or the length. 
+                         // But we need to know if it *is* the full character.
+                         // If cpos - start_pos == len, it implies we have the full bytes for that char.
+                         
+                         if ((cpos - start_pos) == len) {
+                             ttcol += unicode_width(uc);
+                         }
                     }
                 }
             }

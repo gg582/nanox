@@ -438,22 +438,44 @@ int twiddle(int f, int n)
 {
     struct line *dotp;
     int doto;
-    int cl;
-    int cr;
+    unicode_t cr, cl;
+    int len_r, len_l;
+    int doto_l, doto_r;
 
     if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
         return rdonly();        /* we are in read only mode     */
+    
     dotp = curwp->w_dotp;
     doto = curwp->w_doto;
-    if (doto == llength(dotp) && --doto < 0)
-        return FALSE;
-    cr = lgetc(dotp, doto);
-    if (--doto < 0)
-        return FALSE;
-    cl = lgetc(dotp, doto);
-    lputc(dotp, doto + 0, cr);
-    lputc(dotp, doto + 1, cl);
-    lchange(WFEDIT);
+
+    /* If at end of line, move back one char first */
+    if (doto == llength(dotp)) {
+        if (doto == 0) return FALSE; /* Empty line */
+        do {
+            doto--;
+        } while (doto > 0 && !is_beginning_utf8((unsigned char)dotp->l_text[doto]));
+    }
+    
+    doto_r = doto;
+    if (doto_r == 0) return FALSE; /* At beginning of line */
+
+    /* Find start of left char */
+    doto_l = doto_r;
+    do {
+        doto_l--;
+    } while (doto_l > 0 && !is_beginning_utf8((unsigned char)dotp->l_text[doto_l]));
+
+    /* Get the two characters */
+    len_l = utf8_to_unicode(dotp->l_text, doto_l, llength(dotp), &cl);
+    len_r = utf8_to_unicode(dotp->l_text, doto_r, llength(dotp), &cr);
+
+    /* Move to left position, delete both chars, and insert swapped */
+    curwp->w_doto = doto_l;
+    ldelete((long)(len_l + len_r), FALSE);
+    
+    linsert(1, cr);
+    linsert(1, cl);
+
     return TRUE;
 }
 

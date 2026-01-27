@@ -461,6 +461,45 @@ static int amatch(struct magic *mcptr, int direct, struct line **pcwline, int *p
              */
             if (!mceq(c, mcptr))
                 return FALSE;
+
+            /* If we matched ANY, and it's a multi-byte char, consume the rest */
+            if ((mcptr->mc_type & MASKCL) == ANY) {
+                if (direct == FORWARD) {
+                    if ((c & 0xC0) == 0xC0) { /* Lead byte 11xxxxxx */
+                        int more = 0;
+                        if ((c & 0xE0) == 0xC0) more = 1;
+                        else if ((c & 0xF0) == 0xE0) more = 2;
+                        else if ((c & 0xF8) == 0xF0) more = 3;
+                        
+                        while (more > 0) {
+                            /* Peek next char by moving and potentially backing up */
+                            /* Actually we want to consume it if valid */
+                            struct line *saved_line = curline;
+                            int saved_off = curoff;
+                            
+                            int next = nextch(&curline, &curoff, direct);
+                            if ((next & 0xC0) != 0x80) {
+                                /* Not a continuation, back up and stop */
+                                curline = saved_line;
+                                curoff = saved_off;
+                                break;
+                            }
+                            matchlen++;
+                            more--;
+                        }
+                    }
+                } else { /* REVERSE */
+                    /* c is the byte we moved over. If it's a tail byte, consume back to head */
+                    if ((c & 0xC0) == 0x80) {
+                        while (1) {
+                            int prev = nextch(&curline, &curoff, direct);
+                            matchlen++;
+                            if (is_beginning_utf8(prev)) break; /* Found head */
+                            if (prev == '\n') break; /* Safety boundary */
+                        }
+                    }
+                }
+            }
         }
 
         /* Increment the length counter and

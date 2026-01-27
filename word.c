@@ -8,11 +8,13 @@
  */
 
 #include <stdio.h>
+#include <wctype.h>
 
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
 #include "line.h"
+#include "utf8.h"
 
 /* Word wrap on n-spaces. Back-over whatever precedes the point on the current
  * line and stop on the first word-break or the beginning of the line. If we
@@ -110,6 +112,23 @@ int forwword(int f, int n)
     return TRUE;
 }
 
+static void transform_word(wint_t (*transform)(wint_t)) {
+    unicode_t c;
+    int len;
+
+    while (inword()) {
+        len = lgetchar(&c);
+        unicode_t nc = transform(c);
+        if (nc != c) {
+            ldelete(len, FALSE);
+            linsert(1, nc);
+            /* linsert moves cursor, so we are at next char */
+        } else {
+             forwchar(FALSE, 1);
+        }
+    }
+}
+
 /*
  * Move the cursor forward by the specified number of words. As you move,
  * convert any characters to upper case. Error if you try and move beyond the
@@ -117,8 +136,6 @@ int forwword(int f, int n)
  */
 int upperword(int f, int n)
 {
-    int c;
-
     if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
         return rdonly();        /* we are in read only mode     */
     if (n < 0)
@@ -128,16 +145,7 @@ int upperword(int f, int n)
             if (forwchar(FALSE, 1) == FALSE)
                 return FALSE;
         }
-        while (inword() != FALSE) {
-            c = lgetc(curwp->w_dotp, curwp->w_doto);
-            if (islower(c)) {
-                c -= 'a' - 'A';
-                lputc(curwp->w_dotp, curwp->w_doto, c);
-                lchange(WFHARD);
-            }
-            if (forwchar(FALSE, 1) == FALSE)
-                return FALSE;
-        }
+        transform_word(towupper);
     }
     return TRUE;
 }
@@ -149,8 +157,6 @@ int upperword(int f, int n)
  */
 int lowerword(int f, int n)
 {
-    int c;
-
     if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
         return rdonly();        /* we are in read only mode     */
     if (n < 0)
@@ -160,16 +166,7 @@ int lowerword(int f, int n)
             if (forwchar(FALSE, 1) == FALSE)
                 return FALSE;
         }
-        while (inword() != FALSE) {
-            c = lgetc(curwp->w_dotp, curwp->w_doto);
-            if (isupper(c)) {
-                c += 'a' - 'A';
-                lputc(curwp->w_dotp, curwp->w_doto, c);
-                lchange(WFHARD);
-            }
-            if (forwchar(FALSE, 1) == FALSE)
-                return FALSE;
-        }
+        transform_word(towlower);
     }
     return TRUE;
 }
@@ -182,7 +179,8 @@ int lowerword(int f, int n)
  */
 int capword(int f, int n)
 {
-    int c;
+    unicode_t c;
+    int len;
 
     if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
         return rdonly();        /* we are in read only mode     */
@@ -194,24 +192,18 @@ int capword(int f, int n)
                 return FALSE;
         }
         if (inword() != FALSE) {
-            c = lgetc(curwp->w_dotp, curwp->w_doto);
-            if (islower(c)) {
-                c -= 'a' - 'A';
-                lputc(curwp->w_dotp, curwp->w_doto, c);
-                lchange(WFHARD);
+            /* Capitalize first character */
+            len = lgetchar(&c);
+            unicode_t nc = towupper(c);
+            if (nc != c) {
+                ldelete(len, FALSE);
+                linsert(1, nc);
+            } else {
+                forwchar(FALSE, 1);
             }
-            if (forwchar(FALSE, 1) == FALSE)
-                return FALSE;
-            while (inword() != FALSE) {
-                c = lgetc(curwp->w_dotp, curwp->w_doto);
-                if (isupper(c)) {
-                    c += 'a' - 'A';
-                    lputc(curwp->w_dotp, curwp->w_doto, c);
-                    lchange(WFHARD);
-                }
-                if (forwchar(FALSE, 1) == FALSE)
-                    return FALSE;
-            }
+            
+            /* Lowercase the rest */
+            transform_word(towlower);
         }
     }
     return TRUE;
@@ -228,7 +220,7 @@ int delfword(int f, int n)
     struct line *dotp;          /* original cursor line */
     int doto;               /*      and row */
     int c;                  /* temp char */
-    long size;              /* # of chars to delete */
+    long size;              /* # of bytes to delete */
 
     /* don't allow this command if we are in read only mode */
     if (curbp->b_mode & MDVIEW)
@@ -247,14 +239,10 @@ int delfword(int f, int n)
     dotp = curwp->w_dotp;
     doto = curwp->w_doto;
 
-    /* figure out how many characters to give the axe */
-    size = 0;
-
     /* get us into a word.... */
     while (inword() == FALSE) {
         if (forwchar(FALSE, 1) == FALSE)
             return FALSE;
-        ++size;
     }
 
     if (n == 0) {
@@ -262,24 +250,20 @@ int delfword(int f, int n)
         while (inword() == TRUE) {
             if (forwchar(FALSE, 1) == FALSE)
                 return FALSE;
-            ++size;
         }
     } else {
         /* skip n words.... */
         while (n--) {
-
             /* if we are at EOL; skip to the beginning of the next */
             while (curwp->w_doto == llength(curwp->w_dotp)) {
                 if (forwchar(FALSE, 1) == FALSE)
                     return FALSE;
-                ++size;
             }
 
             /* move forward till we are at the end of the word */
             while (inword() == TRUE) {
                 if (forwchar(FALSE, 1) == FALSE)
                     return FALSE;
-                ++size;
             }
 
             /* if there are more words, skip the interword stuff */
@@ -287,7 +271,6 @@ int delfword(int f, int n)
                 while (inword() == FALSE) {
                     if (forwchar(FALSE, 1) == FALSE)
                         return FALSE;
-                    ++size;
                 }
         }
 
@@ -297,9 +280,18 @@ int delfword(int f, int n)
                || (c == '\t')) {
             if (forwchar(FALSE, 1) == FALSE)
                 break;
-            ++size;
         }
     }
+
+    /* calculate total bytes moved */
+    struct line *lp = dotp;
+    size = 0;
+    while(lp != curwp->w_dotp) {
+        size += llength(lp) + 1; /* +1 for newline */
+        lp = lforw(lp);
+    }
+    size += curwp->w_doto;
+    size -= doto;
 
     /* restore the original position and delete the words */
     curwp->w_dotp = dotp;
@@ -315,6 +307,8 @@ int delfword(int f, int n)
 int delbword(int f, int n)
 {
     long size;
+    struct line *dotp, *endp;
+    int doto, endo;
 
     /* don't allow this command if we are in read only mode */
     if (curbp->b_mode & MDVIEW)
@@ -329,24 +323,41 @@ int delbword(int f, int n)
         kdelete();
     thisflag |= CFKILL;         /* this command is a kill */
 
+    /* save end position */
+    endp = curwp->w_dotp;
+    endo = curwp->w_doto;
+
     if (backchar(FALSE, 1) == FALSE)
         return FALSE;
-    size = 0;
+    
     while (n--) {
         while (inword() == FALSE) {
             if (backchar(FALSE, 1) == FALSE)
                 return FALSE;
-            ++size;
         }
         while (inword() != FALSE) {
-            ++size;
             if (backchar(FALSE, 1) == FALSE)
                 goto bckdel;
         }
     }
     if (forwchar(FALSE, 1) == FALSE)
         return FALSE;
- bckdel:return ldelchar(size, TRUE);
+    
+bckdel:
+    /* calculate total bytes moved */
+    dotp = curwp->w_dotp; /* start position */
+    doto = curwp->w_doto;
+    
+    struct line *lp = dotp;
+    size = 0;
+    while(lp != endp) {
+        size += llength(lp) + 1;
+        lp = lforw(lp);
+    }
+    size += endo;
+    size -= doto;
+
+    return ldelete(size, TRUE);
 }
 
 /*
@@ -355,15 +366,16 @@ int delbword(int f, int n)
  */
 int inword(void)
 {
-    int c;
+    unicode_t c;
 
     if (curwp->w_doto == llength(curwp->w_dotp))
         return FALSE;
-    c = lgetc(curwp->w_dotp, curwp->w_doto);
-    if (isletter(c))
+    
+    lgetchar(&c);
+    
+    if (iswalpha(c) || iswdigit(c))
         return TRUE;
-    if (c >= '0' && c <= '9')
-        return TRUE;
+    
     return FALSE;
 }
 
@@ -618,8 +630,8 @@ int wordcount(int f, int n)
 {
     struct line *lp;            /* current line to scan */
     int offset;             /* current char to scan */
-    long size;              /* size of region left to count */
-    int ch;                 /* current character to scan */
+    long size;              /* size of region left to count (bytes!) */
+    unicode_t ch;                 /* current character to scan */
     int wordflag;               /* are we in a word now? */
     int lastword;               /* were we just in a word? */
     long nwords;                /* total # of words */
@@ -641,7 +653,8 @@ int wordcount(int f, int n)
     nchars = 0L;
     nwords = 0L;
     nlines = 0;
-    while (size--) {
+    while (size > 0) {
+        int bytes = 1;
 
         /* get the current character */
         if (offset == llength(lp)) {    /* end of line */
@@ -649,13 +662,15 @@ int wordcount(int f, int n)
             lp = lforw(lp);
             offset = 0;
             ++nlines;
+            bytes = 1;
         } else {
-            ch = lgetc(lp, offset);
-            ++offset;
+            bytes = utf8_to_unicode(lp->l_text, offset, llength(lp), &ch);
+            offset += bytes;
         }
+        size -= bytes;
 
         /* and tabulate it */
-        wordflag = ((isletter(ch)) || (ch >= '0' && ch <= '9'));
+        wordflag = (iswalpha(ch) || iswdigit(ch));
         if (wordflag == TRUE && lastword == FALSE)
             ++nwords;
         lastword = wordflag;
