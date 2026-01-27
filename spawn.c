@@ -32,6 +32,13 @@ int spawncli(int f, int n)
     if (restflag)
         return resterr();
 
+    if (confirmshell) {
+        if (mlyesno("Spawn shell") != TRUE) {
+            mlwrite("(Aborted)");
+            return FALSE;
+        }
+    }
+
     movecursor(term.t_nrow, 0);     /* Seek to last line.   */
     TTflush();
     TTclose();              /* stty to old settings */
@@ -92,6 +99,14 @@ int spawn(int f, int n)
 
     if ((s = minibuf_input("!", line, NLINE)) != TRUE)
         return s;
+
+    if (confirmshell) {
+        if (mlyesno("Execute command") != TRUE) {
+            mlwrite("(Aborted)");
+            return FALSE;
+        }
+    }
+
     TTflush();
     TTclose();              /* stty to old modes    */
     TTkclose();
@@ -127,6 +142,14 @@ int execprg(int f, int n)
 
     if ((s = minibuf_input("!", line, NLINE)) != TRUE)
         return s;
+
+    if (confirmshell) {
+        if (mlyesno("Execute program") != TRUE) {
+            mlwrite("(Aborted)");
+            return FALSE;
+        }
+    }
+
     TTputc('\n');               /* Already have '\r'    */
     TTflush();
     TTclose();              /* stty to old modes    */
@@ -151,10 +174,9 @@ int filter_buffer(int f, int n)
     struct buffer *bp;          /* pointer to buffer to zot */
     char line[NLINE];           /* command line send to shell */
     char tmpnam[NFILEN];            /* place to store real file name */
-    static char bname1[] = "fltinp";
-
-    static char filnam1[] = "fltinp";
-    static char filnam2[] = "fltout";
+    char filnam1[] = "/tmp/nanox_fltinp_XXXXXX";
+    char filnam2[] = "/tmp/nanox_fltout_XXXXXX";
+    int fd;
 
     /* don't allow this command if restricted */
     if (restflag)
@@ -167,23 +189,57 @@ int filter_buffer(int f, int n)
     if ((s = minibuf_input("#", line, NLINE)) != TRUE)
         return s;
 
+    if (confirmshell) {
+        if (mlyesno("Filter buffer") != TRUE) {
+            mlwrite("(Aborted)");
+            return FALSE;
+        }
+    }
+
+    /* Create secure temporary files */
+    if ((fd = mkstemp(filnam1)) == -1) {
+        mlwrite("Cannot create temp file");
+        return FALSE;
+    }
+    close(fd);
+
+    if ((fd = mkstemp(filnam2)) == -1) {
+        mlwrite("Cannot create temp file");
+        unlink(filnam1);
+        return FALSE;
+    }
+    close(fd);
+
     /* setup the proper file names */
     bp = curbp;
     strcpy(tmpnam, bp->b_fname);        /* save the original name */
-    strcpy(bp->b_fname, bname1);        /* set it to our new one */
+    strcpy(bp->b_fname, filnam1);        /* set it to our new one */
 
     /* write it out, checking for errors */
     if (writeout(filnam1) != TRUE) {
         mlwrite("(Cannot write filter file)");
         strcpy(bp->b_fname, tmpnam);
+        unlink(filnam1);
+        unlink(filnam2);
         return FALSE;
     }
     TTputc('\n');               /* Already have '\r'    */
     TTflush();
     TTclose();              /* stty to old modes    */
     TTkclose();
-    strcat(line, " <fltinp >fltout");
-    system(line);
+    
+    /* Construct command: line < filnam1 > filnam2 */
+    /* Ensure no buffer overflow - simplified check */
+    if (strlen(line) + strlen(filnam1) + strlen(filnam2) + 10 < NLINE) {
+        strcat(line, " <");
+        strcat(line, filnam1);
+        strcat(line, " >");
+        strcat(line, filnam2);
+        system(line);
+    } else {
+        printf("Command too long\n");
+    }
+
     TTopen();
     TTkopen();
     TTflush();

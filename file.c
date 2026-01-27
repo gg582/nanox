@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "estruct.h"
 #include "edef.h"
@@ -415,11 +416,36 @@ int writeout(char *fn)
     int s;
     struct line *lp;
     int nline;
+    struct stat sb;
+    mode_t file_mode = 0644; /* Safe default for new files */
+
+    /* Check existence and preserve mode */
+    if (fexist(fn)) {
+        if (stat(fn, &sb) == 0) {
+            file_mode = sb.st_mode;
+        }
+        
+        /* Secure backup feature */
+        if (makebackup) {
+            char backupName[NFILEN];
+            if (strlen(fn) + 2 < NFILEN) {
+                 strcpy(backupName, fn);
+                 strcat(backupName, "~");
+                 unlink(backupName); /* Remove old backup if it exists */
+                 if (rename(fn, backupName) != 0) {
+                     mlwrite("(Cannot create backup)");
+                     nanox_set_lamp(NANOX_LAMP_ERROR);
+                     return FALSE;
+                 }
+            }
+        }
+    }
 
     if ((s = ffwopen(fn)) != FIOSUC) {  /* Open writes message. */
         nanox_set_lamp(NANOX_LAMP_ERROR);
         return FALSE;
     }
+    
     mlwrite("(Writing...)");        /* tell us were writing */
     lp = lforw(curbp->b_linep);     /* First line.          */
     nline = 0;              /* Number of lines.     */
@@ -432,6 +458,9 @@ int writeout(char *fn)
     if (s == FIOSUC) {          /* No write error.      */
         s = ffclose();
         if (s == FIOSUC) {      /* No close error.      */
+            /* Restore or set permissions */
+            chmod(fn, file_mode);
+            
             if (nline == 1)
                 mlwrite("(Wrote 1 line)");
             else

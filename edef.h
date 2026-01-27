@@ -127,6 +127,9 @@ char *fline = NULL;            /* dynamic file reading buffer */
 
 struct line *matchline = NULL;      /* match line pointer */
 int matchoff = 0;                  /* match offset */
+int cutln_active = FALSE;          /* CutLn active flag */
+int confirmshell = TRUE;
+int makebackup = TRUE;
 
 #else
 
@@ -225,5 +228,8 @@ extern char *fline;            /* dynamic file reading buffer */
 
 extern struct line *matchline;
 extern int matchoff;
+extern int cutln_active;
+extern int confirmshell;
+extern int makebackup;
 
 #endif

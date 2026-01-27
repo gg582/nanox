@@ -216,6 +216,11 @@ extern int nanox_help_handle_key(int key);
 extern void nanox_cleanup(void);
 extern void nanox_message_prefix(const char *input, char *output, size_t outsz);
 
+/* cutln.c */
+extern int cutln_trigger(int f, int n);
+extern int cutln_copy(int f, int n);
+extern int cutln_paste_menu(int f, int n);
+
 /* command_mode.c */
 extern int command_mode_activate_command(int f, int n);
 extern int sed_replace_command(int f, int n);

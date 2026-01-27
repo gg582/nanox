@@ -59,7 +59,10 @@ static char *envars[] = {
     "rval",                 /* child process return value */
     "tab",                  /* tab 4 or 8 */
     "overlap",
-    "jump",
+    "scrollcount",
+    "scroll",
+    "confirmshell",
+    "makebackup",
 };
 
 /* And its preprocesor definitions. */
@@ -105,6 +108,8 @@ static char *envars[] = {
 #define EVOVERLAP   38
 #define EVSCROLLCOUNT   39
 #define EVSCROLL    40
+#define EVCONFIRMSHELL 41
+#define EVMAKEBACKUP 42
 
 enum function_type {
     NILNAMIC = 0,

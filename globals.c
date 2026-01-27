@@ -97,6 +97,9 @@ char rpat[NPAT];            /* replacement pattern          */
 char *patmatch = NULL;
 struct line *matchline = NULL;
 int matchoff = 0;
+int cutln_active = FALSE;
+int confirmshell = TRUE;        /* Confirm before shell commands */
+int makebackup = TRUE;          /* Create backup files before overwriting */
 
 /* directive name table:
     This holds the names of all the directives....  */

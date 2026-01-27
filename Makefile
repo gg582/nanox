@@ -26,12 +26,12 @@ uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 PROGRAM=nanox
 LINK_NAME=nx
 
-SRC=	basic.c bind.c buffer.c colorscheme.c command_mode.c display.c eval.c exec.c file.c \
+SRC=	basic.c bind.c buffer.c colorscheme.c command_mode.c cutln.c display.c eval.c exec.c file.c \
 	fileio.c highlight.c input.c isearch.c line.c lock.c globals.c main.c \
 	names.c nanox.c paste_slot.c pklock.c platform.c posix.c random.c region.c search.c \
 	spawn.c tcap.c usage.c utf8.c version.c window.c word.c wrapper.c
 
-OBJ=	basic.o bind.o buffer.o colorscheme.o command_mode.o display.o eval.o exec.o file.o \
+OBJ=	basic.o bind.o buffer.o colorscheme.o command_mode.o cutln.o display.o eval.o exec.o file.o \
 	fileio.o highlight.o input.o isearch.o line.o lock.o globals.o main.o \
 	names.o nanox.o paste_slot.o pklock.o platform.o posix.o random.o region.o search.o \
 	spawn.o tcap.o usage.o utf8.o version.o window.o word.o wrapper.o
@@ -210,3 +210,4 @@ nanox.o: nanox.c nanox.h estruct.h edef.h efunc.h line.h util.h version.h
 # DEPENDENCIES MUST END AT END OF FILE
 # IF YOU PUT STUFF HERE IT WILL GO AWAY
 # see make depend above
+cutln.o: cutln.c estruct.h edef.h efunc.h line.h paste_slot.h

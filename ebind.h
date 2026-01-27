@@ -148,7 +148,9 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | 'S', quit },
     { SPEC | 'U', fisearch },
     { SPEC | 'W', sed_replace_command },  /* F6 - Sed-style regex replace */
-    { SPEC | 'X', killtext },
+    { SPEC | 'X', cutln_trigger },        /* F7 - CutLn Trigger */
+    { SPEC | SHIFT | 'X', cutln_copy },   /* Shift+F7 - CutLn Copy */
+    { SPEC | CONTROL | 'X', cutln_paste_menu }, /* Ctrl+F7 - Paste Menu */
     { SPEC | 'Y', yank },
     { SPEC | '`', reserve_jump_1 },
     { SPEC | 'a', reserve_jump_2 },

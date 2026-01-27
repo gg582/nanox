@@ -311,6 +311,10 @@ char *gtenv(char *vname)
         return itoa(scrollcount);
     case EVSCROLL:
         return ltos(0);
+    case EVCONFIRMSHELL:
+        return ltos(confirmshell);
+    case EVMAKEBACKUP:
+        return ltos(makebackup);
     }
     exit(-12);              /* again, we should never get here */
 }
@@ -599,6 +603,12 @@ int svar(struct variable_description *var, char *value)
             scrollcount = atoi(value);
             break;
         case EVSCROLL:
+            break;
+        case EVCONFIRMSHELL:
+            confirmshell = stol(value);
+            break;
+        case EVMAKEBACKUP:
+            makebackup = stol(value);
             break;
         }
         break;

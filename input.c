@@ -295,6 +295,8 @@ static int apply_modifier_bits(int modifier, int cmask)
         cmask |= META;
     if (modifier == 5 || modifier == 6 || modifier == 7 || modifier == 8)
         cmask |= CONTROL;
+    if (modifier == 2 || modifier == 4 || modifier == 6 || modifier == 8)
+        cmask |= SHIFT;
     return cmask;
 }
 

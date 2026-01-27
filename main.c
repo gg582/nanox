@@ -678,10 +678,15 @@ int ctlxe(int f, int n)
  */
 int ctrlg(int f, int n)
 {
-    TTbeep();
-    kbdmode = STOP;
-    mlwrite("(Aborted)");
-    return ABORT;
+    term.t_beep();
+    if (kbdmode == RECORD) {
+        kbdmode = STOP;
+        mlwrite("(Macro aborted)");
+        return TRUE;
+    }
+    /* cancel CutLn */
+    cutln_active = FALSE;
+    return FALSE;
 }
 
 /*

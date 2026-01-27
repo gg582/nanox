@@ -47,7 +47,7 @@ Write file ............   ^X ^W         Execute file .......... not bound
 =>                      DELETING AND INSERTING
 Delete previous character    ^H         Delete next character .      ^D
 Delete previous word .. Alt ^H         Delete next word ...... Meta  D
-Kill line .............   F7 / ^K       Kill paragraph ........ Alt ^W
+CutLn / Kill Line .....   F7 / ^K       Kill paragraph ........ Alt ^W
 Delete blank lines ....   ^X ^O         Kill region ...........      ^W
 Copy region ........... Alt ^Y         Set mark .............. Meta Space
 Yank (Paste) ..........   F8 / ^Y       Exchange point and mark   ^X ^X
@@ -84,8 +84,15 @@ Pipe command ..........   ^X  @         Execute buffer ........ not bound
 F1 .................... Help Menu       F2 .................... Save File
 F3 .................... Open File       F4 .................... Quit Editor
 F5 .................... Search Forward  F6 .................... Query Replace
-F7 .................... Kill Line       F8 .................... Yank (Paste)
+F7 .................... CutLn           F8 .................... Yank (Paste)
 F9..F12 ............... Jump to Slot    Ctrl+F9..F12 .......... Set Slot
+
+F7 Operations:
+  1st Press: Set Start Point
+  2nd Press: Cut Region (Kill)
+  Shift+F7 : Copy Region
+  Ctrl+F7  : Paste Menu (Paste Slot)
+  Esc      : Cancel Selection
 
 Modal Selection (Hold modifiers while moving cursor):
   Ctrl+Super/Ctrl+Alt + Arrows .... Start Select   +Shift  Cut Selection

@@ -79,7 +79,7 @@ void tcapopen(void)
     char *t, *p;
     char tcbuf[1024];
     char *tv_stype;
-    char err_str[72];
+    char err_str[256];
     int int_col, int_row;
 
     if ((tv_stype = getenv("TERM")) == NULL) {
@@ -88,7 +88,7 @@ void tcapopen(void)
     }
 
     if ((tgetent(tcbuf, tv_stype)) != 1) {
-        sprintf(err_str, "Unknown terminal type %s!", tv_stype);
+        snprintf(err_str, sizeof(err_str), "Unknown terminal type %s!", tv_stype);
         puts(err_str);
         exit(1);
     }
