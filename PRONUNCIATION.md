@@ -166,8 +166,6 @@ sözüň ahyrynda berk ýapylmalydyr.
 
 ---
 
----
-
 ## भारतीय भाषाएँ / Indic scripts (pick your weapon)
 
 Rule is boringly strict:
@@ -437,8 +435,6 @@ Rule is boringly strict:
 
 > واکهٔ پایانی را طولانی نکنید.
 > پایان را با **k** و سپس **s** محکم ببندید، بدون افزودن واکه.
-
----
 
 ---
 
