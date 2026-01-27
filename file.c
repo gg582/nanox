@@ -404,6 +404,63 @@ int filesave(int f, int n)
 }
 
 /*
+ * Check if the buffer is effectively the same as the file,
+ * ignoring differences in blank lines.
+ */
+static int is_effectively_same(char *fname, struct buffer *bp)
+{
+    int s;
+    struct line *lp = lforw(bp->b_linep);
+    int f_eof = 0;
+    int b_eof = 0;
+
+    if (ffropen(fname) != FIOSUC)
+        return FALSE;
+
+    while (1) {
+        /* Skip blank lines in buffer */
+        while (lp != bp->b_linep && llength(lp) == 0)
+            lp = lforw(lp);
+        
+        if (lp == bp->b_linep)
+            b_eof = 1;
+
+        /* Skip blank lines in file */
+        while (!f_eof) {
+            s = ffgetline();
+            if (s == FIOEOF) {
+                f_eof = 1;
+                break;
+            }
+            if (s != FIOSUC) {
+                ffclose();
+                return FALSE;
+            }
+            if (strlen(fline) > 0)
+                break;
+        }
+
+        if (f_eof && b_eof) {
+            ffclose();
+            return TRUE;
+        }
+        if (f_eof || b_eof) {
+            ffclose();
+            return FALSE;
+        }
+
+        /* Compare current non-blank lines */
+        if (llength(lp) != (int)strlen(fline) || 
+            memcmp(lp->l_text, fline, llength(lp)) != 0) {
+            ffclose();
+            return FALSE;
+        }
+
+        lp = lforw(lp);
+    }
+}
+
+/*
  * This function performs the details of file
  * writing. Uses the file management routines in the
  * "fileio.c" package. The number of lines written is
@@ -418,6 +475,8 @@ int writeout(char *fn)
     int nline;
     struct stat sb;
     mode_t file_mode = 0644; /* Safe default for new files */
+    char backupName[NFILEN];
+    int backupCreated = FALSE;
 
     /* Check existence and preserve mode */
     if (fexist(fn)) {
@@ -427,7 +486,6 @@ int writeout(char *fn)
         
         /* Secure backup feature */
         if (makebackup) {
-            char backupName[NFILEN];
             if (strlen(fn) + 2 < NFILEN) {
                  strcpy(backupName, fn);
                  strcat(backupName, "~");
@@ -437,6 +495,7 @@ int writeout(char *fn)
                      nanox_set_lamp(NANOX_LAMP_ERROR);
                      return FALSE;
                  }
+                 backupCreated = TRUE;
             }
         }
     }
@@ -460,6 +519,11 @@ int writeout(char *fn)
         if (s == FIOSUC) {      /* No close error.      */
             /* Restore or set permissions */
             chmod(fn, file_mode);
+
+            /* Clean up redundant backup if the new file is effectively the same */
+            if (backupCreated && is_effectively_same(backupName, curbp)) {
+                unlink(backupName);
+            }
             
             if (nline == 1)
                 mlwrite("(Wrote 1 line)");
