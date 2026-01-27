@@ -225,6 +225,8 @@ int paste_slot_insert(void)
     
     if (paste_slot_buffer == NULL || paste_slot_size == 0)
         return 1;
+
+    mlwrite("Pasting...");
     
     /* Insert content with UTF-8 awareness */
     int byte_pos = 0;
