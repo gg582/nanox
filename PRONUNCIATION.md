@@ -770,6 +770,15 @@ Rule is boringly strict:
 
 ---
 
+## Íslenska (Icelandic)
+
+> Ekki lengja síðasta sérhljóðið.
+> Lokaðu skýrt með **k** og síðan **s**, án þess að bæta við sérhljóði.
+
+(Ekki mýkja, ekki sleppa lokasamhljóðunum.)
+
+---
+
 ## Norsk (Norwegian)
 
 > Ikke dra ut den siste vokalen.
