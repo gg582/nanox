@@ -688,13 +688,6 @@ Rule is boringly strict:
 
 ---
 
-## فارسی (Farsi / Persian)
-
-> واکهٔ پایانی را نکشید.
-> با **k** و سپس **s** محکم ببندید، بدون افزودن واکه.
-
----
-
 ## Català (Catalan)
 
 > No allarguis la vocal final.
