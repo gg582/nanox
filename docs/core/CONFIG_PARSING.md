@@ -1,6 +1,6 @@
-# INI Configuration Parsing in NanoX
+# INI Configuration Parsing in Nanox
 
-NanoX uses a simple INI-style configuration format for both global settings and syntax highlighting rules. This document explains how the parsing is implemented and how to add new configuration options.
+Nanox uses a simple INI-style configuration format for both global settings and syntax highlighting rules. This document explains how the parsing is implemented and how to add new configuration options.
 
 ## 1. Overview of INI Format
 
@@ -44,7 +44,7 @@ static void parse_config_line(const char *section, char *line) {
 
 ## 3. Configuration Locations
 
-NanoX searches for configuration files in the following order:
+Nanox searches for configuration files in the following order:
 1. User config directory (typically `~/.config/nanox/`)
 2. User data directory (typically `~/.local/share/nanox/`)
 3. Relative path `configs/nanox/` from the binary location.

@@ -1,6 +1,6 @@
 # Line Processing and Buffer Management
 
-At its core, NanoX represents text as a circular doubly-linked list of `line` structures. This document explains how text is stored and manipulated.
+At its core, Nanox represents text as a circular doubly-linked list of `line` structures. This document explains how text is stored and manipulated.
 
 ## 1. The `line` Structure
 
@@ -47,7 +47,7 @@ if (lp->l_fp == bp->b_linep) {
 
 ## 5. UTF-8 Handling
 
-NanoX is UTF-8 aware. While `l_text` stores raw bytes, functions like `linsert` and `backchar` use `unicode_to_utf8` and `utf8_to_unicode` to ensure cursor movement and editing respect multi-byte character boundaries.
+Nanox is UTF-8 aware. While `l_text` stores raw bytes, functions like `linsert` and `backchar` use `unicode_to_utf8` and `utf8_to_unicode` to ensure cursor movement and editing respect multi-byte character boundaries.
 
 ## 6. Optimization: `lchange()`
 

@@ -1,6 +1,6 @@
 # Syntax Highlighting Engine
 
-NanoX features a flexible, rule-based syntax highlighting engine implemented in `highlight.c`.
+Nanox features a flexible, rule-based syntax highlighting engine implemented in `highlight.c`.
 
 ## 1. The Highlighting Pipeline
 Highlighting happens per-line during the display pass:
@@ -27,4 +27,4 @@ The engine loads rules from `.ini` files. Key categories include:
 1. Create a `.ini` file in `configs/nanox/langs/`.
 2. Define `extensions = .ext`.
 3. Define keyword lists and comment pairs.
-4. NanoX will automatically detect and load it on the next startup or file load.
+4. Nanox will automatically detect and load it on the next startup or file load.

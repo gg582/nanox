@@ -40,7 +40,7 @@ Similar to `killregion`, but it does not call `ldelete`. It simply iterates thro
 
 ## 4. Consecutive Kills
 
-uEmacs (and NanoX) handles consecutive kill commands specially. If you kill multiple lines in a row, they are accumulated into a single kill buffer entry, so a single "Yank" will restore all of them. This is managed by the `thisflag` and `lastflag` variables checking for the `CFKILL` bit.
+uEmacs (and Nanox) handles consecutive kill commands specially. If you kill multiple lines in a row, they are accumulated into a single kill buffer entry, so a single "Yank" will restore all of them. This is managed by the `thisflag` and `lastflag` variables checking for the `CFKILL` bit.
 
 ## 5. Implementation Summary
 
@@ -51,7 +51,7 @@ uEmacs (and NanoX) handles consecutive kill commands specially. If you kill mult
 
 ## 6. Keybindings
 
-### Modern NanoX Shortcuts
+### Modern Nanox Shortcuts
 - **Ctrl+Super+Arrows**: Select Region (visual highlight)
 - **Ctrl+Super+Shift+Arrows**: Cut Region (Kill)
 

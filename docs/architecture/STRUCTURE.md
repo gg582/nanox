@@ -1,6 +1,6 @@
 # Codebase Structure
 
-This document provides a comprehensive mapping of files in the NanoX project and their specific responsibilities.
+This document provides a comprehensive mapping of files in the Nanox project and their specific responsibilities.
 
 ## Core System
 - **`main.c`**: The engine's heart. Contains the main event loop, command-line argument parsing, and top-level key dispatch.

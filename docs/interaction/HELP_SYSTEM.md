@@ -1,6 +1,6 @@
 # Interactive Help System
 
-NanoX includes a built-in, searchable help viewer that parses documentation on the fly.
+Nanox includes a built-in, searchable help viewer that parses documentation on the fly.
 
 ## 1. The Help File (`emacs.hlp`)
 The system reads from a structured text file where sections are marked with `=>`.

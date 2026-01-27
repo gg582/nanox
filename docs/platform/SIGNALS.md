@@ -1,6 +1,6 @@
-# Signal Handling in NanoX
+# Signal Handling in Nanox
 
-NanoX implements robust signal handling to ensure data integrity during unexpected exits and to support responsive UI adjustments during terminal resizing.
+Nanox implements robust signal handling to ensure data integrity during unexpected exits and to support responsive UI adjustments during terminal resizing.
 
 ## 1. Window Resizing (`SIGWINCH`)
 The most common signal handled is `SIGWINCH` (Signal Window Change).
@@ -12,7 +12,7 @@ The most common signal handled is `SIGWINCH` (Signal Window Change).
   3. The main loop or the next `update()` call detects these flags and triggers `newscreensize()`, which reallocates the virtual screen buffers (`vscreen`) and reframes all windows to fit the new dimensions.
 
 ## 2. Emergency Exits (`SIGHUP`, `SIGTERM`)
-To prevent data loss, NanoX catches hangup and termination signals.
+To prevent data loss, Nanox catches hangup and termination signals.
 - **Handler**: `emergencyexit(int signr)` in `main.c`.
 - **Logic**: 
   1. It iterates through all active buffers.
@@ -20,7 +20,7 @@ To prevent data loss, NanoX catches hangup and termination signals.
   3. After attempting to save all work, it calls `quit(TRUE, 0)` to release file locks and restore terminal settings before exiting.
 
 ## 3. Keyboard Interrupts (`SIGINT`)
-NanoX typically runs with `ISIG` disabled in `termios` (see `posix.c`), meaning `Ctrl+C` does not send a `SIGINT`. Instead, it is read as a raw key code. This allows the editor to bind `Ctrl+C` to internal functions (like `insspace`) rather than crashing.
+Nanox typically runs with `ISIG` disabled in `termios` (see `posix.c`), meaning `Ctrl+C` does not send a `SIGINT`. Instead, it is read as a raw key code. This allows the editor to bind `Ctrl+C` to internal functions (like `insspace`) rather than crashing.
 
 ## 4. Implementation Reference
 - **Signal Registration**: Found in `main.c` using `signal(SIGWINCH, sizesignal)`.

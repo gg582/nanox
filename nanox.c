@@ -625,7 +625,7 @@ void nanox_help_render(void)
         help_puts(" i/k to Scroll Up/Down, Backspace: Back, F1: Close ");
     } else {
         /* Header */
-        help_puts(" [ NanoX Help System ]");
+        help_puts(" [ Nanox Help System ]");
 
         movecursor(1, 0);
         for (int i = 0; i < term.t_ncol; i++) help_puts("-");

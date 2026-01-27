@@ -1,6 +1,6 @@
-# NanoX Documentation Index (TOTAL.md)
+# Nanox Documentation Index (TOTAL.md)
 
-This document serves as the primary index for the NanoX project documentation. All documentation is organized into functional subdirectories with files named in **UPPERCASE** for clarity and consistency.
+This document serves as the primary index for the Nanox project documentation. All documentation is organized into functional subdirectories with files named in **UPPERCASE** for clarity and consistency.
 
 ## Documentation Structure
 The documentation is divided into the following categories:
@@ -36,5 +36,5 @@ The documentation is divided into the following categories:
 - **[Signal Handling](platform/SIGNALS.md)**: Technical details on handling `SIGWINCH` (resize) and emergency saves (`SIGTERM`/`SIGHUP`).
 
 ## 6. Development & Tooling
-- **[Buffer & Window Management](core/BUFFER_WINDOW_MANAGEMENT.md)**: Details how NanoX handles buffers, windows, and their interactions.
+- **[Buffer & Window Management](core/BUFFER_WINDOW_MANAGEMENT.md)**: Details how Nanox handles buffers, windows, and their interactions.
 - **[Status System](ui/STATUS_SYSTEM.md)**: Exploration of the status bar and message line implementation.

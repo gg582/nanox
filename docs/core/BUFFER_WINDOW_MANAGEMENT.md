@@ -1,6 +1,6 @@
 # Buffers and Windows Management
 
-NanoX follows the classic Model-View architecture where **Buffers** represent the data (Model) and **Windows** represent the viewports (View).
+Nanox follows the classic Model-View architecture where **Buffers** represent the data (Model) and **Windows** represent the viewports (View).
 
 ## 1. Buffers (`struct buffer`)
 A buffer is an object containing the actual text of a file.
@@ -19,6 +19,6 @@ A window is a rectangular area of the screen that looks into a buffer.
 - **Current Window/Buffer**: Global pointers `curwp` and `curbp` always point to the window currently holding the focus and its associated buffer.
 
 ## 4. Screen Splitting
-NanoX supports vertical screen splitting.
+Nanox supports vertical screen splitting.
 - When the screen is split, the `term.t_nrow` is divided among the active windows.
 - The `window.c` file contains logic for `splitwind` (C-X 2) and `delwind` (C-X 0).

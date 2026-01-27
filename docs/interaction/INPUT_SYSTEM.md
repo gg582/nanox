@@ -1,6 +1,6 @@
 # Input Processing System
 
-NanoX uses a multi-layered input system to translate raw terminal bytes into high-level editor commands.
+Nanox uses a multi-layered input system to translate raw terminal bytes into high-level editor commands.
 
 ## 1. Layer 1: Raw Byte Reading (`posix.c`)
 The lowest level is `ttgetc()`. It reads from file descriptor 0 (STDIN).

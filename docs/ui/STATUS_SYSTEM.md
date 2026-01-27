@@ -1,6 +1,6 @@
 # Status Bars and Indicators
 
-NanoX provides constant feedback to the user through three distinct UI areas: the Modeline, the Hint Bar, and the Message Line.
+Nanox provides constant feedback to the user through three distinct UI areas: the Modeline, the Hint Bar, and the Message Line.
 
 ## 1. The Modeline (Status Row)
 Located above the hint bar, the modeline displays metadata about the current window:
