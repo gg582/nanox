@@ -407,7 +407,7 @@ int filesave(int f, int n)
  * Check if the buffer is effectively the same as the file,
  * ignoring differences in blank lines.
  */
-static int is_effectively_same(char *fname, struct buffer *bp)
+int is_effectively_same(char *fname, struct buffer *bp)
 {
     int s;
     struct line *lp = lforw(bp->b_linep);
@@ -520,8 +520,8 @@ int writeout(char *fn)
             /* Restore or set permissions */
             chmod(fn, file_mode);
 
-            /* Clean up redundant backup if the new file is effectively the same */
-            if (backupCreated && is_effectively_same(backupName, curbp)) {
+            /* Clean up redundant backup if the new file is effectively the same or removebackup is set */
+            if (backupCreated && (removebackup || is_effectively_same(backupName, curbp))) {
                 unlink(backupName);
             }
             

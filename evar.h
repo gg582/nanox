@@ -63,6 +63,7 @@ static char *envars[] = {
     "scroll",
     "confirmshell",
     "makebackup",
+    "removebackup",
 };
 
 /* And its preprocesor definitions. */
@@ -110,6 +111,7 @@ static char *envars[] = {
 #define EVSCROLL    40
 #define EVCONFIRMSHELL 41
 #define EVMAKEBACKUP 42
+#define EVREMOVEBACKUP 43
 
 enum function_type {
     NILNAMIC = 0,

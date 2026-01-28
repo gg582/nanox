@@ -190,6 +190,7 @@ extern int anycb(void);
 extern int bclear(struct buffer *bp);
 extern int unmark(int f, int n);
 extern void bfreeall(void);
+extern void cleanup_backup(struct buffer *bp);
 /* Lookup a buffer by name. */
 extern struct buffer *bfind(char *bname, int cflag, int bflag);
 
@@ -236,6 +237,7 @@ extern int reserve_jump_4(int f, int n);
 extern int filewrite(int f, int n);
 extern int filesave(int f, int n);
 extern int writeout(char *fn);
+extern int is_effectively_same(char *fname, struct buffer *bp);
 extern int filename(int f, int n);
 extern int ifile(char *fname);
 

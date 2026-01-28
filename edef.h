@@ -231,5 +231,6 @@ extern int matchoff;
 extern int cutln_active;
 extern int confirmshell;
 extern int makebackup;
+extern int removebackup;
 
 #endif

@@ -88,46 +88,56 @@ static void execute_help(void) {
 /* Parse sed expression: s/pattern/replacement/flags */
 static int parse_sed_expr(const char *expr, char **pattern, char **replacement, int *global) {
     const char *p = expr;
-    char *pat_start, *pat_end, *repl_start, *repl_end;
+    char delim;
     
     /* Skip leading whitespace and 'sed' keyword if present */
     while (*p && isspace(*p)) p++;
-    if (strncasecmp(p, "sed", 3) == 0) p += 3;
-    while (*p && isspace(*p)) p++;
+    if (strncasecmp(p, "sed", 3) == 0) {
+        p += 3;
+        while (*p && isspace(*p)) p++;
+    }
     
-    /* Must start with 's/' */
-    if (*p != 's' || *(p+1) != '/') {
+    /* Must start with 's' followed by a delimiter */
+    if (*p != 's') {
         mlwrite("Invalid sed syntax. Use: s/pattern/replacement/ or s/pattern/replacement/g");
         return FALSE;
     }
-    p += 2; /* Skip 's/' */
+    p++;
     
-    /* Extract pattern */
-    pat_start = (char *)p;
-    while (*p && *p != '/') {
-        if (*p == '\\' && *(p+1)) p++; /* Skip escaped chars */
-        p++;
-    }
-    if (*p != '/') {
-        mlwrite("Invalid sed syntax: missing second '/'");
+    if (*p == '\0') {
+        mlwrite("Invalid sed syntax: missing delimiter");
         return FALSE;
     }
-    pat_end = (char *)p;
-    p++; /* Skip '/' */
     
-    /* Extract replacement */
-    repl_start = (char *)p;
-    while (*p && *p != '/') {
+    delim = *p;
+    p++; /* Skip delimiter */
+    
+    /* Extract pattern */
+    const char *pat_start = p;
+    while (*p && *p != delim) {
         if (*p == '\\' && *(p+1)) p++; /* Skip escaped chars */
         p++;
     }
-    repl_end = (char *)p;
+    if (*p != delim) {
+        mlwrite("Invalid sed syntax: missing second '%c'", delim);
+        return FALSE;
+    }
+    const char *pat_end = p;
+    p++; /* Skip delimiter */
+    
+    /* Extract replacement */
+    const char *repl_start = p;
+    while (*p && *p != delim) {
+        if (*p == '\\' && *(p+1)) p++; /* Skip escaped chars */
+        p++;
+    }
+    const char *repl_end = p;
     
     /* Check for flags */
     *global = 0;
-    if (*p == '/') {
+    if (*p == delim) {
         p++;
-        while (*p) {
+        while (*p && !isspace(*p)) {
             if (*p == 'g') *global = 1;
             p++;
         }
@@ -137,18 +147,32 @@ static int parse_sed_expr(const char *expr, char **pattern, char **replacement, 
     int pat_len = pat_end - pat_start;
     *pattern = malloc(pat_len + 1);
     if (!*pattern) return FALSE;
-    strncpy(*pattern, pat_start, pat_len);
+    memcpy(*pattern, pat_start, pat_len);
     (*pattern)[pat_len] = '\0';
     
-    /* Allocate and copy replacement */
-    int repl_len = repl_end - repl_start;
-    *replacement = malloc(repl_len + 1);
+    /* Allocate and copy replacement, UNESCAPING it */
+    int max_repl_len = repl_end - repl_start;
+    *replacement = malloc(max_repl_len + 1);
     if (!*replacement) {
         free(*pattern);
         return FALSE;
     }
-    strncpy(*replacement, repl_start, repl_len);
-    (*replacement)[repl_len] = '\0';
+    
+    char *dest = *replacement;
+    const char *src = repl_start;
+    while (src < repl_end) {
+        if (*src == '\\' && (src + 1) < repl_end) {
+            src++;
+            if (*src == 'n') *dest++ = '\n';
+            else if (*src == 't') *dest++ = '\t';
+            else if (*src == 'r') *dest++ = '\r';
+            else *dest++ = *src; /* handles \<delim>, \\, etc */
+            src++;
+        } else {
+            *dest++ = *src++;
+        }
+    }
+    *dest = '\0';
     
     return TRUE;
 }
@@ -200,9 +224,12 @@ static void execute_sed(const char *sed_expr) {
     /* Process each line in the buffer */
     struct line *lp;
     for (lp = lforw(curbp->b_linep); lp != curbp->b_linep; lp = lforw(lp)) {
-        int orig_line_len = llength(lp);  /* Save original line length for deletion */
-        int line_len = orig_line_len;
-        if (line_len == 0) continue;
+        int line_len = llength(lp);
+        if (line_len == 0) {
+            /* Handle empty lines if pattern matches empty string (careful!) */
+            /* For now, just skip empty lines to avoid complexity */
+            continue;
+        }
         
         char *line_text = malloc(line_len + 1);
         if (!line_text) continue;
@@ -212,10 +239,12 @@ static void execute_sed(const char *sed_expr) {
         PCRE2_SIZE offset = 0;
         int line_modified = 0;
         char *new_line = NULL;
+        int new_cap = 0;
         int new_len = 0;
+        int last_copied = 0;
         
         /* Find and replace matches in this line */
-        while (offset < (PCRE2_SIZE)line_len) {
+        while (offset <= (PCRE2_SIZE)line_len) {
             int rc = pcre2_match(
                 re,                         /* compiled pattern */
                 (PCRE2_SPTR)line_text,     /* subject string */
@@ -239,67 +268,80 @@ static void execute_sed(const char *sed_expr) {
             PCRE2_SIZE match_end = ovector[1];
             
             /* Build new line with replacement */
-            int before_len = (int)match_start;
-            int after_start = (int)match_end;
-            int after_len = line_len - (int)match_end;
-            int total_new_len = new_len + before_len + strlen(replacement) + after_len;
+            int before_len = (int)match_start - last_copied;
+            int repl_len = strlen(replacement);
+            int needed = new_len + before_len + repl_len + 1;
             
-            char *temp = realloc(new_line, total_new_len + 1);
-            if (!temp) break;
-            new_line = temp;
+            if (needed > new_cap) {
+                new_cap = needed + 128; /* Allocate with some headroom */
+                char *temp = realloc(new_line, new_cap);
+                if (!temp) break;
+                new_line = temp;
+            }
             
-            /* Copy text before match (if first match, otherwise already copied) */
-            if (new_len == 0) {
-                memcpy(new_line, line_text, before_len);
-                new_len = before_len;
+            /* Copy text from last_copied to match_start */
+            if (before_len > 0) {
+                memcpy(new_line + new_len, line_text + last_copied, before_len);
+                new_len += before_len;
             }
             
             /* Copy replacement */
-            memcpy(new_line + new_len, replacement, strlen(replacement));
-            new_len += strlen(replacement);
-            
-            /* Copy text after match */
-            memcpy(new_line + new_len, line_text + after_start, after_len);
-            new_len += after_len;
-            new_line[new_len] = '\0';
+            if (repl_len > 0) {
+                memcpy(new_line + new_len, replacement, repl_len);
+                new_len += repl_len;
+            }
             
             line_modified = 1;
             replace_count++;
+            last_copied = (int)match_end;
             offset = match_end;
             
-            /* Update line_text for next iteration */
-            free(line_text);
-            line_text = strdup(new_line);
-            line_len = new_len;
+            /* Handle zero-length matches to avoid infinite loop */
+            if (match_start == match_end) {
+                if (offset < (PCRE2_SIZE)line_len) {
+                    offset++;
+                } else {
+                    break;
+                }
+            }
             
             if (!global) break; /* Only replace first match if not global */
         }
         
         /* Replace the line if modified */
-        if (line_modified && new_line) {
-            
-            /* Move cursor to the beginning of this line */
-            curwp->w_dotp = lp;
-            curwp->w_doto = 0;
-            
-            /* Delete entire ORIGINAL line content (use orig_line_len, not modified line_len) */
-            if (orig_line_len > 0) {
-                ldelete((long)orig_line_len, FALSE);
+        if (line_modified) {
+            /* Copy remaining text */
+            int remaining_len = line_len - last_copied;
+            int needed = new_len + remaining_len + 1;
+            if (needed > new_cap) {
+                char *temp = realloc(new_line, needed);
+                if (temp) new_line = temp;
             }
-            
-            /* Insert new content at current position (beginning of line) */
-            for (int i = 0; i < new_len; i++) {
-                linsert(1, new_line[i]);
+            if (new_line) {
+                memcpy(new_line + new_len, line_text + last_copied, remaining_len);
+                new_len += remaining_len;
+                new_line[new_len] = '\0';
+                
+                /* Move cursor to the beginning of this line */
+                curwp->w_dotp = lp;
+                curwp->w_doto = 0;
+                
+                /* Delete entire ORIGINAL line content */
+                int orig_line_len = llength(lp);
+                if (orig_line_len > 0) {
+                    ldelete((long)orig_line_len, FALSE);
+                }
+                
+                /* Insert new content at current position (beginning of line) */
+                for (int i = 0; i < new_len; i++) {
+                    linsert(1, new_line[i]);
+                }
+                
+                /* Update lp because it might have changed after ldelete/linsert */
+                lp = curwp->w_dotp;
+                
+                free(new_line);
             }
-            
-            /* Update lp in case it was reallocated or merged */
-            lp = curwp->w_dotp;
-            
-            /* Restore cursor position or adjust it */
-            /* Keep cursor at the modified line for visual feedback */
-            curwp->w_doto = 0;
-            
-            free(new_line);
         }
         
         free(line_text);
@@ -347,7 +389,8 @@ static void execute_command(void) {
         execute_help();
     }
     /* Check for Sed command */
-    else if (strncasecmp(cmd_buffer, "sed ", 4) == 0 || strncasecmp(cmd_buffer, "s/", 2) == 0) {
+    else if (strncasecmp(cmd_buffer, "sed ", 4) == 0 || 
+             (cmd_buffer[0] == 's' && cmd_buffer[1] != '\0' && !isalnum((unsigned char)cmd_buffer[1]) && !isspace((unsigned char)cmd_buffer[1]))) {
         execute_sed(cmd_buffer);
     }
     else {

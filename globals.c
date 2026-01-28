@@ -100,6 +100,7 @@ int matchoff = 0;
 int cutln_active = FALSE;
 int confirmshell = TRUE;        /* Confirm before shell commands */
 int makebackup = TRUE;          /* Create backup files before overwriting */
+int removebackup = FALSE;       /* Remove backup files after successful save */
 
 /* directive name table:
     This holds the names of all the directives....  */

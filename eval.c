@@ -315,6 +315,8 @@ char *gtenv(char *vname)
         return ltos(confirmshell);
     case EVMAKEBACKUP:
         return ltos(makebackup);
+    case EVREMOVEBACKUP:
+        return ltos(removebackup);
     }
     exit(-12);              /* again, we should never get here */
 }
@@ -609,6 +611,9 @@ int svar(struct variable_description *var, char *value)
             break;
         case EVMAKEBACKUP:
             makebackup = stol(value);
+            break;
+        case EVREMOVEBACKUP:
+            removebackup = stol(value);
             break;
         }
         break;
