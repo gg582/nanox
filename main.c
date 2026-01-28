@@ -597,12 +597,10 @@ int quit(int f, int n)
             hunhandle = NULL;
         }
         nanox_cleanup();
-        if (removebackup) {
-            struct buffer *bp = bheadp;
-            while (bp != NULL) {
-                cleanup_backup(bp);
-                bp = bp->b_bufp;
-            }
+        struct buffer *bp = bheadp;
+        while (bp != NULL) {
+            cleanup_backup(bp, TRUE);
+            bp = bp->b_bufp;
         }
         bfreeall();
         varcleanup();

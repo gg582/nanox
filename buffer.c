@@ -359,15 +359,15 @@ struct buffer *bfind(char *bname, int cflag, int bflag)
 /*
  * Clean up backup file if it's no longer needed
  */
-void cleanup_backup(struct buffer *bp)
+void cleanup_backup(struct buffer *bp, int force)
 {
-    if (removebackup && (bp->b_flag & BFINVS) == 0 && bp->b_fname[0] != '\0') {
+    if ((force || removebackup) && (bp->b_flag & BFINVS) == 0 && bp->b_fname[0] != '\0') {
         char backupName[NFILEN];
         if (strlen(bp->b_fname) + 2 < NFILEN) {
             strcpy(backupName, bp->b_fname);
             strcat(backupName, "~");
-            /* If not modified, or modified only with blank lines */
-            if (!(bp->b_flag & BFCHG) || is_effectively_same(bp->b_fname, bp)) {
+            /* If not modified, or modified only with blank lines, or forced */
+            if (force || !(bp->b_flag & BFCHG) || is_effectively_same(bp->b_fname, bp)) {
                 unlink(backupName);
             }
         }
@@ -389,7 +389,7 @@ int bclear(struct buffer *bp)
     struct line *lp;
     int s;
 
-    cleanup_backup(bp);
+    cleanup_backup(bp, FALSE);
 
     if ((bp->b_flag & BFINVS) == 0      /* Not scratch buffer.  */
         && (bp->b_flag & BFCHG) != 0    /* Something changed    */

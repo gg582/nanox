@@ -49,6 +49,7 @@ Nanox brings **visual formatting** to Markdown and HTML files directly in the te
 * **Bold Text:** `**text**` or `__text__` is rendered with bold styling
 * **Italic Text:** `*text*` or `_text_` is rendered with distinctive highlighting
 * **Underline:** `<u>text</u>` in HTML and Markdown files shows underlined text
+* **Automatic Hard Tabs:** Uses real tabs for indentation in Markdown for cross-tool consistency.
 * All formatting is purely visual and preserves the raw markup in the file
 
 ### 5. [NEW] Live Color Code Preview
@@ -77,6 +78,9 @@ For long lines that extend beyond the terminal width:
 - **Powerful Search/Replace**: Support for regular expressions.
 - **Integrated Spell Check**: Built-in support for Hunspell.
 - **Colorschemes**: Default theme is colorblind-friendly. Waiting for PRs to enhance.
+- **Automatic Backup Cleanup**: Backup files (`~`) are automatically deleted upon normal exit (**F4**), keeping your workspace clean.
+- **Smart Whitespace Normalization**: Automatically strips trailing whitespace and converts whitespace-only lines to empty lines before saving.
+- **Hard Tab Mode for Markdown**: Markdown files (`.md`, `.markdown`) automatically use hard tabs for indentation to ensure consistent formatting.
 
 ---
 

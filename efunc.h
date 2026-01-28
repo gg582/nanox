@@ -190,7 +190,7 @@ extern int anycb(void);
 extern int bclear(struct buffer *bp);
 extern int unmark(int f, int n);
 extern void bfreeall(void);
-extern void cleanup_backup(struct buffer *bp);
+extern void cleanup_backup(struct buffer *bp, int force);
 /* Lookup a buffer by name. */
 extern struct buffer *bfind(char *bname, int cflag, int bflag);
 

@@ -207,9 +207,12 @@ int readin(char *fname, int lockfl)
     const char *bname = strrchr(fname, '/');
     if (bname) bname++;
     else bname = fname;
-    if (strcasecmp(bname, "makefile") == 0 || strncasecmp(bname, "makefile.", 9) == 0) {
+    if (strcasecmp(bname, "makefile") == 0 || strncasecmp(bname, "makefile.", 9) == 0 ||
+        (ext && (strcasecmp(ext, ".md") == 0 || strcasecmp(ext, ".markdown") == 0))) {
         bp->b_tabsize = 0;
-        bp->b_flag |= BFMAKE;
+        if (strcasecmp(bname, "makefile") == 0 || strncasecmp(bname, "makefile.", 9) == 0) {
+            bp->b_flag |= BFMAKE;
+        }
     }
 
     /* let a user macro get hold of things...if he wants */
@@ -363,6 +366,29 @@ int filewrite(int f, int n)
 }
 
 /*
+ * Normalize whitespace in the buffer:
+ * - Strip trailing spaces and tabs from all lines.
+ * - Empty lines containing only whitespace become truly empty.
+ */
+void normalize_whitespace(struct buffer *bp)
+{
+    struct line *lp;
+    lp = lforw(bp->b_linep);
+    while (lp != bp->b_linep) {
+        int len = llength(lp);
+        int i = len - 1;
+        while (i >= 0 && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) {
+            i--;
+        }
+        if (i + 1 < len) {
+            lp->l_used = i + 1;
+            bp->b_flag |= BFCHG;
+        }
+        lp = lforw(lp);
+    }
+}
+
+/*
  * Save the contents of the current
  * buffer in its associatd file. No nothing
  * if nothing has changed (this may be a bug, not a
@@ -376,6 +402,9 @@ int filesave(int f, int n)
 
     if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
         return rdonly();        /* we are in read only mode     */
+
+    normalize_whitespace(curbp);
+
     if ((curbp->b_flag & BFCHG) == 0)   /* Return, no changes.  */
         return TRUE;
     if (curbp->b_fname[0] == 0) {       /* Must have a name.    */
