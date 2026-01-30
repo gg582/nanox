@@ -94,14 +94,6 @@ F7 Operations:
   Ctrl+F7  : Paste Menu (Paste Slot)
   Esc      : Cancel Selection
 
-Modal Selection (Hold modifiers while moving cursor):
-  Ctrl+Super/Ctrl+Alt + Arrows .... Start Select   +Shift  Cut Selection
-  (Ctrl+Super default, Ctrl+Alt available if Super is missing)
-  
-  Once you release the modifiers:
-  - Select mode copies the region to the kill buffer.
-  - Cut mode removes the region and moves it to the kill buffer.
-
 File reservation slots can be used to quickly switch between frequently 
 accessed files. Alt+9,0,-,= are also bound to slots 1-4.
 -------------------------------------------------------------------------------
