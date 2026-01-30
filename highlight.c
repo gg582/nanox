@@ -721,6 +721,19 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                 continue;
             }
             
+            /* 0c-2. Markdown Headers */
+            if (is_md && (pos == 0 || (pos < 3 && isspace((unsigned char)text[0])))) {
+                /* Check for #, ##, ###... followed by space */
+                int h = pos;
+                while (h < len && text[h] == '#') h++;
+                if (h > pos && h <= pos + 6 && h < len && isspace((unsigned char)text[h])) {
+                    /* Only highlight the '#' markers, not the text after them */
+                    if (out) add_span(out, pos, h, HL_HEADER);
+                    pos = len; // Treat rest of line as default text
+                    continue;
+                }
+            }
+
             /* 0d. Markdown formatting (bold, italic) */
             if (is_md) {
                 /* Check for bold (**text** or __text__) */

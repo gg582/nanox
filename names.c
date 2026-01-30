@@ -32,6 +32,7 @@ struct name_bind names[] = {
     { "clear-message-line", clrmes },
     { "copy-region", copyregion },
     { "count-words", wordcount },
+    { "cscope-complete", cscope_complete },
     { "ctlx-prefix", cex },
     { "cutln-copy", cutln_copy },
     { "cutln-paste-menu", cutln_paste_menu },

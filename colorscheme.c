@@ -50,6 +50,8 @@ static void set_default_scheme(void) {
     styles[HL_NOTICE] = (HighlightStyle){208, -1, true, false, false};
     /* Selection: Black on Bright Yellow */
     styles[HL_SELECTION] = (HighlightStyle){0, 11, false, false, false};
+    /* Header: Bold Blue */
+    styles[HL_HEADER] = (HighlightStyle){4, -1, true, false, false};
     /* Markdown Bold: Bold text */
     styles[HL_MD_BOLD] = (HighlightStyle){-1, -1, true, false, false};
     /* Markdown Italic: Italic text */
@@ -163,6 +165,7 @@ static void load_scheme_file(const char *path) {
             else if (strcmp(key, "error") == 0) id = HL_ERROR;
             else if (strcmp(key, "notice") == 0) id = HL_NOTICE;
             else if (strcmp(key, "selection") == 0) id = HL_SELECTION;
+            else if (strcmp(key, "header") == 0) id = HL_HEADER;
             else if (strcmp(key, "md_bold") == 0) id = HL_MD_BOLD;
             else if (strcmp(key, "md_italic") == 0) id = HL_MD_ITALIC;
             else if (strcmp(key, "md_underline") == 0) id = HL_MD_UNDERLINE;

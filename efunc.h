@@ -447,3 +447,7 @@ extern void lckerror(char *errstr);
 /* pklock.c */
 extern char *dolock(char *fname);
 extern char *undolock(char *fname);
+
+/* cscope.c */
+extern int cscope_complete(int f, int n);
+

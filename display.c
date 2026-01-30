@@ -779,6 +779,12 @@ static void updone(struct window *wp)
     int sline;
     int rows = nanox_text_rows();
 
+    /* Softwrap requires full update to handle wrap/unwrap shifting */
+    if (wp->w_bufp->b_mode & MDSOFTWRAP) {
+        updall(wp);
+        return;
+    }
+
     /* find the right sline for the dotp line */
     lp = wp->w_linep;
     sline = 0;

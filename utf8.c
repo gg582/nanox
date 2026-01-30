@@ -42,8 +42,10 @@ unsigned utf8_to_unicode(unsigned char *line, unsigned index, unsigned len, unic
     /* Invalid? Do it as a single byte Latin1 */
     if (bytes > 6)
         return 1;
-    if (bytes > len)
+    if (bytes > len) {
+        *res = 0xFFFD; /* Replacement character for incomplete sequence */
         return 1;
+    }
 
     value = c & (mask - 1);
 
