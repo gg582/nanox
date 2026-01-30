@@ -1,0 +1,18 @@
+[meta]
+name = ibm-carbon-dark
+variant = dark
+
+[styles]
+normal    = fg=#f4f4f4 bg=#161616
+comment   = fg=#a8a8a8
+string    = fg=#45d6d6
+number    = fg=#82cfff
+bracket   = fg=#dde1e6
+operator  = fg=#f4f4f4
+type      = fg=#f4f4f4 bold=true
+function  = fg=#78a9ff
+preproc   = fg=#82cfff
+keyword   = fg=#ff7eb6 bold=true
+flow      = fg=#ff7eb6 bold=true
+return    = fg=#ff7eb6 bold=true
+error     = fg=#fa4d56 bold=true underline=true

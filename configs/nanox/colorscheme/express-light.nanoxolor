@@ -1,0 +1,44 @@
+[styles]
+; Base text and background
+; Neutral ink on near-white paper, low glare
+normal   = fg=#1f2328 bg=#f7f7f7
+
+; Selection should be visible but not disruptive
+selection= bg=#dde7f0
+
+; Comments must recede clearly
+comment  = fg=#8a9199
+
+; Literals: warm, readable, non-competitive
+string   = fg=#7a5a2a
+number   = fg=#7a5a2a bold=true
+
+; Structural punctuation should stay neutral
+bracket  = fg=#4a4f55
+operator = fg=#4a4f55
+
+; Keywords and flow:
+; Slightly darker ink + weight, no hue dependency
+keyword  = fg=#1f2328 bold=true
+flow     = fg=#1f2328 bold=true
+return   = fg=#1f2328 bold=true
+ternary  = fg=#1f2328 bold=true
+
+; Types and functions:
+; Cool ink-blue for structural orientation, not emphasis
+type     = fg=#2f3e9e bold=true
+function = fg=#2f3e9e
+preproc  = fg=#2f3e9e
+escape   = fg=#2f3e9e
+
+; Control keywords:
+; Avoid underline to reduce visual noise
+control  = fg=#1f2328 bold=true
+
+; Notices and mild highlights
+notice   = fg=#7a5a2a bold=true
+
+; Errors:
+; Background-based signal, readable even without color
+error    = fg=#1f2328 bg=#e0e0e0 bold=true
+

@@ -1,0 +1,44 @@
+[styles]
+; Base text and background
+; Low-contrast dark field with stable foreground
+normal   = fg=#cfd3d6 bg=#0f111a
+
+; Selection should not glow
+selection= bg=#1a2230
+
+; Comments must clearly step back
+comment  = fg=#5c6470
+
+; Literals: warm, calm, low afterimage
+string   = fg=#caa76d
+number   = fg=#caa76d bold=true
+
+; Structural punctuation stays neutral
+bracket  = fg=#9aa0a6
+operator = fg=#9aa0a6
+
+; Keywords and flow:
+; Warm ink to mark structure, restrained saturation
+keyword  = fg=#d6a07a bold=true
+flow     = fg=#d6a07a bold=true
+return   = fg=#d6a07a bold=true
+ternary  = fg=#d6a07a bold=true
+
+; Types and functions:
+; Muted ink-blue, visible without glowing
+type     = fg=#9aa6e8 bold=true
+function = fg=#9aa6e8
+preproc  = fg=#9aa6e8
+escape   = fg=#9aa6e8
+
+; Control keywords:
+; Weight only, no underline
+control  = fg=#cfd3d6 bold=true
+
+; Notices and mild highlights
+notice   = fg=#d7c27a bold=true
+
+; Errors:
+; Strong luminance contrast, no chromatic stress
+error    = fg=#0f111a bg=#d0d0d0 bold=true
+

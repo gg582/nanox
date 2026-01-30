@@ -1,0 +1,18 @@
+[meta]
+name = ibm-carbon-light
+variant = light
+
+[styles]
+normal    = fg=#161616 bg=#f4f4f4
+comment   = fg=#6f6f6f
+string    = fg=#005d5d
+number    = fg=#0043ce
+bracket   = fg=#393939
+operator  = fg=#161616
+type      = fg=#161616 bold=true
+function  = fg=#0f62fe
+preproc   = fg=#0043ce
+keyword   = fg=#d12771 bold=true
+flow      = fg=#d12771 bold=true
+return    = fg=#d12771 bold=true
+error     = fg=#da1e28 bold=true underline=true
