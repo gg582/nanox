@@ -94,7 +94,6 @@ For long lines that extend beyond the terminal width:
 | **F7** | Kill Line | **F8** | Yank (Paste) |
 | **F9-F12** | Jump to Slot | **Ctrl+F9-F12** | Set Slot |
 | **Alt+G** | Goto Line | **Alt+X** | Execute Command |
-| **Ctrl+Super+Arrows** | Select Region (`Ctrl+Alt` fallback) | **Ctrl+Super+Shift+Arrows** | Cut Region |
 
 ### Classic Emacs Bindings
 
