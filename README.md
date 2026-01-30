@@ -2,7 +2,7 @@
 
 ![Demo Video](./nanox.gif)
 
-**Minimalist, Nano-inspired UI Layer for the Legendary MicroEmacs**
+**Bring function keys back to functions**
 
 ## Fast Guide
 
@@ -12,7 +12,7 @@ nx
 # Press F1 to see emacs guide
 ```
 
-Nanox(/na.noks/) is a modern, feature-rich fork of **uEmacs/PK** that brings the intuitive user experience of `nano` to the professional power of `MicroEmacs`. It's designed to be ultra-fast, lightweight, and fully UTF-8 aware, making it the perfect choice for terminal-based editing on any system.
+Nanox(/na.noks/) is a modern, minimalistic, feature-rich fork of **uEmacs/PK** that brings the intuitive user experience of `nano` to the professional power of `MicroEmacs`. It's designed to be ultra-fast, lightweight, and fully UTF-8 aware, making it the perfect choice for terminal-based editing on any system.
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
 [![License](https://img.shields.io/badge/license-Custom-blue)](LICENSE)
