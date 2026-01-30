@@ -7,5 +7,5 @@ bracket = fg=#b3b1ad
 operator= fg=#ffa759
 keyword = fg=#f29718 bold=true
 return  = fg=#ff3333 bold=true
-ternary = fg=#ffa759 bold=true
+ternary = fg=#ffad66 bold=true
 error   = fg=#ff3333 underline=true

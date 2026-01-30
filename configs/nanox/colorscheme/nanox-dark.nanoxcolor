@@ -9,4 +9,5 @@ type     = fg=#dd99ff
 keyword  = fg=#ff8a65 bold=true
 flow     = fg=#ff8a65 bold=true
 return   = fg=#ff8a65 bold=true
-error    = fg=#ffffff bg=#e06c75 bold=true
+error = fg=#0f111a bg=#cfcfcf bold=true
+

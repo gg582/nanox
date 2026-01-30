@@ -9,3 +9,4 @@ function = fg=#005ab5 bold=true
 type     = fg=#6346c1
 bracket  = fg=#6a737d
 operator = fg=#0074d9
+error = fg=#24292e bg=#e0e0e0 bold=true underline=true

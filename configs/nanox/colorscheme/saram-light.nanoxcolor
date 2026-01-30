@@ -3,7 +3,7 @@ normal   = fg=#1f2328 bg=#f4f3ec
 comment  = fg=#8a93a8
 string   = fg=#ba6a24
 number   = fg=#3b95f8
-bracket  = fg=#576c53
+bracket  = fg=#6a737d
 operator = fg=#4446a3
 keyword  = fg=#a626a4 bold=true
 return   = fg=#f63649 bold=true
