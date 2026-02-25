@@ -113,6 +113,29 @@ static void local_dictionary(Hunhandle *handle, const char *filename)
         Hunspell_add_dic(handle, filename);
 }
 
+static void select_terminal_driver(void)
+{
+    char *term_env = getenv("TERM");
+    struct terminal *selected = &tcap_term;
+
+#ifdef USE_NCURSES
+    /* Use ncurses for Linux TTY and other terminals where escape sequences might fragment */
+    if (term_env && (strcmp(term_env, "linux") == 0 ||
+                     strcmp(term_env, "vt100") == 0 ||
+                     strcmp(term_env, "vt102") == 0 ||
+                     strcmp(term_env, "ansi") == 0)) {
+        selected = &ncurses_term;
+    }
+
+    /* Support explicit override */
+    if (getenv("NANO_USE_NCURSES")) {
+        selected = &ncurses_term;
+    }
+#endif
+
+    term = selected;
+}
+
 int main(int argc, char **argv)
 {
     int c = -1;                /* command character */
@@ -133,6 +156,8 @@ int main(int argc, char **argv)
     int errflag;                /* C error processing? */
     char bname[NBUFN];            /* buffer name of file to read */
     int newc;
+
+    select_terminal_driver();
 
     const char *aff_path = "/usr/share/hunspell/en_US.aff";
     const char *dic_path = "/usr/share/hunspell/en_US.dic";
@@ -332,12 +357,6 @@ int main(int argc, char **argv)
         goto loop;
     }
 
-    /* Check for Nanox global help key */
-    if (c == nanox_cfg.help_key) {
-        help(FALSE, 1);
-        goto loop;
-    }
-
     f = FALSE;
     n = 1;
 
@@ -417,12 +436,6 @@ int main(int argc, char **argv)
                 n++;
             n = -n;
         }
-    }
-
-    /* Check if command mode is active and handle the key */
-    if (command_mode_is_active()) {
-        command_mode_handle_key(c);
-        goto loop;
     }
 
     /* Check if paste slot is active and handle the key */
@@ -686,7 +699,7 @@ int ctlxe(int f, int n)
  */
 int ctrlg(int f, int n)
 {
-    term.t_beep();
+    term->t_beep();
     if (kbdmode == RECORD) {
         kbdmode = STOP;
         mlwrite("(Macro aborted)");

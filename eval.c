@@ -20,7 +20,7 @@
 
 #define MAXVARS 255
 
-extern struct terminal term;
+extern struct terminal *term;
 
 /* User variables */
 static struct user_variable uv[MAXVARS + 1];
@@ -234,7 +234,7 @@ char *gtenv(char *vname)
     case EVFILLCOL:
         return itoa(fillcol);
     case EVPAGELEN:
-        return itoa(term.t_nrow + 1);
+        return itoa(term->t_nrow + 1);
     case EVCURCOL:
         return itoa(getccol(FALSE));
     case EVCURLINE:
@@ -244,7 +244,7 @@ char *gtenv(char *vname)
     case EVFLICKER:
         return ltos(flickcode);
     case EVCURWIDTH:
-        return itoa(term.t_ncol);
+        return itoa(term->t_ncol);
     case EVCBUFNAME:
         return curbp->b_bname;
     case EVCFNAME:
@@ -292,7 +292,7 @@ char *gtenv(char *vname)
     case EVGMODE:
         return itoa(gmode);
     case EVTPAUSE:
-        return itoa(term.t_pause);
+        return itoa(term->t_pause);
     case EVPENDING:
         return ltos(typahead());
     case EVLWIDTH:
@@ -561,7 +561,7 @@ int svar(struct variable_description *var, char *value)
             break;
         case EVSEARCH:
             strcpy(pat, value);
-            rvstrcpy(tap, pat);
+            rvstrscpy(tap, pat, NPAT);
             mcclear();
             break;
         case EVREPLACE:
@@ -579,7 +579,7 @@ int svar(struct variable_description *var, char *value)
             gmode = atoi(value);
             break;
         case EVTPAUSE:
-            term.t_pause = atoi(value);
+            term->t_pause = atoi(value);
             break;
         case EVPENDING:
             break;

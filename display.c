@@ -29,7 +29,7 @@
 #include "highlight.h"
 #include "video.h"
 
-extern struct terminal term;
+extern struct terminal *term;
 
 struct video **vscreen;          /* Virtual screen. */
 static int current_color_fg = -1;
@@ -75,7 +75,7 @@ static int get_line_height(struct line *lp)
         unicode_t c;
         int bytes = utf8_to_unicode((unsigned char *)lp->l_text, i, len, &c);
         int w = get_char_width(c, col);
-        if (col + w > term.t_ncol) {
+        if (col + w > term->t_ncol) {
             height++;
             col = 4;
             w = get_char_width(c, col);
@@ -119,7 +119,7 @@ static void mlbuf_puts(struct mlbuf *dest, const char *text)
 
 static void draw_hint_row(int row, const char *left, const char *status)
 {
-    int width = term.t_ncol;
+    int width = term->t_ncol;
 
     if (width > MAXCOL)
         width = MAXCOL;
@@ -203,6 +203,20 @@ static void draw_hint_row(int row, const char *left, const char *status)
                 }
                 return count;
             }
+
+            static int get_line_num(struct buffer *bp, struct line *target)
+            {
+                struct line *lp = lforw(bp->b_linep);
+                int count = 1;
+
+                while (lp != bp->b_linep) {
+                    if (lp == target)
+                        break;
+                    ++count;
+                    lp = lforw(lp);
+                }
+                return count;
+            }
             
             static int window_column_number(struct window *wp)
             {
@@ -239,8 +253,8 @@ void vtinit(void)
     TTopen();               /* open the screen */
     TTkopen();              /* open the keyboard */
     TTrev(FALSE);
-    vscreen = xmalloc(term.t_mrow * sizeof(struct video *));
-    memset(vscreen, 0, term.t_mrow * sizeof(struct video *));
+    vscreen = xmalloc(term->t_mrow * sizeof(struct video *));
+    memset(vscreen, 0, term->t_mrow * sizeof(struct video *));
 
     current_color_fg = -1;
     current_color_bg = -1;
@@ -248,9 +262,9 @@ void vtinit(void)
     current_color_underline = false;
     current_color_italic = false;
 
-    for (i = 0; i < term.t_mrow; ++i) {
-        vp = xmalloc(sizeof(struct video) + term.t_mcol * sizeof(video_cell));
-        memset(vp, 0, sizeof(struct video) + term.t_mcol * sizeof(video_cell));
+    for (i = 0; i < term->t_mrow; ++i) {
+        vp = xmalloc(sizeof(struct video) + term->t_mcol * sizeof(video_cell));
+        memset(vp, 0, sizeof(struct video) + term->t_mcol * sizeof(video_cell));
         vp->v_flag = 0;
         vscreen[i] = vp;
     }
@@ -266,12 +280,12 @@ void vttidy(void)
 {
     int i;
     mlerase();
-    movecursor(term.t_nrow, 0);
+    movecursor(term->t_nrow, 0);
     TTflush();
     TTclose();
     TTkclose();
     if (vscreen != NULL) {
-        for (i = 0; i < term.t_mrow; ++i) {
+        for (i = 0; i < term->t_mrow; ++i) {
             if (vscreen[i] != NULL)
                 free(vscreen[i]);
         }
@@ -326,15 +340,23 @@ void vtputc(int c)
 
     char_width = mystrnlen_raw_w(c);
 
-    if (vtcol + char_width > term.t_ncol) {
+    if (vtcol + char_width > term->t_ncol) {
         if (vtrow < nanox_text_rows() - 1) {
             vtrow++;
-            vtcol = 0;
+            vtcol = !nanox_cfg.nonr ? 6 : 0;
             vscreen[vtrow]->v_flag |= VFCHG;
+            if (!nanox_cfg.nonr) {
+                // Clear the number area for wrapped lines
+                for (int i = 0; i < 6; i++) {
+                    vscreen[vtrow]->v_text[i].ch = ' ';
+                    vscreen[vtrow]->v_text[i].fg = colorscheme_get(HL_NORMAL).fg;
+                    vscreen[vtrow]->v_text[i].bg = colorscheme_get(HL_NORMAL).bg;
+                }
+            }
             for (int i = 0; i < 4; i++)
                 vtputc(' ');
         } else {
-            vscreen[vtrow]->v_text[term.t_ncol - 1].ch = '$';
+            vscreen[vtrow]->v_text[term->t_ncol - 1].ch = '$';
             vtcol += char_width;
             return;
         }
@@ -344,7 +366,7 @@ void vtputc(int c)
     if (vtcol >= 0) {
         int i;
         for (i = 0; i < char_width; i++) {
-            if (vtcol + i < term.t_ncol) {
+            if (vtcol + i < term->t_ncol) {
                 vp->v_text[vtcol + i].ch = (i == 0) ? c : 0;
                 vp->v_text[vtcol + i].fg = current_color_fg;
                 vp->v_text[vtcol + i].bg = current_color_bg;
@@ -366,9 +388,9 @@ void vteeol(void)
     video_cell *vcp = vscreen[vtrow]->v_text;
 
     if (vtcol < 0) vtcol = 0;
-    if (vtcol > term.t_ncol) vtcol = term.t_ncol;
+    if (vtcol > term->t_ncol) vtcol = term->t_ncol;
 
-    while (vtcol < term.t_ncol) {
+    while (vtcol < term->t_ncol) {
         vcp[vtcol].ch = ' ';
         vcp[vtcol].fg = current_color_fg;
         vcp[vtcol].bg = current_color_bg;
@@ -521,7 +543,7 @@ static int reframe(struct window *wp)
                     unicode_t c;
                     int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, wp->w_doto, &c);
                     int w = get_char_width(c, col);
-                    if (col + w > term.t_ncol) {
+                    if (col + w > term->t_ncol) {
                         dot_vrow++;
                         col = 4;
                         w = get_char_width(c, col);
@@ -706,7 +728,7 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
                 last_space_idx = char_idx;
             }
 
-            if (current_col + char_width > term.t_ncol && char_idx > line_start_idx) {
+            if (current_col + char_width > term->t_ncol && char_idx > line_start_idx) {
                 if (last_space_idx != -1) {
                     segment_end_idx = last_space_idx + 1;
                 } else {
@@ -757,8 +779,16 @@ render_segment:
             if(vtrow >= nanox_text_rows()) {
                 break;
             }
-            vtcol = 0;
+            vtcol = !nanox_cfg.nonr ? 6 : 0;
             vscreen[vtrow]->v_flag |= VFCHG;
+            if (!nanox_cfg.nonr) {
+                // Clear the number area for wrapped lines
+                for (int i = 0; i < 6; i++) {
+                    vscreen[vtrow]->v_text[i].ch = ' ';
+                    vscreen[vtrow]->v_text[i].fg = colorscheme_get(HL_NORMAL).fg;
+                    vscreen[vtrow]->v_text[i].bg = colorscheme_get(HL_NORMAL).bg;
+                }
+            }
             for (int i = 0; i < 4; i++) vtputc(' ');
         }
     }
@@ -818,16 +848,38 @@ static void updall(struct window *wp)
     struct line *lp;            /* line to update */
     int sline;              /* physical screen line to update */
     int rows = nanox_text_rows();
+    int lnum = get_line_num(wp->w_bufp, wp->w_linep);
 
     /* search down the lines, updating them */
     lp = wp->w_linep;
     sline = 0;
-    while (sline < rows && sline < term.t_mrow) {
+    while (sline < rows && sline < term->t_mrow) {
 
         /* and update the virtual line */
         vscreen[sline]->v_flag |= VFCHG;
         vscreen[sline]->v_flag &= ~VFREQ;
-        vtmove(sline, 0);
+        
+                int col = 0;
+                if (!nanox_cfg.nonr) {
+                    char buf[10];
+                    if (lp != wp->w_bufp->b_linep) {
+                        snprintf(buf, sizeof(buf), "%5d ", lnum);
+                    } else {
+                        snprintf(buf, sizeof(buf), "      ");
+                    }
+                    vtmove(sline, 0);            
+            HighlightStyle num_style = colorscheme_get(HL_NORMAL);
+            current_color_fg = num_style.fg;
+            current_color_bg = num_style.bg;
+            current_color_bold = false;
+            
+            for (int i = 0; buf[i]; i++) {
+                vtputc(buf[i]);
+            }
+            col = 6;
+        }
+
+        vtmove(sline, col);
         if (lp != wp->w_bufp->b_linep) {
             /* if we are not at the end */
             if (wp->w_bufp->b_mode & MDSOFTWRAP)
@@ -835,6 +887,7 @@ static void updall(struct window *wp)
             else
                 show_line(wp, lp);
             lp = lforw(lp);
+            lnum++;
             sline = vtrow;
         }
 
@@ -865,7 +918,7 @@ void updpos(void)
     }
 
     /* find the current column and subrow */
-    curcol = 0;
+    curcol = !nanox_cfg.nonr ? 6 : 0;
     i = 0;
     lp = curwp->w_dotp;
     while (i < curwp->w_doto) {
@@ -874,9 +927,9 @@ void updpos(void)
 
         bytes = utf8_to_unicode((unsigned char *)lp->l_text, i, curwp->w_doto, &c);
         int w = get_char_width(c, curcol);
-        if (curcol + w > term.t_ncol) {
+        if (curcol + w > term->t_ncol) {
             currow++;
-            curcol = 4;
+            curcol = (!nanox_cfg.nonr ? 6 : 0) + 4;
             w = get_char_width(c, curcol);
         }
         curcol += w;
@@ -903,7 +956,7 @@ void upddex(void)
     while (i < nanox_text_rows()) {
         if (vscreen[i]->v_flag & VFEXT) {
             if ((wp != curwp) || (lp != wp->w_dotp) ||
-                (curcol < term.t_ncol - 1)) {
+                (curcol < term->t_ncol - 1)) {
                 vtmove(i, 0);
                 show_line(wp, lp);
                 vteeol();
@@ -936,30 +989,17 @@ void updgar(void)
 {
     int i;
 
-    for (i = 0; i < term.t_nrow; ++i)
+    for (i = 0; i < term->t_nrow; ++i)
         vscreen[i]->v_flag |= VFCHG;
 
     HighlightStyle normal = colorscheme_get(HL_NORMAL);
     if (normal.bg != -1) {
-        if (normal.bg & 0x01000000) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
-                (normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
-            TTputs(buf);
-        } else if (normal.bg >= 8 && normal.bg < 16) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
-            TTputs(buf);
-        } else {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
-            TTputs(buf);
-        }
+        TTsetcolors(normal.fg, normal.bg);
     }
 
     movecursor(0, 0);           /* Erase the screen. */
-    (*term.t_eeop) ();
-    TTputs("\033[0m");          /* Reset colors immediately after erase */
+    (*term->t_eeop) ();
+    TTsetcolors(-1, -1);          /* Reset colors immediately after erase */
     TTflush();                  /* Force the clear to happen */
 
     sgarbf = FALSE;             /* Erase-page clears */
@@ -977,7 +1017,7 @@ int updupd(int force)
     struct video *vp1;
     int i;
 
-    for (i = 0; i < term.t_nrow; ++i) {
+    for (i = 0; i < term->t_nrow; ++i) {
         vp1 = vscreen[i];
 
         /* for each line that needs to be updated */
@@ -1001,7 +1041,7 @@ static void updext(void)
     struct line *lp;            /* pointer to current line */
 
     /* calculate what column the real cursor will end up in */
-    rcursor = ((curcol - term.t_ncol) % term.t_scrsiz) + term.t_margin;
+    rcursor = ((curcol - term->t_ncol) % term->t_scrsiz) + term->t_margin;
     taboff = lbound = curcol - rcursor + 1;
 
     /* scan through the line outputing characters to the virtual screen */
@@ -1118,7 +1158,8 @@ static int updateline(int row, struct video *vp)
     bool spellcheck = curwp->w_bufp->b_mode & MDSPELL;
 
     movecursor(row, 0);             /* Go to start of line. */
-    TTputs("\033[0m");           /* Reset attributes */
+    TTsetcolors(-1, -1);           /* Reset colors */
+    TTsetattrs(0, 0, 0);           /* Reset attributes */
     int phys_fg = -1;
     int phys_bg = -1;
     bool phys_bold = false;
@@ -1127,7 +1168,7 @@ static int updateline(int row, struct video *vp)
 
     /* scan through the line and dump it to the the
        virtual screen array, finding where the last non-space is  */
-    for (int i = 0; i < term.t_ncol; i++) {
+    for (int i = 0; i < term->t_ncol; i++) {
         text_buf[i] = vp->v_text[i].ch;
         /* Exclude dummy cells (ch == 0) from maxchar calculation */
         if (text_buf[i] != 0 && (text_buf[i] != ' ' || vp->v_text[i].bg != -1 || vp->v_text[i].underline || vp->v_text[i].italic))
@@ -1136,16 +1177,13 @@ static int updateline(int row, struct video *vp)
 
     /* set rev video if needed, and fill all the way */
     if (vp->v_flag & VFREQ) {
-        maxchar = term.t_ncol;
+        maxchar = term->t_ncol;
         TTrev(TRUE);
         spellcheck = false;
     }
 
     if (spellcheck)
         analyzed = findwords(text_buf, maxchar, array, sizeof(array));
-
-#define SPELLSTART "\033[1m"
-#define SPELLSTOP "\033[22m"
 
     int started = 0;
     for (int i = 0; i < maxchar; i++) {
@@ -1157,104 +1195,49 @@ static int updateline(int row, struct video *vp)
 
         /* Attribute Handling */
         if (cell->bold != phys_bold || cell->underline != phys_underline || cell->italic != phys_italic) {
-            if (!cell->bold && !cell->underline && !cell->italic) {
-                TTputs("\033[0m");
-                phys_fg = -1; phys_bg = -1;
-            } else {
-                if (cell->bold && !phys_bold) TTputs("\033[1m");
-                if (!cell->bold && phys_bold) TTputs("\033[22m");
-                if (cell->underline && !phys_underline) TTputs("\033[4m");
-                if (!cell->underline && phys_underline) TTputs("\033[24m");
-                if (cell->italic && !phys_italic) TTitalic(TRUE);
-                if (!cell->italic && phys_italic) TTitalic(FALSE);
-            }
+            TTsetattrs(cell->bold, cell->underline, cell->italic);
             phys_bold = cell->bold;
             phys_underline = cell->underline;
             phys_italic = cell->italic;
         }
 
         /* Color Handling */
-        if (cell->fg != phys_fg) {
-            if (cell->fg == -1) {
-                TTputs("\033[39m");
-            } else if (cell->fg & 0x01000000) {
-                char buf[32];
-                snprintf(buf, sizeof(buf), "\033[38;2;%d;%d;%dm",
-                    (cell->fg >> 16) & 0xFF, (cell->fg >> 8) & 0xFF, cell->fg & 0xFF);
-                TTputs(buf);
-            } else if (cell->fg >= 8 && cell->fg < 16) {
-                char buf[16];
-                snprintf(buf, sizeof(buf), "\033[%dm", 90 + (cell->fg - 8));
-                TTputs(buf);
-            } else {
-                char buf[16];
-                snprintf(buf, sizeof(buf), "\033[%dm", 30 + cell->fg);
-                TTputs(buf);
-            }
+        if (cell->fg != phys_fg || cell->bg != phys_bg) {
+            TTsetcolors(cell->fg, cell->bg);
             phys_fg = cell->fg;
-        }
-
-        if (cell->bg != phys_bg) {
-            if (cell->bg == -1) {
-                TTputs("\033[49m");
-            } else if (cell->bg & 0x01000000) {
-                char buf[32];
-                snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
-                    (cell->bg >> 16) & 0xFF, (cell->bg >> 8) & 0xFF, cell->bg & 0xFF);
-                TTputs(buf);
-            } else if (cell->bg >= 8 && cell->bg < 16) {
-                char buf[16];
-                snprintf(buf, sizeof(buf), "\033[%dm", 100 + (cell->bg - 8));
-                TTputs(buf);
-            } else {
-                char buf[16];
-                snprintf(buf, sizeof(buf), "\033[%dm", 40 + cell->bg);
-                TTputs(buf);
-            }
             phys_bg = cell->bg;
         }
 
         if (i < analyzed && (array[i] & BAD_WORD_BEGIN)) {
             started = 1;
-            TTputs(SPELLSTART);
+            TTsetattrs(1, phys_underline, phys_italic); /* Start bold for spellcheck */
         }
 
         TTputc(cell->ch);
 
         if (i < analyzed && (array[i] & BAD_WORD_END)) {
-            TTputs(SPELLSTOP);
+            TTsetattrs(phys_bold, phys_underline, phys_italic); /* Restore previous bold */
             started = 0;
         }
     }
 
     if (started)
-        TTputs(SPELLSTOP);
+        TTsetattrs(phys_bold, phys_underline, phys_italic);
 
     /* Move to actual end of visible content and clear remaining trash */
     ttcol = maxchar;
 
-    TTputs("\033[0m"); /* Reset */
+    TTsetcolors(-1, -1); /* Reset */
+    TTsetattrs(0, 0, 0);
 
     HighlightStyle normal = colorscheme_get(HL_NORMAL);
     if (normal.bg != -1) {
-        if (normal.bg & 0x01000000) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
-                (normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
-            TTputs(buf);
-        } else if (normal.bg >= 8 && normal.bg < 16) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
-            TTputs(buf);
-        } else {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
-            TTputs(buf);
-        }
+        TTsetcolors(normal.fg, normal.bg);
     }
 
     TTeeol();
-    TTputs("\033[0m"); /* Final Reset */
+    TTsetcolors(-1, -1); /* Final Reset */
+    TTsetattrs(0, 0, 0);
 
     /* turn rev video off */
     TTrev(FALSE);
@@ -1272,8 +1255,8 @@ static int updateline(int row, struct video *vp)
 static void modeline(struct window *wp)
 {
     struct buffer *bp = wp->w_bufp;
-    const char *row1 = nanox_cfg.hint_bar ? "F1 Help  F2 Save  F3 Open  F4 Quit  F5 Search  F6 Replace" : "";
-    const char *row2 = nanox_cfg.hint_bar ? "F7 CutLn  F8 Paste  F9 Slot1  F10 Slot2  F11 Slot3  F12 Slot4" : "";
+    const char *row1 = nanox_cfg.hint_bar ? "F1/^H Help F2/^S Save F3/^O Open F4/^Q Quit F5/^F Search(&nx/&pr)" : "";
+    const char *row2 = nanox_cfg.hint_bar ? "F7/^X Cut F8/^V Paste F9/^1-F12/^4 Slot1-4" : "";
     char status[MAXCOL + 1];
     const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
     const char *lamp = nanox_lamp_label();
@@ -1286,12 +1269,12 @@ static void modeline(struct window *wp)
     snprintf(status, sizeof(status), "%s L%d C%d %c%s%s",
          fname, line, col, mark, (*lamp ? " " : ""), (*lamp ? lamp : ""));
 
-    if (top >= 0 && top < term.t_nrow) {
+    if (top >= 0 && top < term->t_nrow) {
         vscreen[top]->v_flag |= VFCHG | VFCOL;
         draw_hint_row(top, row1, status);
     }
 
-    if (bottom >= 0 && bottom < term.t_nrow) {
+    if (bottom >= 0 && bottom < term->t_nrow) {
         vscreen[bottom]->v_flag |= VFCHG | VFCOL;
         draw_hint_row(bottom, row2, "");
     }
@@ -1325,57 +1308,17 @@ void mlerase(void)
 {
     int i;
 
-    movecursor(term.t_nrow, 0);
+    movecursor(term->t_nrow, 0);
     HighlightStyle normal = colorscheme_get(HL_NORMAL);
-    current_color_fg = normal.fg;
-    current_color_bg = normal.bg;
-    current_color_bold = normal.bold;
-    current_color_underline = normal.underline;
-    current_color_italic = normal.italic;
-
-    /* Set foreground */
-    if (normal.fg != -1) {
-        if (normal.fg & 0x01000000) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "\033[38;2;%d;%d;%dm",
-                (normal.fg >> 16) & 0xFF, (normal.fg >> 8) & 0xFF, normal.fg & 0xFF);
-            TTputs(buf);
-        } else if (normal.fg >= 8 && normal.fg < 16) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 90 + (normal.fg - 8));
-            TTputs(buf);
-        } else {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 30 + normal.fg);
-            TTputs(buf);
-        }
-    }
-
-    /* Set background */
-    if (normal.bg != -1) {
-        if (normal.bg & 0x01000000) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
-                (normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
-            TTputs(buf);
-        } else if (normal.bg >= 8 && normal.bg < 16) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
-            TTputs(buf);
-        } else {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
-            TTputs(buf);
-        }
-    }
+    TTsetcolors(normal.fg, normal.bg);
 
     if (eolexist == TRUE)
         TTeeol();
     else {
-        for (i = 0; i < term.t_ncol - 1; i++)
+        for (i = 0; i < term->t_ncol - 1; i++)
             TTputc(' ');
-        movecursor(term.t_nrow, 1); /* force the move! */
-        movecursor(term.t_nrow, 0);
+        movecursor(term->t_nrow, 1); /* force the move! */
+        movecursor(term->t_nrow, 0);
     }
 
     if (normal.bg != -1) {
@@ -1405,7 +1348,7 @@ void mlwrite(const char *fmt, ...)
 
     /* if we are not currently echoing on the command line, abort this */
     if (discmd == FALSE) {
-        movecursor(term.t_nrow, 0);
+        movecursor(term->t_nrow, 0);
         return;
     }
 
@@ -1415,45 +1358,10 @@ void mlwrite(const char *fmt, ...)
         TTflush();
     }
 
-    movecursor(term.t_nrow, 0);
+    movecursor(term->t_nrow, 0);
 
     HighlightStyle normal = colorscheme_get(HL_NORMAL);
-
-    /* Set foreground */
-    if (normal.fg != -1) {
-        if (normal.fg & 0x01000000) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "\033[38;2;%d;%d;%dm",
-                (normal.fg >> 16) & 0xFF, (normal.fg >> 8) & 0xFF, normal.fg & 0xFF);
-            TTputs(buf);
-        } else if (normal.fg >= 8 && normal.fg < 16) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 90 + (normal.fg - 8));
-            TTputs(buf);
-        } else {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 30 + normal.fg);
-            TTputs(buf);
-        }
-    }
-
-    /* Set background */
-    if (normal.bg != -1) {
-        if (normal.bg & 0x01000000) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
-                (normal.bg >> 16) & 0xFF, (normal.bg >> 8) & 0xFF, normal.bg & 0xFF);
-            TTputs(buf);
-        } else if (normal.bg >= 8 && normal.bg < 16) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 100 + (normal.bg - 8));
-            TTputs(buf);
-        } else {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "\033[%dm", 40 + normal.bg);
-            TTputs(buf);
-        }
-    }
+    TTsetcolors(normal.fg, normal.bg);
 
     mlbuf_init(&dest, raw, sizeof(raw));
     va_start(ap, fmt);
@@ -1494,10 +1402,16 @@ void mlwrite(const char *fmt, ...)
     }
     va_end(ap);
     nanox_message_prefix(dest.buf, final, sizeof(final));
-    for (const char *p = final; *p; ++p) {
-        /* Use unsigned char to avoid sign extension on UTF-8 bytes */
-        TTputc((unsigned char)*p);
-        ++ttcol;
+    
+    unsigned char *p = (unsigned char *)final;
+    int len = strlen((char *)p);
+    int i = 0;
+    while (i < len) {
+        unicode_t uc;
+        int bytes = utf8_to_unicode(p, i, len, &uc);
+        TTputc(uc);
+        ttcol += unicode_width(uc);
+        i += bytes;
     }
 
     /* if we can, erase to the end of screen */
@@ -1533,10 +1447,15 @@ void mlforce(char *s)
  */
 void mlputs(char *s)
 {
-    while (*s != 0) {
-        /* Ensure 8-bit transparency for multi-byte characters */
-        TTputc((unsigned char)*s++);
-        ++ttcol;
+    unsigned char *p = (unsigned char *)s;
+    int len = strlen(s);
+    int i = 0;
+    while (i < len) {
+        unicode_t uc;
+        int bytes = utf8_to_unicode(p, i, len, &uc);
+        TTputc(uc);
+        ttcol += unicode_width(uc);
+        i += bytes;
     }
 }
 
@@ -1632,7 +1551,7 @@ void sizesignal(int signr)
 
     getscreensize(&w, &h);
 
-    if (h && w && (h - 1 != term.t_nrow || w != term.t_ncol))
+    if (h && w && (h - 1 != term->t_nrow || w != term->t_ncol))
         newscreensize(h, w);
 
     signal(SIGWINCH, sizesignal);
@@ -1649,10 +1568,10 @@ int newscreensize(int h, int w)
     }
     chg_width = chg_height = 0;
 
-    if (h - 1 != term.t_mrow)
+    if (h - 1 != term->t_mrow)
         newsize(TRUE, h);
 
-    if (w != term.t_mcol)
+    if (w != term->t_mcol)
         newwidth(TRUE, w);
 
     update(TRUE);

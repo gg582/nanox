@@ -86,7 +86,7 @@ struct magic tapcm[NPAT];    /* parsed reversed magic pattern */
 int discmd;            /* display command flag         */
 int disinp;            /* display input events         */
 int nullflag;            /* nulls allowed                */
-extern struct terminal term; /* Terminal information.        */
+extern struct terminal *term; /* Terminal information.        */
 int gasave;            /* global ASAVE size            */
 int gacount;            /* global ASAVE count           */
 int gmode;            /* global editor mode           */

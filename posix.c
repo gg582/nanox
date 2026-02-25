@@ -27,7 +27,7 @@
 #include "utf8.h"
 #include "paste_slot.h"
 
-extern struct terminal term;
+extern struct terminal *term;
 
 /* Forward declaration */
 static int handle_bracketed_paste(void);
@@ -57,7 +57,7 @@ void ttopen(void)
     ntermios = otermios;
 
     /* raw CR/NL etc input handling, but keep ISTRIP if we're on a 7-bit line */
-    ntermios.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | PARMRK | INPCK | INLCR | IGNCR | ICRNL);
+    ntermios.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | PARMRK | INPCK | INLCR | IGNCR | ICRNL | IXON | IXOFF);
 
     /* raw CR/NR etc output handling */
     ntermios.c_oflag &= ~(OPOST | ONLCR | OLCUC | OCRNL | ONOCR | ONLRET);
@@ -176,8 +176,8 @@ static void pause_read(int pause)
 
 void ttpause(void)
 {
-    if (term.t_pause && !TT.nr)
-        pause_read(term.t_pause);
+    if (term->t_pause && !TT.nr)
+        pause_read(term->t_pause);
 }
 
 /*
@@ -227,14 +227,31 @@ int ttgetc(void)
     if (count < expected)
         pause_read(1);
 
-    if (TT.nr > 1) {
+    if (c == 27 && TT.nr > 1) {
         unsigned char second = TT.buf[1];
 
-        /* Turn ESC+'[' into CSI */
-        if (c == 27 && second == '[') {
-            bytes = 2;
-            c = 128 + 27;
-            goto done;
+        /* If we have an escape sequence (ESC [ or ESC O), try to read the full sequence */
+        if (second == '[' || second == 'O') {
+            int timeout = 3; /* Wait up to 0.3s for the rest of the sequence */
+            while (timeout--) {
+                unsigned char last = TT.buf[TT.nr - 1];
+                /* CSI sequences (ESC [ ...) end with a character in 0x40-0x7E range */
+                if (second == '[' && TT.nr >= 3 && last >= 0x40 && last <= 0x7E)
+                    break;
+                /* SS3 sequences (ESC O ...) are typically 3 bytes long */
+                if (second == 'O' && TT.nr >= 3)
+                    break;
+                pause_read(1);
+            }
+
+            if (second == '[' || (second == 'O' && TT.nr >= 3)) {
+                /* Turn ESC+'[' or ESC+'O' into CSI (Single byte 155) */
+                bytes = 2;
+                c = 128 + 27;
+                goto done;
+            }
+            /* For ESC O without a third byte, we return ESC and leave O in the buffer.
+               getcmd() will handle this because typahead() will be true. */
         }
     }
     bytes = utf8_to_unicode(TT.buf, 0, TT.nr, &c);

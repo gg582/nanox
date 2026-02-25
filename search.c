@@ -76,17 +76,13 @@
 static short int magical;
 extern struct line * matchline;
 extern int matchoff;
-static short int rmagical;
 extern struct magic mcpat[NPAT];        /* The magic pattern. */
 extern struct magic tapcm[NPAT];        /* The reversed magic patterni. */
-static struct magic_replacement rmcpat[NPAT];   /* The replacement magic array. */
 
 static int amatch(struct magic *mcptr, int direct, struct line **pcwline, int *pcwoff);
 static int readpattern(char *prompt, char *apat, int srch);
-static int replaces(int kind, int f, int n);
 static int nextch(struct line **pcurline, int *pcuroff, int dir);
 static int mcstr(void);
-static int rmcstr(void);
 static int mceq(int bc, struct magic *mt);
 static int cclmake(char **ppatptr, struct magic *mcptr);
 static int biteq(int bc, char *cclmap);
@@ -133,6 +129,97 @@ int forwsearch(int f, int n)
             mlwrite("Not found");
     }
     return status;
+}
+
+/*
+ * nanox_search_engine -- Unified search engine for nanox.
+ * Supports &nx (forward) and &pr (reverse) suffixes.
+ */
+int nanox_search_engine(int f, int n)
+{
+    char query[NPAT];
+    int status;
+    static int last_dir = FORWARD;
+    int dir = last_dir;
+
+    /* Get search string using minibuffer */
+    status = minibuf_input("Search: ", query, NPAT);
+    if (status != TRUE)
+        return status;
+
+    /* Handle empty query - use last pattern and last direction */
+    if (status == FALSE || query[0] == '\0') {
+        if (pat[0] == '\0') {
+            mlwrite("No pattern set");
+            return FALSE;
+        }
+        dir = last_dir;
+    } else {
+        /* Parse suffix &nx or &pr */
+        int len = strlen(query);
+        int has_suffix = 0;
+        if (len >= 3) {
+            if (strcmp(query + len - 3, "&nx") == 0) {
+                dir = FORWARD;
+                query[len - 3] = '\0';
+                has_suffix = 1;
+            } else if (strcmp(query + len - 3, "&pr") == 0) {
+                dir = REVERSE;
+                query[len - 3] = '\0';
+                has_suffix = 1;
+            }
+        }
+
+        /* Update global patterns ONLY if keyword is not empty */
+        if (query[0] != '\0') {
+            strcpy(pat, query);
+            rvstrscpy(tap, query, NPAT);
+            
+            /* Re-generate magic patterns if in magic mode */
+            if (curwp->w_bufp->b_mode & MDMAGIC) {
+                mcstr();
+            }
+        } else if (has_suffix) {
+            /* Suffix only - use previous pattern */
+            if (pat[0] == '\0') {
+                mlwrite("No pattern set");
+                return FALSE;
+            }
+        }
+        last_dir = dir;
+    }
+
+    while (1) {
+        if ((magical && curwp->w_bufp->b_mode & MDMAGIC) != 0) {
+            if (dir == FORWARD)
+                status = mcscanner(&mcpat[0], FORWARD, PTEND);
+            else
+                status = mcscanner(&tapcm[0], REVERSE, PTBEG);
+        } else {
+            if (dir == FORWARD)
+                status = scanner(&pat[0], FORWARD, PTEND);
+            else
+                status = scanner(&tap[0], REVERSE, PTBEG);
+        }
+
+        if (status != TRUE) {
+            mlwrite("No more matches.");
+            break;
+        }
+
+        /* Position found, update display */
+        update(TRUE);
+
+        /* Interactive prompt */
+        mlwrite("Search Next? (y/n)");
+        int c = tgetc();
+        if (c != 'y' && c != 'Y') {
+            mlwrite("");
+            break;
+        }
+        /* Loop continues to find next match in same direction */
+    }
+    return TRUE;
 }
 
 /*
@@ -648,7 +735,7 @@ static int readpattern(char *prompt, char *apat, int srch)
             /* Reverse string copy, and remember
              * the length for substitution purposes.
              */
-            rvstrcpy(tap, apat);
+            rvstrscpy(tap, apat, NPAT);
             mlenold = matchlen = strlen(apat);
         }
         /* Only make the meta-pattern if in magic mode,
@@ -657,11 +744,8 @@ static int readpattern(char *prompt, char *apat, int srch)
          */
         if ((curwp->w_bufp->b_mode & MDMAGIC) == 0) {
             mcclear();
-            rmcclear();
-            if (!srch)
-                status = rmcstr();
         } else
-            status = srch ? mcstr() : rmcstr();
+            status = srch ? mcstr() : TRUE;
     } else if (status == FALSE && apat[0] != 0) /* Old one */
         status = TRUE;
 
@@ -700,274 +784,22 @@ void savematch(void)
 /*
  * rvstrcpy -- Reverse string copy.
  */
-void rvstrcpy(char *rvstr, char *str)
+void rvstrscpy(char *rvstr, char *str, int size)
 {
     int i;
+    int len = strlen(str);
+    
+    if (size <= 0) return;
+    
+    if (len >= size)
+        len = size - 1;
 
-    str += (i = strlen(str));
+    str += len;
 
-    while (i-- > 0)
+    for (i = 0; i < len; i++)
         *rvstr++ = *--str;
 
     *rvstr = '\0';
-}
-
-/*
- * sreplace -- Search and replace.
- *
- * int f;       default flag
- * int n;       # of repetitions wanted
- */
-int sreplace(int f, int n)
-{
-    return replaces(FALSE, f, n);
-}
-
-/*
- * qreplace -- search and replace with query.
- *
- * int f;       default flag
- * int n;       # of repetitions wanted
- */
-int qreplace(int f, int n)
-{
-    return replaces(TRUE, f, n);
-}
-
-/*
- * replaces -- Search for a string and replace it with another
- *  string.  Query might be enabled (according to kind).
- *
- * int kind;        Query enabled flag
- * int f;       default flag
- * int n;       # of repetitions wanted
- */
-static int replaces(int kind, int f, int n)
-{
-    int status;             /* success flag on pattern inputs */
-    int rlength;                /* length of replacement string */
-    int numsub;             /* number of substitutions */
-    int nummatch;               /* number of found matches */
-    int nlflag;             /* last char of search string a <NL>? */
-    int nlrepl;             /* was a replace done on the last line? */
-    char c;                 /* input char for query */
-    char tpat[NPAT];            /* temporary to hold search pattern */
-    struct line *origline;          /* original "." position */
-    int origoff;                /* and offset (for . query option) */
-    struct line *lastline;          /* position of last replace and */
-    int lastoff;                /* offset (for 'u' query option) */
-
-    if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
-        return rdonly();        /* we are in read only mode     */
-
-    /* Check for negative repetitions.
-     */
-    if (f && n < 0)
-        return FALSE;
-
-    /* Ask the user for the text of a pattern.
-     */
-    if ((status = readpattern((kind == FALSE ? "Replace" : "Query replace"), &pat[0], TRUE))
-        != TRUE)
-        return status;
-
-    /* Ask for the replacement string.
-     */
-    if ((status = readpattern("with", &rpat[0], FALSE)) == ABORT)
-        return status;
-
-    /* Find the length of the replacement string.
-     */
-    rlength = strlen(&rpat[0]);
-
-    /* Set up flags so we can make sure not to do a recursive
-     * replace on the last line.
-     */
-    nlflag = (pat[matchlen - 1] == '\n');
-    nlrepl = FALSE;
-
-    if (kind) {
-        /* Build query replace question string.
-         */
-        strcpy(tpat, "Replace '");
-        expandp(&pat[0], &tpat[strlen(tpat)], NPAT / 3);
-        strcat(tpat, "' with '");
-        expandp(&rpat[0], &tpat[strlen(tpat)], NPAT / 3);
-        strcat(tpat, "'? ");
-
-        /* Initialize last replaced pointers.
-         */
-        lastline = NULL;
-        lastoff = 0;
-    }
-
-    /* Save original . position, init the number of matches and
-     * substitutions, and scan through the file.
-     */
-    origline = curwp->w_dotp;
-    origoff = curwp->w_doto;
-    numsub = 0;
-    nummatch = 0;
-
-    while ((f == FALSE || n > nummatch) && (nlflag == FALSE || nlrepl == FALSE)) {
-        /* Search for the pattern.
-         * If we search with a regular expression,
-         * matchlen is reset to the true length of
-         * the matched string.
-         */
-        if ((magical && curwp->w_bufp->b_mode & MDMAGIC) != 0) {
-            if (!mcscanner(&mcpat[0], FORWARD, PTBEG))
-                break;
-        } else if (!scanner(&pat[0], FORWARD, PTBEG))
-            break;          /* all done */
-
-        ++nummatch;         /* Increment # of matches */
-
-        /* Check if we are on the last line.
-         */
-        nlrepl = (lforw(curwp->w_dotp) == curwp->w_bufp->b_linep);
-
-        /* Check for query.
-         */
-        if (kind) {
-            /* Get the query.
-             */
- pprompt:       mlwrite(&tpat[0], &pat[0], &rpat[0]);
- qprompt:
-            update(TRUE);       /* show the proposed place to change */
-            c = tgetc();        /* and input */
-            mlwrite("");        /* and clear it */
-
-            /* And respond appropriately.
-             */
-            switch (c) {
-            case 'Y':
-            case 'y':       /* yes, substitute */
-            case ' ':
-                savematch();
-                break;
-
-            case 'N':
-            case 'n':       /* no, onword */
-                forwchar(FALSE, 1);
-                continue;
-
-            case '!':       /* yes/stop asking */
-                kind = FALSE;
-                break;
-
-            case 'U':
-            case 'u':       /* undo last and re-prompt */
-
-                /* Restore old position.
-                 */
-                if (lastline == NULL) {
-                    /* There is nothing to undo.
-                     */
-                    TTbeep();
-                    goto pprompt;
-                }
-                curwp->w_dotp = lastline;
-                curwp->w_doto = lastoff;
-                lastline = NULL;
-                lastoff = 0;
-
-                /* Delete the new string.
-                 */
-                backchar(FALSE, rlength);
-                matchline = curwp->w_dotp;
-                matchoff = curwp->w_doto;
-                status = delins(rlength, patmatch, FALSE);
-                if (status != TRUE)
-                    return status;
-
-                /* Record one less substitution,
-                 * backup, save our place, and
-                 * reprompt.
-                 */
-                --numsub;
-                backchar(FALSE, mlenold);
-                matchline = curwp->w_dotp;
-                matchoff = curwp->w_doto;
-                goto pprompt;
-
-            case '.':       /* abort! and return */
-                /* restore old position */
-                curwp->w_dotp = origline;
-                curwp->w_doto = origoff;
-                curwp->w_flag |= WFMOVE;
-
-            case BELL:      /* abort! and stay */
-                mlwrite("Aborted!");
-                return FALSE;
-
-            default:        /* bitch and beep */
-                TTbeep();
-
-            case '?':       /* help me */
-                mlwrite
-                    ("(Y)es, (N)o, (!)Do rest, (U)ndo last, (^G)Abort, (.)Abort back, (?)Help: ");
-                goto qprompt;
-
-            }           /* end of switch */
-        }
-
-        /* end of "if kind" */
-        /*
-         * Delete the sucker, and insert its
-         * replacement.
-         */
-        status = delins(matchlen, &rpat[0], TRUE);
-        if (status != TRUE)
-            return status;
-
-        /* Save our position, since we may
-         * undo this.
-         */
-        if (kind) {
-            lastline = curwp->w_dotp;
-            lastoff = curwp->w_doto;
-        }
-
-        numsub++;           /* increment # of substitutions */
-    }
-
-    /* And report the results.
-     */
-    mlwrite("%d substitutions", numsub);
-    return TRUE;
-}
-
-/*
- * delins -- Delete a specified length from the current point
- *  then either insert the string directly, or make use of
- *  replacement meta-array.
- */
-int delins(int dlength, char *instr, int use_meta)
-{
-    int status;
-    struct magic_replacement *rmcptr;
-
-    /* Zap what we gotta,
-     * and insert its replacement.
-     */
-    if ((status = ldelete((long)dlength, FALSE)) != TRUE)
-        mlwrite("%%ERROR while deleting");
-    else if (rmagical && use_meta) {
-        rmcptr = &rmcpat[0];
-        while (rmcptr->mc_type != MCNIL && status == TRUE) {
-            if (rmcptr->mc_type == LITCHAR)
-                status = linstr(rmcptr->rstr);
-            else if ((curwp->w_bufp->b_mode & MDMAGIC) != 0)
-                status = linstr(patmatch);
-            else
-                status = linsert(1, MC_DITTO);
-            rmcptr++;
-        }
-    } else
-        status = linstr(instr);
-
-    return status;
 }
 
 /*
@@ -1194,100 +1026,6 @@ static int mcstr(void)
 }
 
 /*
- * rmcstr -- Set up the replacement 'magic' array.  Note that if there
- *  are no meta-characters encountered in the replacement string,
- *  the array is never actually created - we will just use the
- *  character array rpat[] as the replacement string.
- */
-static int rmcstr(void)
-{
-    struct magic_replacement *rmcptr;
-    char *patptr;
-    int status = TRUE;
-    int mj;
-
-    patptr = &rpat[0];
-    rmcptr = &rmcpat[0];
-    mj = 0;
-    rmagical = FALSE;
-
-    while (*patptr && status == TRUE) {
-        switch (*patptr) {
-        case MC_DITTO:
-            if (mj != 0) {
-                rmcptr->mc_type = LITCHAR;
-                if ((rmcptr->rstr = malloc(mj + 1)) == NULL) {
-                    mlwrite("%%Out of memory");
-                    status = FALSE;
-                    break;
-                }
-                mystrscpy(rmcptr->rstr, patptr - mj, mj);
-                rmcptr++;
-                mj = 0;
-            }
-            rmcptr->mc_type = DITTO;
-            rmcptr++;
-            rmagical = TRUE;
-            break;
-
-        case MC_ESC:
-            if (mj != 0) {
-                rmcptr->mc_type = LITCHAR;
-                if ((rmcptr->rstr = malloc(mj + 1)) == NULL) {
-                    mlwrite("%%Out of memory");
-                    status = FALSE;
-                    break;
-                }
-                mystrscpy(rmcptr->rstr, patptr - mj, mj);
-                rmcptr++;
-                mj = 0;
-            }
-
-            rmcptr->mc_type = LITCHAR;
-            if ((rmcptr->rstr = malloc(2)) == NULL) {
-                mlwrite("%%Out of memory");
-                status = FALSE;
-                break;
-            }
-
-            if (*(patptr + 1) != '\0') {
-                patptr++;
-                if (*patptr == 't') *(rmcptr->rstr) = '\t';
-                else if (*patptr == 'n') *(rmcptr->rstr) = '\n';
-                else if (*patptr == 'r') *(rmcptr->rstr) = '\r';
-                else *(rmcptr->rstr) = *patptr;
-                *((rmcptr->rstr) + 1) = '\0';
-            } else {
-                *(rmcptr->rstr) = MC_ESC;
-                *((rmcptr->rstr) + 1) = '\0';
-            }
-
-            rmcptr++;
-            rmagical = TRUE;
-            break;
-
-        default:
-            mj++;
-        }
-        patptr++;
-    }
-
-    if (mj > 0) {
-        rmcptr->mc_type = LITCHAR;
-        if ((rmcptr->rstr = malloc(mj + 1)) == NULL) {
-            mlwrite("%%Out of memory.");
-            status = FALSE;
-        } else {
-            mystrscpy(rmcptr->rstr, patptr - mj, mj);
-            rmcptr++;
-        }
-    }
-
-    rmcptr->mc_type = MCNIL;
-    return status;
-}
-
-/*
  * mcclear -- Free up any CCL bitmaps, and MCNIL the struct magic search arrays.
  */
 void mcclear(void)
@@ -1302,24 +1040,6 @@ void mcclear(void)
         mcptr++;
     }
     mcpat[0].mc_type = tapcm[0].mc_type = MCNIL;
-}
-
-/*
- * rmcclear -- Free up any strings, and MCNIL the struct magic_replacement array.
- */
-void rmcclear(void)
-{
-    struct magic_replacement *rmcptr;
-
-    rmcptr = &rmcpat[0];
-
-    while (rmcptr->mc_type != MCNIL) {
-        if (rmcptr->mc_type == LITCHAR)
-            free(rmcptr->rstr);
-        rmcptr++;
-    }
-
-    rmcpat[0].mc_type = MCNIL;
 }
 
 /*

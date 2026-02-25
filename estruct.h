@@ -40,7 +40,12 @@
 #define CTLX    0x40000000          /* ^X flag, or'ed in            */
 #define SPEC    0x80000000          /* special key (function keys)  */
 
-extern struct terminal term;
+extern struct terminal *term;
+
+#ifdef USE_NCURSES
+extern struct terminal ncurses_term;
+#endif
+extern struct terminal tcap_term;
 
 extern int tab_width;                       /* Defined in globals.c / edef.h */
 #define tabmask (tab_width - 1)         /* Dynamic mask for bitwise ops  */
@@ -145,9 +150,9 @@ extern int tab_width;                       /* Defined in globals.c / edef.h */
 #define islower(c)  isxlower((0xFF & (c)))
 #define isupper(c)  isxupper((0xFF & (c)))
 
-#define isxletter(c)    (('a' <= c && 'z' >= c) || ('A' <= c && 'Z' >= c) || (192<=c && c<=255))
-#define isxlower(c) (('a' <= c && 'z' >= c) || (224 <= c && 252 >= c))
-#define isxupper(c) (('A' <= c && 'Z' >= c) || (192 <= c && 220 >= c))
+#define isxletter(c)    (('a' <= c && 'z' >= c) || ('A' <= c && 'Z' >= c))
+#define isxlower(c) (('a' <= c && 'z' >= c))
+#define isxupper(c) (('A' <= c && 'Z' >= c))
 
 /*
  * There is a window structure allocated for the active display window.
@@ -260,26 +265,47 @@ struct terminal {
     void (*t_beep)(void);           /* Beep.                        */
     void (*t_rev)(int);         /* set reverse video state      */
     void (*t_italic)(int);      /* set italic video state       */
+    void (*t_set_colors)(int, int); /* set foreground and background colors */
+    void (*t_set_attrs)(int, int, int); /* set bold, underline, italic attributes */
     int (*t_rez)(char *);           /* change screen resolution     */
 };
 
 /*  TEMPORARY macros for terminal I/O  (to be placed in a machine
  *              dependant place later)  */
 
-#define TTopen      (*term.t_open)
-#define TTclose     (*term.t_close)
-#define TTkopen     (*term.t_kopen)
-#define TTkclose    (*term.t_kclose)
-#define TTgetc      (*term.t_getchar)
-#define TTputc      (*term.t_putchar)
-#define TTflush     (*term.t_flush)
-#define TTmove      (*term.t_move)
-#define TTeeol      (*term.t_eeol)
-#define TTeeop      (*term.t_eeop)
-#define TTbeep      (*term.t_beep)
-#define TTrev       (*term.t_rev)
-#define TTitalic    (*term.t_italic)
-#define TTrez       (*term.t_rez)
+extern void vttopen(void);
+extern void vttclose(void);
+extern void vttkopen(void);
+extern void vttkclose(void);
+extern int vttgetc(void);
+extern int vttputc(int c);
+extern void vttflush(void);
+extern void vttmove(int row, int col);
+extern void vtteeol(void);
+extern void vtteeop(void);
+extern void vttbeep(void);
+extern void vttrev(int state);
+extern void vttitalic(int state);
+extern void vttsetcolors(int fg, int bg);
+extern void vttsetattrs(int bold, int underline, int italic);
+extern int vttrez(char *res);
+
+#define TTopen      vttopen
+#define TTclose     vttclose
+#define TTkopen     vttkopen
+#define TTkclose    vttkclose
+#define TTgetc      vttgetc
+#define TTputc      vttputc
+#define TTflush     vttflush
+#define TTmove      vttmove
+#define TTeeol      vtteeol
+#define TTeeop      vtteeop
+#define TTbeep      vttbeep
+#define TTrev       vttrev
+#define TTitalic    vttitalic
+#define TTsetcolors vttsetcolors
+#define TTsetattrs  vttsetattrs
+#define TTrez       vttrez
 
 /* Structure for the table of initial key bindings. */
 struct key_tab {
@@ -390,9 +416,4 @@ struct magic {
         int lchar;
         char *cclmap;
     } u;
-};
-
-struct magic_replacement {
-    short int mc_type;
-    char *rstr;
 };

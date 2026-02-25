@@ -19,7 +19,7 @@
 #include "util.h"
 
 extern struct name_bind names[];
-extern struct terminal  term;
+extern struct terminal  *term;
 
 /*
  * Ask a yes or no question in the message line. Return either TRUE, FALSE, or
@@ -58,7 +58,7 @@ int mlyesno(char *prompt)
 
 int mlreply(char *prompt, char *buf, int nbuf)
 {
-  movecursor(term.t_nrow, 0);
+  movecursor(term->t_nrow, 0);
   TTputc('\x1b'); TTputc('['); TTputc('K');
   write(1, "\033[K", 3);
     return nextarg(prompt, buf, nbuf, ctoec('\n'));
@@ -66,7 +66,7 @@ int mlreply(char *prompt, char *buf, int nbuf)
 
 int mlreplyt(char *prompt, char *buf, int nbuf, int eolchar)
 {
-  movecursor(term.t_nrow, 0);
+  movecursor(term->t_nrow, 0);
   write(1, "\033[K", 3);
     return nextarg(prompt, buf, nbuf, eolchar);
 }
@@ -414,80 +414,40 @@ static int decode_csi_sequence(int cmask)
                             */
 int getcmd(void)
 {
-
     int cmask = 0;
     int c;
     /* get initial character */
     c = get1key();
 
-proc_metac:
-    if (c == 128 + 27) {            /* CSI */
+    if (c == 128 + 27) {            /* CSI (Single byte) */
         int code = decode_csi_sequence(cmask);
-        if (code)
-            return code;
+        return code;
     }
-    /* process META prefix (ESC key = ^[ in VT100) */
+
+    /* process ESC sequences for function keys */
     if (c == (CONTROL | '[')) {
-        /*
-         * VT100 compatibility: Check if more characters are waiting.
-         * If not, this is a standalone ESC key press (^[).
-         * If characters are waiting, treat ESC as META prefix.
-         * Note: typahead() returns 0 on ioctl failure, which safely
-         * treats ESC as standalone in edge cases.
-         */
+        /* VT100 compatibility: Check for CSI or SS3 */
         if (!typahead()) {
-            /* Standalone ESC key - return as ^[ */
-            return c;
+            ttpause();
+            if (!typahead())
+                return c; /* Standalone ESC */
         }
         c = get1key();
         if (c == '[') {
             int code = decode_csi_sequence(cmask);
-            if (code)
-                return code;
-            /* If code is 0, sequence was aborted or unrecognized - drop it */
-            return 0;
+            return code;
         }
         if (c == 'O') {
             int code = get1key();
-            return SPEC | code | cmask;
+            return SPEC | code;
         }
-        if (c == (CONTROL | '[')) {
-            cmask = META;
-            goto proc_metac;
-        }
-        if (islower(c))         /* Force to upper */
-            c ^= DIFCASE;
-        if (c >= 0x00 && c <= 0x1F) /* control key */
-            c = CONTROL | (c + '@');
-        return META | c;
-    } else if (c == metac) {
-        c = get1key();
-        if (c == (CONTROL | '[')) {
-            cmask = META;
-            goto proc_metac;
-        }
-        if (islower(c))         /* Force to upper */
-            c ^= DIFCASE;
-        if (c >= 0x00 && c <= 0x1F) /* control key */
-            c = CONTROL | (c + '@');
-        return META | c;
+        /* Any other ESC sequence is ignored to remove legacy chords */
+        return 0;
     }
 
-    /* process CTLX prefix */
-    if (c == ctlxc) {
-        c = get1key();
-        if (c == (CONTROL | '[')) {
-            cmask = CTLX;
-            goto proc_metac;
-        }
-        if (c >= 'a' && c <= 'z')   /* Force to upper */
-            c -= 0x20;
-        if (c >= 0x00 && c <= 0x1F) /* control key */
-            c = CONTROL | (c + '@');
-        return CTLX | c;
-    }
+    /* Prefix keys like ctlxc (Ctrl-X) are no longer processed as prefixes */
+    /* to ensure integrity and strictly follow the new binding spec. */
 
-    /* otherwise, just return it */
     return c;
 }
 
@@ -500,7 +460,6 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
     int cpos;               /* current character position in string */
     int c = 0;
     int c_int;
-    unsigned char c_byte;
     int quotef;             /* are we quoting the next char? */
     int ffile, ocpos, nskip = 0, didtry = 0;
 
@@ -524,7 +483,14 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
             nskip = -1;
         didtry = 0;
         c_int = get1key();
-        c_byte = (unsigned char)c_int;        /* If it is a <ret>, change it to a <NL> */
+
+        /* Ignore SPEC keys (function keys, arrows, etc.) in the minibuffer */
+        if (c_int & SPEC) {
+            TTbeep();
+            continue;
+        }
+
+        c = c_int;
         if (c == (CONTROL | 0x4d) && !quotef)
             c = CONTROL | 0x40 | '\n';
 
@@ -562,8 +528,10 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
                 
                 /* Backspace properly on screen */
                 for (int i = 0; i < width; i++) {
-                    outstring("\b \b");
                     --ttcol;
+                    movecursor(term->t_nrow, ttcol);
+                    TTputc(' ');
+                    movecursor(term->t_nrow, ttcol);
                 }
                 
                 /* Adjust cpos to new end */
@@ -588,8 +556,10 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
                 
                 /* Backspace properly on screen */
                 for (int i = 0; i < width; i++) {
-                    outstring("\b \b");
                     --ttcol;
+                    movecursor(term->t_nrow, ttcol);
+                    TTputc(' ');
+                    movecursor(term->t_nrow, ttcol);
                 }
                 cpos = start_pos;
             }
@@ -679,40 +649,37 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
         } else { // Normal character input
             quotef = FALSE;
             if (cpos < nbuf - 1) {
-                // Store the unsigned byte value directly.
-                buf[cpos++] = c_byte;
-
-                // Output logic adapted for unsigned char c_byte
-                if (disinp) { // If input should be echoed
-                    if (c_byte < 0x20 && c_byte != '\n') { // Control character representation (e.g., ^A)
-                         outstring("^");
-                         TTputc(c_byte + '@'); // Map 0x00-0x1F to 0x40-0x5F
-                         ttcol += 2; // For '^' and the character
-                    } else if (c_byte == '\n') { // Newline representation
-                         outstring("<NL>");
-                         ttcol += 3;
-                    } else { // Printable ASCII or UTF-8 byte
-                         // Fix double-encoding by writing raw byte
-                         write(1, &c_byte, 1);
-                         
-                         // Update ttcol only if we completed a UTF-8 sequence
-                         // Find start of current char
-                         int start_pos = cpos - 1;
-                         while (start_pos > 0 && !is_beginning_utf8((unsigned char)buf[start_pos]))
-                             start_pos--;
-                         
-                         // Check if the sequence ending at cpos-1 is valid/complete
-                         unicode_t uc;
-                         unsigned len = utf8_to_unicode((unsigned char*)buf, start_pos, cpos - start_pos, &uc);
-                         
-                         // utf8_to_unicode returns 1 for invalid/partial if it can't decode, 
-                         // or the length. 
-                         // But we need to know if it *is* the full character.
-                         // If cpos - start_pos == len, it implies we have the full bytes for that char.
-                         
-                         if ((cpos - start_pos) == len) {
-                             ttcol += unicode_width(uc);
-                         }
+                if (c_int >= 0x80) {
+                    /* Handle multi-byte Unicode characters */
+                    char utf8_buf[6];
+                    int len = unicode_to_utf8(c_int, utf8_buf);
+                    if (cpos + len < nbuf) {
+                        for (int i = 0; i < len; i++) {
+                            buf[cpos++] = utf8_buf[i];
+                        }
+                        if (disinp) {
+                            TTputc(c_int);
+                            ttcol += unicode_width(c_int);
+                        }
+                    } else {
+                        TTbeep();
+                    }
+                } else {
+                    /* Handle ASCII character */
+                    unsigned char c_byte = (unsigned char)c_int;
+                    buf[cpos++] = c_byte;
+                    if (disinp) {
+                        if (c_byte < 0x20 && c_byte != '\n') {
+                            outstring("^");
+                            TTputc(c_byte + '@');
+                            ttcol += 2;
+                        } else if (c_byte == '\n') {
+                            outstring("<NL>");
+                            ttcol += 3;
+                        } else {
+                            TTputc(c_byte);
+                            ttcol++;
+                        }
                     }
                 }
             }

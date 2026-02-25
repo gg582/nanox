@@ -122,7 +122,7 @@ void paste_slot_display(void)
     char *title = " PASTE SLOT ";
 
     /* Clear screen and set change flags for all rows */
-    for (int i = 0; i < term.t_nrow; i++) {
+    for (int i = 0; i < term->t_nrow; i++) {
         vscreen[i]->v_flag |= VFCHG;
         vtmove(i, 0);
         extern void vteeol(void);
@@ -132,7 +132,7 @@ void paste_slot_display(void)
     /* Draw Top Border */
     vtmove(0, 0);
     vtputc('+');
-    for (col = 1; col < term.t_ncol - 1; col++)
+    for (col = 1; col < term->t_ncol - 1; col++)
         vtputc('-');
     vtputc('+');
 
@@ -143,24 +143,24 @@ void paste_slot_display(void)
     while (*title) {
         vtputc(*title++);
     }
-    vtmove(1, term.t_ncol - 1);
+    vtmove(1, term->t_ncol - 1);
     vtputc('|');
 
     /* Draw Middle Border */
     vtmove(2, 0);
     vtputc('+');
-    for (col = 1; col < term.t_ncol - 1; col++)
+    for (col = 1; col < term->t_ncol - 1; col++)
         vtputc('-');
     vtputc('+');
 
     /* Display content with UTF-8 awareness */
     current_row = 3;
-    while (byte_pos < content_len && current_row < term.t_nrow - 1) {
+    while (byte_pos < content_len && current_row < term->t_nrow - 1) {
         vtmove(current_row, 0);
         vtputc('|');
         col = 1;
 
-        while (byte_pos < content_len && col < term.t_ncol - 1) {
+        while (byte_pos < content_len && col < term->t_ncol - 1) {
             unsigned char c = (unsigned char)content[byte_pos];
 
             if (c == '\n' || c == '\r') {
@@ -181,30 +181,30 @@ void paste_slot_display(void)
         }
 
         /* Fill rest of the line with spaces and draw right border */
-        while (col < term.t_ncol - 1) {
+        while (col < term->t_ncol - 1) {
             vtputc(' ');
             col++;
         }
-        vtmove(current_row, term.t_ncol - 1);
+        vtmove(current_row, term->t_ncol - 1);
         vtputc('|');
         current_row++;
     }
 
     /* Fill remaining empty rows within the box */
-    while (current_row < term.t_nrow - 1) {
+    while (current_row < term->t_nrow - 1) {
         vtmove(current_row, 0);
         vtputc('|');
-        for (col = 1; col < term.t_ncol - 1; col++)
+        for (col = 1; col < term->t_ncol - 1; col++)
             vtputc(' ');
-        vtmove(current_row, term.t_ncol - 1);
+        vtmove(current_row, term->t_ncol - 1);
         vtputc('|');
         current_row++;
     }
 
     /* Draw Bottom Border */
-    vtmove(term.t_nrow - 1, 0);
+    vtmove(term->t_nrow - 1, 0);
     vtputc('+');
-    for (col = 1; col < term.t_ncol - 1; col++)
+    for (col = 1; col < term->t_ncol - 1; col++)
         vtputc('-');
     vtputc('+');
 

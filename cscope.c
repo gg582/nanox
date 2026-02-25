@@ -152,8 +152,8 @@ static void draw_menu(int row, int col, int selection) {
     if (height > 10) height = 10;
     
     /* Ensure inside screen */
-    if (row + height > term.t_nrow) row = term.t_nrow - height;
-    if (col + width > term.t_ncol) col = term.t_ncol - width;
+    if (row + height > term->t_nrow) row = term->t_nrow - height;
+    if (col + width > term->t_ncol) col = term->t_ncol - width;
     
     /* Draw */
     for (int i = 0; i < height; i++) {

@@ -17,165 +17,60 @@
  * control-X commands.
  */
 struct key_tab keytab[NBINDS] = {
-    { CONTROL | 'A', gotobol },
-    { CONTROL | 'B', backchar },
-    { CONTROL | 'C', insspace },
-    { CONTROL | 'D', forwdel },
-    { CONTROL | 'E', gotoeol },
-    { CONTROL | 'F', forwchar },
-    { CONTROL | 'H', backdel },
-    { CONTROL | 'I', insert_tab },
-    { CONTROL | 'J', indent },
-    { CONTROL | 'K', killtext },
-    { CONTROL | 'L', redraw },
-    { CONTROL | 'M', insert_newline },
-    { CONTROL | 'N', forwline },
-    { CONTROL | 'O', filesave },
-    { CONTROL | 'P', backline },
-    { CONTROL | 'Q', quote },
-    { CONTROL | 'R', backsearch },
-    { CONTROL | 'S', forwsearch },
-    { CONTROL | 'T', twiddle },
-    { CONTROL | 'U', unarg },
-    { CONTROL | 'V', forwpage },
-    { CONTROL | 'W', killregion },
-    { CONTROL | 'X', cex },
+    /* Basic Navigation */
+    { SPEC | 'A', backline },           /* Up Arrow */
+    { SPEC | 'B', forwline },           /* Down Arrow */
+    { SPEC | 'C', forwchar },           /* Right Arrow */
+    { SPEC | 'D', backchar },           /* Left Arrow */
+    { SPEC | 'H', gotobob },            /* Home */
+    { SPEC | 'F', gotoeob },            /* End */
+    { SPEC | '5', backpage },           /* Page Up */
+    { SPEC | '6', forwpage },           /* Page Down */
+    { SPEC | 'L', insspace },           /* Insert */
+    { 0x7F, backdel },                  /* Backspace */
+    { SPEC | 0x7F, forwdel },           /* Delete */
+    { CONTROL | 'I', insert_tab },      /* Tab */
+    { CONTROL | 'M', insert_newline },  /* Enter */
+
+    /* SYSTEM */
+    { SPEC | 'P', nanox_help_command },  /* F1 */
+    { CONTROL | 'H', nanox_help_command },
+
+    /* FILE CONTROL */
+    { SPEC | 'Q', filesave },            /* F2 */
+    { CONTROL | 'S', filesave },
+    { SPEC | 'R', filefind },            /* F3 */
+    { CONTROL | 'O', filefind },
+
+    /* PROCESS */
+    { SPEC | 'S', quit },                /* F4 */
+    { CONTROL | 'Q', quit },
+
+    /* DATA EXPLORATION & SEARCH */
+    { SPEC | 'U', nanox_search_engine },  /* F5 */
+    { CONTROL | 'F', nanox_search_engine },
+
+    /* DATA DELETION (CUT) */
+    { SPEC | 'X', cutln_trigger },        /* F7 */
+    { CONTROL | 'X', cutln_trigger },
+    { CONTROL | 'K', cutln_trigger },
+
+    /* DATA INSERTION (PASTE) */
+    { SPEC | 'Y', yank },                 /* F8 */
+    { CONTROL | 'V', yank },
     { CONTROL | 'Y', yank },
-    { CONTROL | 'Z', backpage },
-    { CONTROL | '[', ctrlg },           /* ESC (^[) - abort/cancel */
-    { CONTROL | ']', metafn },
-    { CTLX | CONTROL | 'A', detab },
-    { CTLX | CONTROL | 'D', filesave }, /* alternative          */
-    { CTLX | CONTROL | 'E', entab },
-    { CTLX | CONTROL | 'F', filefind },
-    { CTLX | CONTROL | 'I', insfile },
-    { CTLX | CONTROL | 'L', lowerregion },
-    { CTLX | CONTROL | 'M', delmode },
-    { CTLX | CONTROL | 'O', deblank },
-    { CTLX | CONTROL | 'R', fileread },
-    { CTLX | CONTROL | 'S', filesave },
-    { CTLX | CONTROL | 'T', trim },
-    { CTLX | CONTROL | 'U', upperregion },
-    { CTLX | CONTROL | 'V', viewfile },
-    { CTLX | CONTROL | 'W', filewrite },
-    { CTLX | CONTROL | 'X', swapmark },
-    { CTLX | '?', deskey },
-    { CTLX | '!', spawn },
-    { CTLX | '#', filter_buffer },
-    { CTLX | '$', execprg },
-    { CTLX | '=', showcpos },
-    { CTLX | '(', ctlxlp },
-    { CTLX | ')', ctlxrp },
-    { CTLX | 'A', setvar },
-    { CTLX | 'B', usebuffer },
-    { CTLX | 'C', spawncli },
-    { CTLX | 'D', bktoshell },
-    { CTLX | 'E', ctlxe },
-    { CTLX | 'F', setfillcol },
-    { CTLX | 'K', killbuffer },
-    { CTLX | 'M', setemode },
-    { CTLX | 'N', filename },
-    { CTLX | 'Q', quote },          /* alternative  */
-    { CTLX | 'R', risearch },
-    { CTLX | 'S', fisearch },
-    { CTLX | 'X', nextbuffer },
-    { META | CONTROL | 'C', wordcount },
-    { META | CONTROL | 'D', newsize },
-    { META | CONTROL | 'E', execproc },
-    { META | CONTROL | 'F', getfence },
-    { META | CONTROL | 'B', bindtokey },
-    { META | CONTROL | 'H', delbword },
-    { META | CONTROL | 'K', unbindkey },
-    { META | CONTROL | 'L', reposition },
-    { META | CONTROL | 'M', delgmode },
-    { META | CONTROL | 'N', namebuffer },
-    { META | CONTROL | 'P', fillpara },
-    { META | CONTROL | 'R', qreplace },
-    { META | CONTROL | 'S', newsize },
-    { META | CONTROL | 'T', newwidth },
-    { META | CONTROL | 'U', upperword },
-    { META | CONTROL | 'W', killpara },
-    { META | CONTROL | 'Y', copyregion },
-    { META | ' ', setmark },
-    { META | '!', reposition },
-    { META | '.', setmark },
-    { META | '~', unmark },
-    { META | '9', reserve_set_1 },
-    { META | '0', reserve_set_2 },
-    { META | '-', reserve_set_3 },
-    { META | '=', reserve_set_4 },
-    { META | 'B', backword },
-    { META | 'C', capword },
-    { META | 'D', delfword },
-    { META | 'F', forwword },
-    { META | 'G', gotoline },
-    { META | 'J', justpara },
-    { META | 'H', qreplace },
-    { META | 'K', killtext },
-    { META | 'L', lowerword },
-    { META | 'M', setgmode },
-    { META | 'N', gotoeop },
-    { META | 'P', gotobop },
-    { META | 'Q', quit },
-    { META | 'R', sreplace },
-    { META | 'S', filesave },       /* alternative P.K.     */
-    { META | 'U', yank },
-    { META | 'V', backpage },
-    { META | 'W', forwsearch },
-    { META | 'O', openline },
-    { META | 'X', namedcmd },
-    { META | 'Z', quickexit },
-    { META | 0x7F, delbword },
-    { SPEC | '1', command_mode_activate_command },     /* F1 - Command Mode */
-    { SPEC | '2', yank },
-    { SPEC | '3', killregion },
-    { SPEC | '4', setmark },
-    { SPEC | '5', backpage },
-    { SPEC | '6', forwpage },
-    { SPEC | 'A', backline },
-    { SPEC | 'B', forwline },
-    { SPEC | 'C', forwchar },
-    { SPEC | 'D', backchar },
-    { SPEC | 'c', metafn },
-    { SPEC | 'd', backchar },
-    { SPEC | 'e', forwline },
-    { SPEC | 'H', gotobob },
-    { SPEC | 'i', cex },
-    { SPEC | 'L', insspace },           /* Insert key */
-    { SPEC | 'P', nanox_help_command },
-    { SPEC | 'Q', filesave },
-    { SPEC | 'R', filefind },
-    { SPEC | 'S', quit },
-    { SPEC | 'U', fisearch },
-    { SPEC | 'W', sed_replace_command },  /* F6 - Sed-style regex replace */
-    { SPEC | 'X', cutln_trigger },        /* F7 - CutLn Trigger */
-    { SPEC | SHIFT | 'X', cutln_copy },   /* Shift+F7 - CutLn Copy */
-    { SPEC | CONTROL | 'X', cutln_paste_menu }, /* Ctrl+F7 - Paste Menu */
-    { SPEC | 'Y', yank },
-    { SPEC | '`', reserve_jump_1 },
-    { SPEC | 'a', reserve_jump_2 },
-    { SPEC | '{', reserve_jump_3 },
-    { SPEC | '}', reserve_jump_4 },
-    { SPEC | CONTROL | '`', reserve_set_1 },
-    { SPEC | CONTROL | 'a', reserve_set_2 },
-    { SPEC | CONTROL | '{', reserve_set_3 },
-    { SPEC | CONTROL | '}', reserve_set_4 },
-    { SPEC | META | '`', reserve_set_1 },
-    { SPEC | META | 'a', reserve_set_2 },
-    { SPEC | META | '{', reserve_set_3 },
-    { SPEC | META | '}', reserve_set_4 },
 
-    { 0x7F, backdel },
-    { SPEC | 0x7F, forwdel },           /* Delete key (VT100 CSI 3 ~) */
+    /* SLOT SWITCHING */
+    { SPEC | '`', reserve_jump_1 },       /* F9 */
+    { CONTROL | '1', reserve_jump_1 },
+    { SPEC | 'a', reserve_jump_2 },       /* F10 */
+    { CONTROL | '2', reserve_jump_2 },
+    { SPEC | '{', reserve_jump_3 },       /* F11 */
+    { CONTROL | '3', reserve_jump_3 },
+    { SPEC | '}', reserve_jump_4 },       /* F12 */
+    { CONTROL | '4', reserve_jump_4 },
 
-    /* special internal bindings */
-    { SPEC | META | 'W', wrapword },    /* called on word wrap */
-    { SPEC | META | 'C', nullproc },    /*  every command input */
-    { SPEC | META | 'R', nullproc },    /*  on file read */
-    { SPEC | META | 'X', nullproc },    /*  on window change P.K. */
-
-    /* End of file, Beginning of file bindings */
-    { SPEC | 'F', gotoeob},
+    /* End of table */
     { 0, NULL }
 };
 

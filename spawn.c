@@ -39,7 +39,7 @@ int spawncli(int f, int n)
         }
     }
 
-    movecursor(term.t_nrow, 0);     /* Seek to last line.   */
+    movecursor(term->t_nrow, 0);     /* Seek to last line.   */
     TTflush();
     TTclose();              /* stty to old settings */
     TTkclose();             /* Close "keyboard" */
@@ -57,9 +57,9 @@ int spawncli(int f, int n)
  * redraw with complete window size checking.
  *      -lbt
  */
-    chg_width = term.t_ncol;
-    chg_height = term.t_nrow + 1;
-    term.t_nrow = term.t_ncol = 0;
+    chg_width = term->t_ncol;
+    chg_height = term->t_nrow + 1;
+    term->t_nrow = term->t_ncol = 0;
     return TRUE;
 }
 

@@ -3,7 +3,7 @@
  * Full Minibuffer Window Implementation for UTF-8 ISearch
  * 
  * This implementation provides:
- * - Dedicated 1-line minibuffer window/buffer at term.t_nrow
+ * - Dedicated 1-line minibuffer window/buffer at term->t_nrow
  * - Cloned show_line() and updateline() logic for minibuffer rendering  
  * - Native linsert()/ldelete() for all string manipulations
  * - Direct Unicode code point output via TTputc() (no double-encoding)
@@ -21,7 +21,7 @@
 #include "utf8.h"
 #include "util.h"
 
-extern struct terminal term;
+extern struct terminal *term;
 
 /* ====================================================================
  * MINIBUFFER WINDOW SYSTEM
@@ -191,13 +191,21 @@ void minibuf_update(const char *prompt)
         return;
     
     /* Move to bottom line */
-    movecursor(term.t_nrow, 0);
+    movecursor(term->t_nrow, 0);
     
-    /* Output prompt - each byte with sign-extension masking */
-    while (prompt && *prompt) {
-        TTputc((unsigned char)*prompt & 0xFF);
-        prompt++;
-        col++;
+    /* Output prompt - each byte with proper UTF-8 handling */
+    if (prompt) {
+        unsigned char *p = (unsigned char *)prompt;
+        int plen = strlen(prompt);
+        int pi = 0;
+        while (pi < plen) {
+            unicode_t uc;
+            int bytes = utf8_to_unicode(p, pi, plen, &uc);
+            if (bytes <= 0) break;
+            TTputc(uc);
+            col += mystrnlen_raw_w(uc);
+            pi += bytes;
+        }
     }
     
     /* Get minibuffer line */
@@ -206,7 +214,7 @@ void minibuf_update(const char *prompt)
         /* Empty buffer, just clear to EOL */
         TTeeol();
         TTflush();
-        movecursor(term.t_nrow, col);
+        movecursor(term->t_nrow, col);
         TTflush();
         return;
     }
@@ -216,7 +224,7 @@ void minibuf_update(const char *prompt)
     len = lp->l_used;
     i = 0;
     
-    while (i < len && col < term.t_ncol - 1) {
+    while (i < len && col < term->t_ncol - 1) {
         /* Convert UTF-8 bytes to Unicode code point */
         int bytes = utf8_to_unicode(text, i, len, &c);
         
@@ -226,7 +234,7 @@ void minibuf_update(const char *prompt)
         /* Check display width using mystrnlen_raw_w for CJK */
         int char_width = mystrnlen_raw_w(c);
         
-        if (col + char_width >= term.t_ncol - 1)
+        if (col + char_width >= term->t_ncol - 1)
             break;
         
         /* CRITICAL: Pass Unicode code point to TTputc, NOT raw bytes!
@@ -258,7 +266,7 @@ void minibuf_update(const char *prompt)
         i += bytes;
     }
     
-    movecursor(term.t_nrow, cursor_col);
+    movecursor(term->t_nrow, cursor_col);
     TTflush();
 }
 
@@ -273,7 +281,7 @@ void minibuf_show(const char *msg)
     unsigned char *text;
     
     /* Move to bottom line */
-    movecursor(term.t_nrow, 0);
+    movecursor(term->t_nrow, 0);
     
     if (msg == NULL || *msg == '\0') {
         TTeeol();
@@ -286,7 +294,7 @@ void minibuf_show(const char *msg)
     len = strlen(msg);
     i = 0;
     
-    while (i < len && col < term.t_ncol - 1) {
+    while (i < len && col < term->t_ncol - 1) {
         /* Convert UTF-8 bytes to Unicode code point */
         int bytes = utf8_to_unicode(text, i, len, &c);
         
@@ -301,7 +309,7 @@ void minibuf_show(const char *msg)
         /* Check display width using mystrnlen_raw_w for CJK */
         int char_width = mystrnlen_raw_w(c);
         
-        if (col + char_width >= term.t_ncol - 1)
+        if (col + char_width >= term->t_ncol - 1)
             break;
         
         /* CRITICAL: Pass Unicode code point to TTputc, NOT raw bytes!
@@ -411,11 +419,11 @@ static int cmd_buff[CMDBUFLEN];
 static int cmd_offset;
 static int cmd_reexecute = -1;
 
-/* Come here on the next term.t_getchar call */
+/* Come here on the next term->t_getchar call */
 int uneat(void)
 {
     int c;
-    term.t_getchar = saved_get_char;
+    term->t_getchar = saved_get_char;
     c = eaten_char;
     eaten_char = -1;
     return c;
@@ -426,8 +434,8 @@ void reeat(int c)
     if (eaten_char != -1)
         return;
     eaten_char = c;
-    saved_get_char = term.t_getchar;
-    term.t_getchar = uneat;
+    saved_get_char = term->t_getchar;
+    term->t_getchar = uneat;
 }
 
 /* Get character for search */
@@ -548,9 +556,15 @@ start_over:
     
     /* Handle initial Control-S or Control-R */
     if ((c == IS_FORWARD) || (c == IS_REVERSE) || (expc == metac)) {
-        /* Reuse old pattern */
-        for (int i = 0; pat[i] != 0; i++) {
-            minibuf_insert_char((unsigned char)pat[i]);
+        /* Reuse old pattern - decode UTF-8 to Unicode before inserting */
+        int i = 0;
+        int pat_len = strlen(pat);
+        while (i < pat_len) {
+            unicode_t uc;
+            int bytes = utf8_to_unicode((unsigned char *)pat, i, pat_len, &uc);
+            if (bytes <= 0) break;
+            minibuf_insert_char(uc);
+            i += bytes;
         }
         minibuf_update(prompt);
         
@@ -654,8 +668,7 @@ start_over:
         
         /* Attempt search */
         if (!status) {
-            TTputc(BELL);
-            TTflush();
+            /* Bell disabled */
         } else if (strlen(pat) > 0 && !(status = checknext(pat[strlen(pat) - 1], pat, n))) {
             status = scanmore(pat, n);
         }
@@ -703,15 +716,14 @@ int scanmore(char *patrn, int dir)
     int sts;
     
     if (dir < 0) {
-        rvstrcpy(tap, patrn);
+        rvstrscpy(tap, patrn, NPAT);
         sts = scanner(tap, REVERSE, PTBEG);
     } else {
         sts = scanner(patrn, FORWARD, PTEND);
     }
     
     if (!sts) {
-        TTputc(BELL);
-        TTflush();
+        /* Bell disabled */
     }
     
     return sts;

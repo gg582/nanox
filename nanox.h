@@ -27,6 +27,7 @@ struct nanox_config {
     bool soft_tab;
     int soft_tab_width;
     bool case_sensitive_default;
+    bool nonr;
 };
 
 extern struct nanox_config nanox_cfg;

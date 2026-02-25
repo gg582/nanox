@@ -10,7 +10,6 @@
  * sceen size has changed.
  *  -lbt
  */
-#define termdef 1               /* Don't define "term" external. */
 
 #include <curses.h>
 #include <stdio.h>
@@ -49,8 +48,10 @@ static char *UP, PC, *CM, *CE, *CL, *SO, *SE, *ZH, *ZR;
 static char *TI, *TE;
 
 static void tcapitalic(int state);
+static void tcap_set_colors(int fg, int bg);
+static void tcap_set_attrs(int bold, int underline, int italic);
 
-struct terminal term = {
+struct terminal tcap_term = {
     0,                  /* These four values are set dynamically at open time. */
     0,
     0,
@@ -71,6 +72,8 @@ struct terminal term = {
     tcapbeep,
     tcaprev,
     tcapitalic,
+    tcap_set_colors,
+    tcap_set_attrs,
     tcapcres,
 };
 
@@ -95,22 +98,22 @@ void tcapopen(void)
 
     /* Get screen size from system, or else from termcap.  */
     getscreensize(&int_col, &int_row);
-    term.t_nrow = int_row - 1;
-    term.t_ncol = int_col;
+    tcap_term.t_nrow = int_row - 1;
+    tcap_term.t_ncol = int_col;
 
-    if ((term.t_nrow <= 0)
-        && (term.t_nrow = (short)tgetnum("li") - 1) == -1) {
+    if ((tcap_term.t_nrow <= 0)
+        && (tcap_term.t_nrow = (short)tgetnum("li") - 1) == -1) {
         puts("termcap entry incomplete (lines)");
         exit(1);
     }
 
-    if ((term.t_ncol <= 0)
-        && (term.t_ncol = (short)tgetnum("co")) == -1) {
+    if ((tcap_term.t_ncol <= 0)
+        && (tcap_term.t_ncol = (short)tgetnum("co")) == -1) {
         puts("Termcap entry incomplete (columns)");
         exit(1);
     }
-    term.t_mrow = MAXROW;
-    term.t_mcol = MAXCOL;
+    tcap_term.t_mrow = MAXROW;
+    tcap_term.t_mcol = MAXCOL;
     p = tcapbuf;
     t = tgetstr("pc", &p);
     if (t)
@@ -154,7 +157,7 @@ void tcapopen(void)
 
 void tcapclose(void)
 {
-    putpad(tgoto(CM, 0, term.t_nrow));
+    putpad(tgoto(CM, 0, tcap_term.t_nrow));
     putpad(TE);
     ttflush();
     ttclose();
@@ -229,6 +232,51 @@ static void tcapitalic(int state)
 int tcapcres(char *res)
 {
     return TRUE;
+}
+
+/* Change color status */
+static void tcap_set_colors(int fg, int bg)
+{
+    char buf[64];
+    if (fg == -1) {
+        ttputc(ESC); ttputc('['); ttputc('3'); ttputc('9'); ttputc('m');
+    } else if (fg & 0x01000000) {
+        snprintf(buf, sizeof(buf), "\033[38;2;%d;%d;%dm",
+            (fg >> 16) & 0xFF, (fg >> 8) & 0xFF, fg & 0xFF);
+        putpad(buf);
+    } else if (fg >= 8 && fg < 16) {
+        snprintf(buf, sizeof(buf), "\033[%dm", 90 + (fg - 8));
+        putpad(buf);
+    } else {
+        snprintf(buf, sizeof(buf), "\033[%dm", 30 + fg);
+        putpad(buf);
+    }
+
+    if (bg == -1) {
+        ttputc(ESC); ttputc('['); ttputc('4'); ttputc('9'); ttputc('m');
+    } else if (bg & 0x01000000) {
+        snprintf(buf, sizeof(buf), "\033[48;2;%d;%d;%dm",
+            (bg >> 16) & 0xFF, (bg >> 8) & 0xFF, bg & 0xFF);
+        putpad(buf);
+    } else if (bg >= 8 && bg < 16) {
+        snprintf(buf, sizeof(buf), "\033[%dm", 100 + (bg - 8));
+        putpad(buf);
+    } else {
+        snprintf(buf, sizeof(buf), "\033[%dm", 40 + bg);
+        putpad(buf);
+    }
+}
+
+/* Change attribute status */
+static void tcap_set_attrs(int bold, int underline, int italic)
+{
+    if (bold) { ttputc(ESC); ttputc('['); ttputc('1'); ttputc('m'); }
+    else { ttputc(ESC); ttputc('['); ttputc('2'); ttputc('2'); ttputc('m'); }
+    
+    if (underline) { ttputc(ESC); ttputc('['); ttputc('4'); ttputc('m'); }
+    else { ttputc(ESC); ttputc('['); ttputc('2'); ttputc('4'); ttputc('m'); }
+    
+    tcapitalic(italic);
 }
 
 void tcapbeep(void)

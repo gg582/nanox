@@ -3,8 +3,6 @@
  *  ncurses video driver for Nanox
  */
 
-#define termdef 1
-
 #define _XOPEN_SOURCE_EXTENDED 1
 #include <curses.h>
 #include <locale.h>
@@ -40,7 +38,7 @@ void ncurses_set_colors(int fg, int bg);
 void ncurses_set_attrs(int bold, int underline, int italic);
 int ncurses_cres(char *res);
 
-struct terminal term = {
+struct terminal ncurses_term = {
     0, 0, 0, 0,
     MARGIN, SCRSIZ, NPAUSE,
     ncurses_open,
@@ -107,10 +105,10 @@ void ncurses_open(void) {
         start_color();
         use_default_colors();
     }
-    term.t_nrow = LINES - 1;
-    term.t_ncol = COLS;
-    term.t_mrow = MAXROW;
-    term.t_mcol = MAXCOL;
+    ncurses_term.t_nrow = LINES - 1;
+    ncurses_term.t_ncol = COLS;
+    ncurses_term.t_mrow = MAXROW;
+    ncurses_term.t_mcol = MAXCOL;
 }
 
 void ncurses_close(void) {
@@ -132,23 +130,23 @@ int ncurses_getchar(void) {
 
     if (result == KEY_CODE_YES) {
         switch (wc) {
-        case KEY_UP: return SPEC | 'P';
-        case KEY_DOWN: return SPEC | 'N';
-        case KEY_LEFT: return SPEC | 'B';
-        case KEY_RIGHT: return SPEC | 'F';
-        case KEY_PPAGE: return SPEC | 'Z';
-        case KEY_NPAGE: return SPEC | 'V';
-        case KEY_HOME: return SPEC | '<';
-        case KEY_END: return SPEC | '>';
-        case KEY_DC: return SPEC | 'D';
+        case KEY_UP: return SPEC | 'A';
+        case KEY_DOWN: return SPEC | 'B';
+        case KEY_LEFT: return SPEC | 'D';
+        case KEY_RIGHT: return SPEC | 'C';
+        case KEY_PPAGE: return SPEC | '5';
+        case KEY_NPAGE: return SPEC | '6';
+        case KEY_HOME: return SPEC | 'H';
+        case KEY_END: return SPEC | 'F';
+        case KEY_IC: return SPEC | 'L';
+        case KEY_DC: return SPEC | 127;
         case KEY_BACKSPACE: return 0x08;
         default:
             if (wc >= KEY_F(1) && wc <= KEY_F(12)) {
-                int fn = (int)(wc - KEY_F(1));
-                static const int spec_map[12] = {
-                    '1','2','3','4','5','6','7','8','9','0','-','='
+                static const int f_map[] = {
+                    'P', 'Q', 'R', 'S', 'U', 'W', 'X', 'Y', '`', 'a', '{', '}'
                 };
-                return SPEC | spec_map[fn];
+                return SPEC | f_map[wc - KEY_F(1)];
             }
             return 0;
         }
@@ -161,10 +159,14 @@ int ncurses_getchar(void) {
 }
 
 int ncurses_putchar(int c) {
-    char buf[8];
-    int len = unicode_to_utf8(c, buf);
-    buf[len] = 0;
-    addstr(buf);
+    cchar_t wc;
+    wchar_t wstr[2];
+    wstr[0] = (wchar_t)c;
+    wstr[1] = L'\0';
+    
+    if (setcchar(&wc, wstr, current_attr, current_pair, NULL) == OK) {
+        add_wch(&wc);
+    }
     return 0;
 }
 

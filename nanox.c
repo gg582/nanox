@@ -23,7 +23,7 @@
 #include "colorscheme.h"
 #include "paste_slot.h"
 
-extern struct terminal term;
+extern struct terminal *term;
 
 struct nanox_config nanox_cfg = {
     .hint_bar = true,
@@ -176,6 +176,7 @@ static void config_defaults(void)
     nanox_cfg.soft_tab = false;
     nanox_cfg.soft_tab_width = 8;
     nanox_cfg.case_sensitive_default = false;
+    nanox_cfg.nonr = false;
 }
 
 static bool parse_bool(const char *value, bool *out)
@@ -223,6 +224,9 @@ static void parse_ui_option(const char *key, const char *value)
             for (char *p = nanox_cfg.help_language; *p; ++p)
                 *p = tolower((unsigned char)*p);
         }
+    } else if (strcasecmp(key, "nonr") == 0) {
+        if (!parse_bool(value, &nanox_cfg.nonr))
+            mark_config_error();
     }
 }
 
@@ -425,7 +429,7 @@ const char *nanox_lamp_label(void)
 
 int nanox_text_rows(void)
 {
-    int rows = term.t_nrow - 2;
+    int rows = term->t_nrow - 2;
     if (rows < 1)
         rows = 1;
     return rows;
@@ -433,13 +437,13 @@ int nanox_text_rows(void)
 
 int nanox_hint_top_row(void)
 {
-    int row = term.t_nrow - 2;
+    int row = term->t_nrow - 2;
     return row < 0 ? 0 : row;
 }
 
 int nanox_hint_bottom_row(void)
 {
-    int row = term.t_nrow - 1;
+    int row = term->t_nrow - 1;
     return row < 0 ? 0 : row;
 }
 
@@ -516,161 +520,55 @@ static void help_putsn(const char *text, int n)
 
 /* Help System Enhancements */
 
+static const char *nanox_help_sheet[] = {
+    "===============================================================================",
+    "=>                      NANOX SYSTEM BINDINGS & SEARCH SPEC",
+    "-------------------------------------------------------------------------------",
+    "FILE & SLOT CONTROL      EDITING & SEARCH        SEARCH SUFFIX LOGIC",
+    "F2 / ^S : Save File      F7 / ^X / ^K : Cut      keyword&nx : Search Forward",
+    "F3 / ^O : Open File      F8 / ^V / ^Y : Paste    keyword&pr : Search Backward",
+    "F4 / ^Q : Quit nanox     F5 / ^F      : Search   ---------------------------",
+    "F1 / ^H : Help Menu                                * Interactive (y/n) prompt",
+    "F9-F12 / ^1-^4 : Slot    ----------------------    appears after each match.",
+    "===============================================================================",
+    NULL
+};
+
 void nanox_help_render(void)
 {
-    load_help_file();
-    if (!dynamic_topics) return;
+    if (!help_active)
+        return;
 
-    /* Handle screen resize while help is active */
-    extern int chg_width, chg_height;
-    if (chg_width || chg_height) {
-        extern int newscreensize(int h, int w);
-        newscreensize(chg_height, chg_width);
-    }
-
-    /* Force Clean White Screen (Black FG, White BG) */
-    help_puts("\033[0m");       /* Reset */
-    help_puts("\033[30;47m");   /* Black on White */
-    help_puts("\033[H");        /* Home Cursor */
-    help_puts("\033[2J");       /* Clear Screen */
-
-    int visible_rows = nanox_hint_top_row() - 3;
-    if (visible_rows < 1) visible_rows = 1;
     int max_r = nanox_hint_top_row() - 1;
 
-    movecursor(0, 0);
-    if (help_show_section) {
-        /* Header */
-        help_puts(" [ HELP: ");
-        help_puts(dynamic_topics[help_selected].title);
-        help_puts(" ]");
-
-        movecursor(1, 0);
-        for (int i = 0; i < term.t_ncol; i++) help_puts("-");
-
-        /* Content with Visual Wrapping */
-        int r = 2;
-        struct nanox_help_topic *topic = &dynamic_topics[help_selected];
-        
-        for (size_t i = help_section_scroll; i < topic->line_count && r < max_r; ++i) {
-            char *line = topic->lines[i];
-            size_t len = strlen(line);
-
-            /* If empty line, print nothing but move down */
-            if (len == 0) {
-                if (i == help_section_scroll && help_section_sub_scroll > 0) {
-                    /* Should not happen for empty line, but safety check */
-                } else {
-                    movecursor(r, 0);
-                    help_puts("  ");
-                    r++;
-                }
-                continue;
-            }
-
-            size_t current_pos = 0;
-            int avail_width = term.t_ncol - 2;
-            if (avail_width < 1) avail_width = 1;
-            int current_sub_line = 0;
-
-            while (current_pos < len && r < max_r) {
-                int chunk_len = 0;
-                int chunk_width = 0;
-                size_t idx = current_pos;
-
-                /* Calculate how much fits */
-                while (idx < len) {
-                    unicode_t u;
-                    unsigned bytes = utf8_to_unicode((unsigned char*)line, idx, len, &u);
-                    if (bytes == 0) bytes = 1; 
-
-                    int w = unicode_width(u);
-                    if (w < 0) w = 0;
-
-                    if (chunk_width + w > avail_width) break;
-
-                    chunk_width += w;
-                    chunk_len += bytes;
-                    idx += bytes;
-                }
-                
-                /* Ensure progress */
-                if (chunk_len == 0 && idx < len) {
-                     unicode_t u;
-                     unsigned bytes = utf8_to_unicode((unsigned char*)line, idx, len, &u);
-                     chunk_len = bytes;
-                }
-
-                /* Check if we should skip this visual line due to scrolling */
-                if (i == help_section_scroll && current_sub_line < help_section_sub_scroll) {
-                    current_sub_line++;
-                    current_pos += chunk_len;
-                    continue;
-                }
-
-                movecursor(r, 0);
-                help_puts("  ");
-                help_putsn(line + current_pos, chunk_len);
-
-                current_pos += chunk_len;
-                current_sub_line++;
-                r++;
-            }
-        }
-
-        /* Footer */
-        movecursor(nanox_hint_top_row() - 1, 0);
-        for (int i = 0; i < term.t_ncol; i++) help_puts("-");
-        movecursor(nanox_hint_top_row() - 1, 2);
-        help_puts(" i/k to Scroll Up/Down, Backspace: Back, F1: Close ");
-    } else {
-        /* Header */
-        help_puts(" [ Nanox Help System ]");
-
-        movecursor(1, 0);
-        for (int i = 0; i < term.t_ncol; i++) help_puts("-");
-
-        /* Menu */
-        int r = 2;
-        for (size_t i = help_scroll; i < dynamic_topic_count && r < max_r; ++i, ++r) {
-            movecursor(r, 0);
-            if ((int)i == help_selected) {
-                help_puts(" > ");
-                help_puts(dynamic_topics[i].title);
-                help_puts(" <");
-            } else {
-                help_puts("   ");
-                help_puts(dynamic_topics[i].title);
-            }
-        }
-
-        /* Footer */
-        movecursor(nanox_hint_top_row() - 1, 0);
-        for (int i = 0; i < term.t_ncol; i++) help_puts("-");
-        movecursor(nanox_hint_top_row() - 1, 2);
-        help_puts(" Up: i, Down: k, Enter: View, F1/Esc: Exit ");
+    /* Clear display area */
+    TTsetcolors(-1, -1);
+    for (int r = 0; r <= max_r; ++r) {
+        movecursor(r, 0);
+        for (int c = 0; c < term->t_ncol; ++c) help_puts(" ");
     }
+
+    /* Render Sheet */
+    movecursor(0, 0);
+    help_puts(" [ Nanox Help Sheet ]");
+
+    for (int i = 0; nanox_help_sheet[i] != NULL && i + 2 < max_r; ++i) {
+        movecursor(i + 2, 2);
+        help_puts(nanox_help_sheet[i]);
+    }
+
+    /* Footer */
+    movecursor(max_r, 0);
+    for (int i = 0; i < term->t_ncol; i++) help_puts("-");
+    movecursor(max_r, 2);
+    help_puts(" Press F1, ESC or Backspace to Exit Help ");
+
+    TTsetcolors(-1, -1);
     ttflush();
 }
 int nanox_help_command(int f, int n)
 {
-    load_help_file();
-    if (!dynamic_topics) {
-        mlwrite("Error: Help file (emacs.hlp) not found!");
-        nanox_set_lamp(NANOX_LAMP_ERROR);
-        return FALSE;
-    }
-
     help_active = true;
-    help_selected = 0;
-    help_scroll = 0;
-    help_show_section = false;
-    help_section_scroll = 0;
-    help_section_sub_scroll = 0;
-
-    /* * Do NOT call update(TRUE) here. On large multi-byte files, 
-     * update() hangs calculating columns. We skip it and draw directly.
-     */
     sgarbf = TRUE;
     nanox_help_render();
     return TRUE;
@@ -680,7 +578,7 @@ void help_close(void)
 {
     help_active = false;
     sgarbf = TRUE;
-    update(TRUE);  /* Force immediate screen redraw when exiting help */
+    update(TRUE);
 }
 
 int nanox_help_handle_key(int key)
@@ -688,87 +586,25 @@ int nanox_help_handle_key(int key)
     if (!help_active)
         return FALSE;
 
-    if (key < 0) return TRUE;
-
-    /* Normalize key for navigation (ignore modifiers) */
+    /* Normalize key for exit (F1, ESC, Backspace, ^H, ^G) */
     int base_key = key;
     if (key & SPEC) {
         base_key = SPEC | (key & 0xFF);
     }
-
-    int visible_rows = nanox_hint_top_row() - 3;
-    if (visible_rows < 1) visible_rows = 1;
 
     switch (base_key) {
     case CONTROL | 'G':
     case CONTROL | '[':
     case 27:
     case SPEC | 'P': /* F1 */
+    case 0x7F:       /* Backspace */
+    case CONTROL | 'H':
         help_close();
         return TRUE;
-
-    case 0x7F: /* Backspace */
-    case CONTROL | 'H':
-        if (help_show_section) {
-            help_show_section = false;
-        } else {
-            help_close();
-            return TRUE;
-        }
-        break;
-
-    case CONTROL | 'M':
-    case '\r':
-    case CONTROL | 'J':
-    case '\n':
-        if (!help_show_section) {
-            help_show_section = true;
-            help_section_scroll = 0;
-        }
-        break;
-
-    case 'i': /* Up */
-        if (help_show_section) {
-            if (help_section_sub_scroll > 0) {
-                help_section_sub_scroll--;
-            } else if (help_section_scroll > 0) {
-                help_section_scroll--;
-                struct nanox_help_topic *topic = &dynamic_topics[help_selected];
-                int rows = get_visual_row_count(topic->lines[help_section_scroll], term.t_ncol - 2);
-                help_section_sub_scroll = rows > 0 ? rows - 1 : 0;
-            }
-        } else {
-            if (help_selected > 0) {
-                --help_selected;
-                if (help_selected < help_scroll) help_scroll = help_selected;
-            }
-        }
-        break;
-
-    case 'k': /* Down */
-        if (help_show_section) {
-            struct nanox_help_topic *topic = &dynamic_topics[help_selected];
-            int rows = get_visual_row_count(topic->lines[help_section_scroll], term.t_ncol - 2);
-            
-            if (help_section_sub_scroll + 1 < rows) {
-                help_section_sub_scroll++;
-            } else if (help_section_scroll < (int)topic->line_count - 1) {
-                help_section_scroll++;
-                help_section_sub_scroll = 0;
-            }
-        } else {
-            if (help_selected < (int)dynamic_topic_count - 1) {
-                ++help_selected;
-                if (help_selected >= help_scroll + visible_rows)
-                    help_scroll++;
-            }
-        }
-        break;
-
     default:
+        /* Any other key also closes help or just ignore */
         break;
     }
-    nanox_help_render();
     return TRUE;
 }
 
@@ -874,7 +710,7 @@ int paste_slot_handle_key(int c)
     extern int update(int force);
     extern int sgarbf;
     int action_taken = FALSE;
-    
+
     /* Check for 'p' or 'P' key or Enter - insert paste */
     if (c == 'p' || c == 'P' || c == '\r' || c == '\n' || c == 13) {
         /* Insert the paste slot content */
@@ -885,7 +721,7 @@ int paste_slot_handle_key(int c)
     else if (c == (CONTROL | '[') || c == 27) {
         action_taken = TRUE;
     }
-    
+
     if (action_taken) {
         paste_slot_set_active(0);
         paste_slot_clear();
@@ -895,7 +731,7 @@ int paste_slot_handle_key(int c)
         update(TRUE);
         return TRUE;
     }
-    
+
     /* For now, just show message for other keys */
     mlwrite("Press 'p' to paste, ESC to cancel");
     return TRUE;

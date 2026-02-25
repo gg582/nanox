@@ -56,15 +56,15 @@ int newsize(int f, int n)
 
     /* if the command defaults, assume the largest */
     if (f == FALSE)
-        n = term.t_mrow + 1;
+        n = term->t_mrow + 1;
 
     /* make sure it's in range */
-    if (n < 3 || n > term.t_mrow + 1) {
+    if (n < 3 || n > term->t_mrow + 1) {
         mlwrite("%%Screen size out of range");
         return FALSE;
     }
 
-    if (term.t_nrow == n - 1)
+    if (term->t_nrow == n - 1)
         return TRUE;
 
     /* Update the current window as needed */
@@ -72,7 +72,7 @@ int newsize(int f, int n)
     wp->w_flag |= WFHARD | WFMODE;
 
     /* screen is garbage */
-    term.t_nrow = n - 1;
+    term->t_nrow = n - 1;
     sgarbf = TRUE;
     return TRUE;
 }
@@ -87,18 +87,18 @@ int newwidth(int f, int n)
 {
     /* if the command defaults, assume the largest */
     if (f == FALSE)
-        n = term.t_mcol;
+        n = term->t_mcol;
 
     /* make sure it's in range */
-    if (n < 10 || n > term.t_mcol) {
+    if (n < 10 || n > term->t_mcol) {
         mlwrite("%%Screen width out of range");
         return FALSE;
     }
 
     /* otherwise, just re-width it (no big deal) */
-    term.t_ncol = n;
-    term.t_margin = n / 10;
-    term.t_scrsiz = n - (term.t_margin * 2);
+    term->t_ncol = n;
+    term->t_margin = n / 10;
+    term->t_scrsiz = n - (term->t_margin * 2);
 
     /* force window to redraw */
     curwp->w_flag |= WFHARD | WFMOVE | WFMODE;
