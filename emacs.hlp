@@ -1,10 +1,15 @@
 ===============================================================================
 =>                      NANOX SYSTEM BINDINGS & SEARCH SPEC
 -------------------------------------------------------------------------------
-FILE & SLOT CONTROL     EDITING & SEARCH        SEARCH SUFFIX LOGIC
-F2 / ^S : Save File     F7 / ^X : Cut(S:End)    keyword&nx : Search Forward
-F3 / ^O : Open File     F6 / ^W : Copy(S:End)   keyword&pr : Search Backward
-F4 / ^Q : Quit nanox    F8 / ^V : Paste         ---------------------------
-F1 / ^H : Help Menu     F5 / ^F : Search        * Interactive (y/n) prompt
-F9-F12 / ^1-^4 : Slot   ----------------------    appears after each match.
+FILE & SLOT CONTROL     EDITING & SEARCH        INDENT / OUTDENT
+F2 / ^S : Save File     F7 / ^X : Cut(S:End)    ^J / ^H : Start Range
+F3 / ^O : Open File     F6 / ^W : Copy(S:End)   ^S+J / ^S+H : End Range
+F4 / ^Q : Quit nanox    F8 / ^V : Paste         gg : Apply Range
+F1 / ^H : Help Menu     F5 / ^F : Search        BS : Cancel Range
+F9-F12 / ^1-^4 : Slot   ----------------------  ------------------
 ===============================================================================
+* ^S+J: Ctrl+Shift+J, ^S+H: Ctrl+Shift+H (End Range)
+* ^J: Ctrl+J, ^H: Ctrl+H (Start Range)
+* gg: Apply the selected indent/outdent to the range
+* BS: Backspace (Cancels current range operation)
+* Interactive (y/n) prompt appears after each search match.

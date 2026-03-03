@@ -11,6 +11,7 @@
 /*  possible names and paths of help files under different OSs  */
 static char *pathname[] = {
     ".emacsrc", "emacs.hlp",
+    "/usr/share/nanox/", "/usr/local/share/nanox/",
     "/usr/global/lib/", "/usr/local/bin/", "/usr/local/lib/",
     "/usr/local/", "/usr/lib/", ""
 };

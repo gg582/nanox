@@ -105,6 +105,11 @@ int confirmshell = TRUE;        /* Confirm before shell commands */
 int makebackup = TRUE;          /* Create backup files before overwriting */
 int removebackup = FALSE;       /* Remove backup files after successful save */
 
+struct line *indent_start_lp = NULL;
+struct line *indent_end_lp = NULL;
+int indent_range_type = 0;
+int indent_selection_active = FALSE;
+
 /* directive name table:
     This holds the names of all the directives....  */
 

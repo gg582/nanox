@@ -103,19 +103,30 @@ static void load_help_file(void)
 
     static char localized_name[32];
     char *path = NULL;
-
-    /* Check User Config Directory First */
-    static char config_path[PATH_MAX];
     char dir[512];
-    nanox_get_user_config_dir(dir, sizeof(dir));
-    nanox_path_join(config_path, sizeof(config_path), dir, "emacs.hlp");
-    if (nanox_file_exists(config_path))
-        path = config_path;
+    static char config_path[PATH_MAX];
+    static char localized_config_path[PATH_MAX];
 
-    if (!path && nanox_cfg.help_language[0]) {
+    nanox_get_user_config_dir(dir, sizeof(dir));
+
+    if (nanox_cfg.help_language[0]) {
         snprintf(localized_name, sizeof(localized_name), "emacs-%s.hlp", nanox_cfg.help_language);
-        path = flook(localized_name, TRUE);
+        nanox_path_join(localized_config_path, sizeof(localized_config_path), dir, localized_name);
+        if (nanox_file_exists(localized_config_path))
+            path = localized_config_path;
     }
+
+    if (!path) {
+        nanox_path_join(config_path, sizeof(config_path), dir, "emacs.hlp");
+        if (nanox_file_exists(config_path))
+            path = config_path;
+    }
+
+    if (!path && nanox_file_exists("emacs.hlp"))
+        path = "emacs.hlp";
+
+    if (!path && nanox_cfg.help_language[0])
+        path = flook(localized_name, TRUE);
     if (!path)
         path = flook("emacs.hlp", TRUE);
 
@@ -145,18 +156,32 @@ static void load_help_file(void)
             curr->lines = NULL;
             curr->line_count = 0;
             curr->line_cap = 0;
-        } else if (curr && strncmp(line, "-------", 7) != 0) {
-            if (curr->line_count >= curr->line_cap) {
-                size_t new_cap = curr->line_cap ? curr->line_cap * 2 : 16;
-                char **new_lines = realloc(curr->lines, sizeof(char *) * new_cap);
-                if (!new_lines) break;
-                curr->lines = new_lines;
-                curr->line_cap = new_cap;
+        } else {
+            if (!curr && len > 0) {
+                /* Create a default section if we have content before any => header */
+                struct nanox_help_topic *new_topics = realloc(dynamic_topics, sizeof(struct nanox_help_topic) * (dynamic_topic_count + 1));
+                if (!new_topics) break;
+                dynamic_topics = new_topics;
+                curr = &dynamic_topics[dynamic_topic_count++];
+                curr->title = malloc(strlen("Help Information") + 1);
+                if (curr->title) strcpy(curr->title, "Help Information");
+                curr->lines = NULL;
+                curr->line_count = 0;
+                curr->line_cap = 0;
             }
-            curr->lines[curr->line_count] = malloc(strlen(line) + 1);
-            if (curr->lines[curr->line_count]) {
-                strcpy(curr->lines[curr->line_count], line);
-                curr->line_count++;
+            if (curr) {
+                if (curr->line_count >= curr->line_cap) {
+                    size_t new_cap = curr->line_cap ? curr->line_cap * 2 : 16;
+                    char **new_lines = realloc(curr->lines, sizeof(char *) * new_cap);
+                    if (!new_lines) break;
+                    curr->lines = new_lines;
+                    curr->line_cap = new_cap;
+                }
+                curr->lines[curr->line_count] = malloc(strlen(line) + 1);
+                if (curr->lines[curr->line_count]) {
+                    strcpy(curr->lines[curr->line_count], line);
+                    curr->line_count++;
+                }
             }
         }
     }
@@ -532,13 +557,17 @@ static const char *nanox_help_sheet[] = {
     "===============================================================================",
     "=>                      NANOX SYSTEM BINDINGS & SEARCH SPEC",
     "-------------------------------------------------------------------------------",
-    "FILE & SLOT CONTROL     EDITING & SEARCH        SEARCH SUFFIX LOGIC",
-    "F2 / ^S : Save File     F7 / ^X : Cut(S:End)    keyword&nx : Search Forward",
-    "F3 / ^O : Open File     F6 / ^W : Copy(S:End)   keyword&pr : Search Backward",
-    "F4 / ^Q : Quit nanox    F8 / ^V : Paste         ---------------------------",
-    "F1 / ^H : Help Menu     F5 / ^F : Search        * Interactive (y/n) prompt",
-    "F9-F12 / ^1-^4 : Slot   ----------------------    appears after each match.",
+    "FILE & SLOT CONTROL     EDITING & SEARCH        INDENT / OUTDENT",
+    "F2 / ^S : Save File     F7 / ^X : Cut(S:End)    ^J / ^H : Start Range",
+    "F3 / ^O : Open File     F6 / ^W : Copy(S:End)   ^S+J / ^S+H : End Range",
+    "F4 / ^Q : Quit nanox    F8 / ^V : Paste         gg : Apply Range",
+    "F1 / ^H : Help Menu     F5 / ^F : Search        BS : Cancel Range",
+    "F9-F12 / ^1-^4 : Slot   ----------------------  ------------------",
     "===============================================================================",
+    "* ^S+J: Ctrl+Shift+J, ^S+H: Ctrl+Shift+H (End Range)",
+    "* ^J: Ctrl+J, ^H: Ctrl+H (Start Range)",
+    "* gg: Apply the selected indent/outdent to the range",
+    "* BS: Backspace (Cancels current range operation) ",
     NULL
 };
 
@@ -564,8 +593,11 @@ void nanox_help_render(void)
     if (dynamic_topics && dynamic_topic_count > 0) {
         int r = 2;
         for (size_t t = 0; t < dynamic_topic_count && r < max_r; t++) {
-            movecursor(r++, 2);
-            help_puts(dynamic_topics[t].title);
+            if (strcmp(dynamic_topics[t].title, "Help Information") != 0) {
+                movecursor(r++, 2);
+                help_puts("=> ");
+                help_puts(dynamic_topics[t].title);
+            }
             for (size_t l = 0; l < dynamic_topics[t].line_count && r < max_r; l++) {
                 movecursor(r++, 2);
                 help_puts(dynamic_topics[t].lines[l]);

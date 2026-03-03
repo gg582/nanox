@@ -158,6 +158,15 @@ configs-install:
 		fi; \
 		cp "$$f" "$(INSTALL_CONF)/$$rel"; \
 	done
+	$(E) "  HELP    " "emacs*.hlp -> " $(INSTALL_CONF)
+	$(Q) for hlp in emacs*.hlp; do \
+		[ -f "$$hlp" ] || continue; \
+		dest="$(INSTALL_CONF)/$$hlp"; \
+		if [ -f "$$dest" ]; then \
+			cp "$$dest" "$$dest.bak"; \
+		fi; \
+		cp "$$hlp" "$$dest"; \
+	done
 
 backups-clean:
 	$(E) "  CLEAN BACKUPS"

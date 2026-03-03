@@ -1128,6 +1128,299 @@ int indent(int f, int n)
 }
 
 /*
+ * Helper to adjust indentation by delta levels
+ */
+static void adjust_indent(struct line *lp, int delta)
+{
+    int step = (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
+    int cur = get_indent(lp);
+    int target = cur + delta * step;
+    if (target < 0) target = 0;
+    
+    struct line *save_lp = curwp->w_dotp;
+    int save_doto = curwp->w_doto;
+    
+    curwp->w_dotp = lp;
+    set_indent(target);
+    
+    if (save_lp == lp) {
+        /* set_indent already updated curwp->w_doto to end of indent */
+    } else {
+        curwp->w_dotp = save_lp;
+        curwp->w_doto = save_doto;
+    }
+}
+
+static long line_number_for(struct line *lp)
+{
+    if (lp == NULL)
+        return -1;
+    long lineno = 0;
+    struct line *scan = curbp->b_linep;
+    while ((scan = lforw(scan)) != curbp->b_linep) {
+        ++lineno;
+        if (scan == lp)
+            return lineno;
+    }
+    return -1;
+}
+
+static const char *indent_mode_label(void)
+{
+    return (indent_range_type < 0) ? "Outdent" : "Indent";
+}
+
+static char indent_start_key(void)
+{
+    return (indent_range_type < 0) ? 'H' : 'J';
+}
+
+static void announce_indent_state(const char *action)
+{
+    const char *mode = indent_mode_label();
+    char start_key = indent_start_key();
+    long start_line = line_number_for(indent_start_lp);
+    long end_line = line_number_for(indent_end_lp);
+
+    if (indent_start_lp && indent_end_lp && start_line > 0 && end_line > 0) {
+        long first = start_line;
+        long last = end_line;
+        if (first > last) {
+            long tmp = first;
+            first = last;
+            last = tmp;
+        }
+        mlwrite("[%s: %s lines %ld-%ld | gg to %s]", action, mode, first, last,
+                (indent_range_type < 0) ? "outdent" : "indent");
+        return;
+    }
+
+    if (indent_start_lp && start_line > 0) {
+        mlwrite("[%s: %s start line %ld | set end with Ctrl+Shift+%c, then gg]",
+                action, mode, start_line, start_key);
+        return;
+    }
+
+    if (indent_start_lp) {
+        mlwrite("[%s: %s start set | set end with Ctrl+Shift+%c, then gg]",
+                action, mode, start_key);
+        return;
+    }
+
+    if (indent_end_lp && end_line > 0) {
+        mlwrite("[%s: %s end line %ld | set start with Ctrl+%c]",
+                action, mode, end_line, start_key);
+        return;
+    }
+
+    if (indent_end_lp) {
+        mlwrite("[%s: %s end set | set start with Ctrl+%c]",
+                action, mode, start_key);
+        return;
+    }
+
+    mlwrite("[%s]", action);
+}
+
+static void indent_reset_range(void)
+{
+    indent_selection_active = FALSE;
+    indent_start_lp = NULL;
+    indent_end_lp = NULL;
+    indent_range_type = 0;
+}
+
+static int indent_set_range_from_mark(void)
+{
+    if (curwp->w_markp == NULL) {
+        indent_start_lp = NULL;
+        indent_end_lp = NULL;
+        mlwrite("[%s: Set start with Ctrl+%c first]", indent_mode_label(),
+                indent_start_key());
+        return FALSE;
+    }
+
+    indent_start_lp = curwp->w_markp;
+    indent_end_lp = curwp->w_dotp;
+
+    if (indent_start_lp == indent_end_lp)
+        return TRUE;
+
+    struct line *scan = curbp->b_linep;
+    struct line *first = NULL;
+    struct line *second = NULL;
+
+    while ((scan = lforw(scan)) != curbp->b_linep) {
+        if (scan == curwp->w_markp) {
+            first = curwp->w_markp;
+            second = curwp->w_dotp;
+            break;
+        }
+        if (scan == curwp->w_dotp) {
+            first = curwp->w_dotp;
+            second = curwp->w_markp;
+            break;
+        }
+    }
+
+    if (first == NULL || second == NULL) {
+        indent_start_lp = NULL;
+        indent_end_lp = NULL;
+        mlwrite("[%s: Selection invalid. Set range again]", indent_mode_label());
+        return FALSE;
+    }
+
+    indent_start_lp = first;
+    indent_end_lp = second;
+    return TRUE;
+}
+
+static int indent_begin_range(int f, int n, int type, const char *action)
+{
+    int status = setmark(f, n);
+    if (status != TRUE)
+        return status;
+
+    indent_range_type = type;
+    indent_selection_active = TRUE;
+    indent_start_lp = curwp->w_dotp;
+    indent_end_lp = NULL;
+    announce_indent_state(action);
+    return TRUE;
+}
+
+static int indent_finalize_range(int type, const char *action)
+{
+    indent_range_type = type;
+
+    if (!indent_selection_active) {
+        mlwrite("[%s: Set start with Ctrl+%c first]", indent_mode_label(),
+                indent_start_key());
+        return FALSE;
+    }
+
+    if (!indent_set_range_from_mark()) {
+        indent_reset_range();
+        return FALSE;
+    }
+
+    indent_selection_active = FALSE;
+    announce_indent_state(action);
+    return TRUE;
+}
+
+/* Ctrl+J: Set start point for indent */
+int indent_start_set(int f, int n)
+{
+    return indent_begin_range(f, n, 1, "Indent start set");
+}
+
+/* Ctrl+Shift+J: Set end point for indent */
+int indent_end_set(int f, int n)
+{
+    return indent_finalize_range(1, "Indent end set");
+}
+
+/* Ctrl+H: Set start point for outdent */
+int outdent_start_set(int f, int n)
+{
+    return indent_begin_range(f, n, -1, "Outdent start set");
+}
+
+/* Ctrl+Shift+H: Set end point for outdent */
+int outdent_end_set(int f, int n)
+{
+    return indent_finalize_range(-1, "Outdent end set");
+}
+
+/* gg: Apply indent/outdent to range */
+int indent_apply_range(int f, int n)
+{
+    if (indent_start_lp == NULL || indent_end_lp == NULL) {
+        mlwrite("[gg: Range not set. Use Ctrl+J/Ctrl+Shift+J or Ctrl+H/Ctrl+Shift+H]");
+        return FALSE;
+    }
+    if (curbp->b_mode & MDVIEW) return rdonly();
+
+    struct line *lp1 = indent_start_lp;
+    struct line *lp2 = indent_end_lp;
+    
+    /* Determine order */
+    struct line *scan = curbp->b_linep;
+    struct line *first = NULL;
+    struct line *last = NULL;
+    
+    while ((scan = lforw(scan)) != curbp->b_linep) {
+        if (scan == lp1) {
+            if (first == NULL) { first = lp1; last = lp2; }
+            break;
+        }
+        if (scan == lp2) {
+            if (first == NULL) { first = lp2; last = lp1; }
+            break;
+        }
+    }
+    
+    if (first == NULL) {
+        indent_reset_range();
+        mlwrite("[gg: Selection invalid. Mark the range again.]");
+        return FALSE;
+    }
+
+    long start_line = line_number_for(lp1);
+    long end_line = line_number_for(lp2);
+
+    scan = first;
+    while (scan != lforw(last)) {
+        adjust_indent(scan, indent_range_type);
+        scan = lforw(scan);
+    }
+    
+    lchange(WFHARD);
+    const char *mode = indent_mode_label();
+    if (start_line > 0 && end_line > 0) {
+        long first_line = start_line;
+        long last_line = end_line;
+        if (first_line > last_line) {
+            long tmp = first_line;
+            first_line = last_line;
+            last_line = tmp;
+        }
+        mlwrite("[gg: %s lines %ld-%ld applied]", mode, first_line, last_line);
+    } else {
+        mlwrite("[gg: %s range applied]", mode);
+    }
+    
+    /* Clear range after apply */
+    indent_reset_range();
+    return TRUE;
+}
+
+/* Backspace: Cancel operation */
+int indent_cancel(int f, int n)
+{
+    if (indent_start_lp != NULL || indent_end_lp != NULL || indent_selection_active) {
+        indent_reset_range();
+        mlwrite("[Indent selection canceled | start with Ctrl+J or Ctrl+H]");
+        return TRUE;
+    }
+    return backdel(f, n);
+}
+
+/* g prefix handler for gg */
+int g_prefix_handler(int f, int n)
+{
+    int c = getcmd();
+    if (c == 'g') {
+        return indent_apply_range(f, n);
+    }
+    /* Fallback: insert 'g' and then the next character */
+    linsert(1, 'g');
+    execute(c, FALSE, 1);
+    return TRUE;
+}
+
+/*
  * Delete forward. This is real easy, because the basic delete routine does
  * all of the work. Watches for negative arguments, and does the right thing.
  * If any argument is present, it kills rather than deletes, to prevent loss

@@ -27,14 +27,20 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | '5', backpage },           /* Page Up */
     { SPEC | '6', forwpage },           /* Page Down */
     { SPEC | 'L', insspace },           /* Insert */
-    { 0x7F, backdel },                  /* Backspace */
+    { 0x7F, indent_cancel },            /* Backspace / Cancel Indent */
     { SPEC | 0x7F, forwdel },           /* Delete */
     { CONTROL | 'I', insert_tab },      /* Tab */
     { CONTROL | 'M', insert_newline },  /* Enter */
 
+    /* Indentation/Outdentation */
+    { CONTROL | 'H', outdent_start_set },
+    { CONTROL | SHIFT | 'H', outdent_end_set },
+    { CONTROL | 'J', indent_start_set },
+    { CONTROL | SHIFT | 'J', indent_end_set },
+    { 'g', g_prefix_handler },
+
     /* SYSTEM */
     { SPEC | 'P', nanox_help_command },  /* F1 */
-    { CONTROL | 'H', nanox_help_command },
 
     /* FILE CONTROL */
     { SPEC | 'Q', filesave },            /* F2 */
