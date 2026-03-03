@@ -8,6 +8,9 @@
  *  modified by Petri Kutvonen
  */
 
+#ifndef ESTRUCT_H_
+#define ESTRUCT_H_
+
 #define MAXCOL  4096
 #define MAXROW  4096
 
@@ -417,3 +420,5 @@ struct magic {
         char *cclmap;
     } u;
 };
+
+#endif /* ESTRUCT_H_ */

@@ -91,8 +91,8 @@ For long lines that extend beyond the terminal width:
 | :--- | :--- | :--- | :--- |
 | **F1** | Help Menu | **F2** | Save File |
 | **F3** | Open File | **F4** | Quit Editor |
-| **F5** | Search Forward | **F6** | Query Replace |
-| **F7** | Kill Line | **F8** | Yank (Paste) |
+| **F5** | Search Forward | **F6** | Copy (S:End) |
+| **F7** | Cut (S:End) | **F8** | Yank (Paste) |
 | **F9-F12** | Jump to Slot | **Ctrl+F9-F12** | Set Slot |
 | **Alt+G** | Goto Line | **Alt+X** | Execute Command |
 
@@ -102,7 +102,7 @@ For users coming from a traditional Emacs background, Nanox maintains compatibil
 
 | Key | Action | Key | Action |
 | :--- | :--- | :--- | :--- |
-| **Ctrl+W** | Kill Region (Cut) | **Alt+Ctrl+Y** | Copy Region |
+| **Ctrl+X** | Cut (S:End) | **Ctrl+W** | Copy (S:End) |
 | **Ctrl+Y** | Yank (Paste) | **Alt+Space** | Set Mark |
 | **Ctrl+X Ctrl+X** | Exchange Point/Mark | **Ctrl+X Ctrl+U** | Upper Case Region |
 | **Ctrl+X Ctrl+L** | Lower Case Region | **Alt+Ctrl+R** | Query Replace |

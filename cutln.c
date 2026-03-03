@@ -23,7 +23,7 @@ int cutln_end_cut(int f, int n)
         mlwrite("Region cut.");
         return s;
     } else {
-        mlwrite("No selection active. Press Shift+F7 to start cut.");
+        mlwrite("No selection active. Press F7 to start cut.");
         return FALSE;
     }
 }
@@ -36,7 +36,7 @@ int cutln_start_cut(int f, int n)
     int s = setmark(f, n);
     if (s == TRUE) {
         cutln_active = TRUE;
-        mlwrite("Cut selection started. Press F7 to cut.");
+        mlwrite("Cut selection started. Press Shift+F7 to cut.");
     }
     return s;
 }
@@ -53,7 +53,7 @@ int cutln_end_copy(int f, int n)
         mlwrite("Region copied.");
         return s;
     } else {
-        mlwrite("No selection active. Press Shift+F6 to start copy.");
+        mlwrite("No selection active. Press F6 to start copy.");
         return FALSE;
     }
 }
@@ -66,7 +66,7 @@ int cutln_start_copy(int f, int n)
     int s = setmark(f, n);
     if (s == TRUE) {
         cutln_active = TRUE;
-        mlwrite("Copy selection started. Press F6 to copy.");
+        mlwrite("Copy selection started. Press Shift+F6 to copy.");
     }
     return s;
 }

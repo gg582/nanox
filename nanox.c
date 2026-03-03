@@ -533,8 +533,8 @@ static const char *nanox_help_sheet[] = {
     "=>                      NANOX SYSTEM BINDINGS & SEARCH SPEC",
     "-------------------------------------------------------------------------------",
     "FILE & SLOT CONTROL     EDITING & SEARCH        SEARCH SUFFIX LOGIC",
-    "F2 / ^S : Save File     F7 / ^X : Cut(S:Start)  keyword&nx : Search Forward",
-    "F3 / ^O : Open File     F6 / ^W : Copy(S:Start) keyword&pr : Search Backward",
+    "F2 / ^S : Save File     F7 / ^X : Cut(S:End)    keyword&nx : Search Forward",
+    "F3 / ^O : Open File     F6 / ^W : Copy(S:End)   keyword&pr : Search Backward",
     "F4 / ^Q : Quit nanox    F8 / ^V : Paste         ---------------------------",
     "F1 / ^H : Help Menu     F5 / ^F : Search        * Interactive (y/n) prompt",
     "F9-F12 / ^1-^4 : Slot   ----------------------    appears after each match.",
@@ -739,8 +739,8 @@ int paste_slot_handle_key(int c)
         paste_slot_insert();
         action_taken = TRUE;
     }
-    /* ESC key - cancel */
-    else if (c == (CONTROL | '[') || c == 27) {
+    /* ESC key, Ctrl+G, or Backspace - cancel */
+    else if (c == (CONTROL | '[') || (c & 0xFF) == 27 || c == (CONTROL | 'G') || c == 0x7F) {
         action_taken = TRUE;
     }
 
@@ -755,7 +755,7 @@ int paste_slot_handle_key(int c)
     }
 
     /* For now, just show message for other keys */
-    mlwrite("Press 'p' to paste, ESC to cancel");
+    mlwrite("Press 'p' to paste, ESC/Ctrl+G/BS to cancel");
     return TRUE;
 }
 

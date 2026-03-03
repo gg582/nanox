@@ -20,8 +20,7 @@
 #include "line.h"
 #include "utf8.h"
 #include "util.h"
-
-extern struct terminal *term;
+#include "completion.h"
 
 /* ====================================================================
  * MINIBUFFER WINDOW SYSTEM
@@ -352,9 +351,11 @@ void minibuf_get_text(char *dest, int max_len)
 int minibuf_input(const char *prompt, char *dest, int max_len)
 {
     int c;
+    char current_text[NPAT];
     
     /* Initialize minibuffer system */
     minibuf_init();
+    completion_init();
     if (minibuf_bp == NULL || minibuf_wp == NULL) {
         mlwrite("? Cannot initialize minibuffer");
         return FALSE;
@@ -367,40 +368,81 @@ int minibuf_input(const char *prompt, char *dest, int max_len)
     /* Main input loop using minibuffer */
     for (;;) {
         update(FALSE);
-        c = ectoc(get1key());
+        completion_draw(term->t_nrow, 0);
+        
+        c = getcmd();
         
         switch (c) {
         case IS_ABORT:
+        case (CONTROL | 'G'):
             /* Abort with Ctrl+G */
             mlerase();
+            completion_hide();
             return FALSE;
             
         case IS_NEWLINE:
         case '\n':
+        case (CONTROL | 'M'):
             /* Enter/Return - accept input */
             minibuf_get_text(dest, max_len);
             minibuf_clear();
             mlerase();
+            completion_hide();
             if (dest[0] == '\0')
                 return FALSE;
             return TRUE;
             
         case IS_BACKSP:
         case IS_RUBOUT:
+        case (CONTROL | 'H'):
             /* Backspace/Delete - remove last character */
             minibuf_delete_char(1);
+            minibuf_get_text(current_text, NPAT);
+            completion_update(current_text);
             minibuf_update(prompt);
             break;
             
         case 0x1B: /* ESC - cancel */
             mlerase();
+            completion_hide();
             return FALSE;
+            
+        case (SPEC | 'A'): /* Up Arrow */
+            completion_prev();
+            break;
+            
+        case (SPEC | 'B'): /* Down Arrow */
+            completion_next();
+            break;
+            
+        case (CONTROL | SHIFT | 'A'): /* Ctrl+Shift+A - Accept completion */
+            {
+                const char *selected = completion_get_selected();
+                if (selected) {
+                    minibuf_clear();
+                    /* Insert selected word - decode UTF-8 to Unicode before inserting */
+                    int i = 0;
+                    int sel_len = strlen(selected);
+                    while (i < sel_len) {
+                        unicode_t uc;
+                        int bytes = utf8_to_unicode((unsigned char *)selected, i, sel_len, &uc);
+                        if (bytes <= 0) break;
+                        minibuf_insert_char(uc);
+                        i += bytes;
+                    }
+                    completion_hide();
+                    minibuf_update(prompt);
+                }
+            }
+            break;
             
         default:
             /* Add character to minibuffer */
             /* Match main.c execute() logic: (c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF) */
             if ((c >= 0x20 && c <= 0x7E) || (c >= 0xA0 && c <= 0x10FFFF)) {
                 minibuf_insert_char(c);
+                minibuf_get_text(current_text, NPAT);
+                completion_update(current_text);
                 minibuf_update(prompt);
             }
             break;

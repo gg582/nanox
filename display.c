@@ -1270,7 +1270,7 @@ static void modeline(struct window *wp)
 {
     struct buffer *bp = wp->w_bufp;
     const char *row1 = nanox_cfg.hint_bar ? "F1/^H Help F2/^S Save F3/^O Open F4/^Q Quit F5/^F Search" : "";
-    const char *row2 = nanox_cfg.hint_bar ? "F6/^W Copy(S:Start) F7/^X Cut(S:Start) F8/^V Paste F9-12 Slot" : "";
+    const char *row2 = nanox_cfg.hint_bar ? "F6/^W Copy(S:End) F7/^X Cut(S:End) F8/^V Paste F9-12 Slot" : "";
     char status[MAXCOL + 1];
     const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
     const char *lamp = nanox_lamp_label();

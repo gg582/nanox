@@ -51,18 +51,18 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | 'F', nanox_search_engine },
 
     /* DATA DELETION & COPY (CUT/COPY) */
-    { SPEC | SHIFT | 'W', cutln_start_copy },    /* Shift+F6: Start Copy */
-    { SPEC | 'W', cutln_end_copy },              /* F6: End Copy */
-    { CONTROL | SHIFT | 'W', cutln_start_copy }, /* Ctrl+Shift+W: Start Copy */
-    { CONTROL | 'W', cutln_end_copy },           /* Ctrl+W: End Copy */
+    { SPEC | 'W', cutln_start_copy },              /* F6: Start Copy */
+    { SPEC | SHIFT | 'W', cutln_end_copy },        /* Shift+F6: End Copy */
+    { CONTROL | 'W', cutln_start_copy },           /* Ctrl+W: Start Copy */
+    { CONTROL | SHIFT | 'W', cutln_end_copy },      /* Ctrl+Shift+W: End Copy */
     
-    { SPEC | SHIFT | 'X', cutln_start_cut },     /* Shift+F7: Start Cut */
-    { SPEC | 'X', cutln_end_cut },               /* F7: End Cut */
-    { CONTROL | SHIFT | 'X', cutln_start_cut },  /* Ctrl+Shift+X: Start Cut */
-    { CONTROL | 'X', cutln_end_cut },            /* Ctrl+X: End Cut */
+    { SPEC | 'X', cutln_start_cut },               /* F7: Start Cut */
+    { SPEC | SHIFT | 'X', cutln_end_cut },         /* Shift+F7: End Cut */
+    { CONTROL | 'X', cutln_start_cut },            /* Ctrl+X: Start Cut */
+    { CONTROL | SHIFT | 'X', cutln_end_cut },      /* Ctrl+Shift+X: End Cut */
     
-    { CONTROL | SHIFT | 'K', cutln_start_cut },  /* Ctrl+Shift+K: Start Cut */
-    { CONTROL | 'K', cutln_end_cut },            /* Ctrl+K: End Cut */
+    { CONTROL | 'K', cutln_start_cut },            /* Ctrl+K: Start Cut */
+    { CONTROL | SHIFT | 'K', cutln_end_cut },      /* Ctrl+Shift+K: End Cut */
 
     /* DATA INSERTION (PASTE) */
     { SPEC | 'Y', yank },                 /* F8 */
@@ -78,6 +78,8 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | '3', reserve_jump_3 },
     { SPEC | '}', reserve_jump_4 },       /* F12 */
     { CONTROL | '4', reserve_jump_4 },
+
+    { CONTROL | 'G', gotoline },         /* Ctrl+G: Goto Line */
 
     /* End of table */
     { 0, NULL }
