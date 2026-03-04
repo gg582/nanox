@@ -21,6 +21,7 @@
 #include "util.h"
 #include "utf8.h"
 #include "scraper.h"
+#include "nanox.h"
 
 completion_state_t completion_state;
 
@@ -47,6 +48,8 @@ typedef struct {
 #define MAX_C_FILE_BYTES 32768
 #define MAX_JAVA_SCAN_FILES 4096
 #define MAX_JAVA_SCAN_DEPTH 6
+#define MAX_SOURCE_SYMBOLS 2048
+#define MAX_SOURCE_FILE_BYTES 262144
 
 static completion_pool_t c_symbol_cache = { NULL, 0, 0, MAX_C_SYMBOLS };
 static completion_pool_t c_include_paths = { NULL, 0, 0, 0 };
@@ -63,6 +66,11 @@ static char java_classpath_string[4096];
 static java_member_entry_t *java_member_cache = NULL;
 static int java_member_cache_count = 0;
 static int java_member_cache_capacity = 0;
+
+/* Source-level symbol cache: structs, typedefs, enums, functions from
+ * the current buffer and file-reserve slot files. */
+static completion_pool_t source_symbol_cache = { NULL, 0, 0, MAX_SOURCE_SYMBOLS };
+static char source_symbol_last_fname[NFILEN]; /* fname of last scanned buffer */
 
 static const char *common_keywords[] = {
     "if", "else", "while", "for", "do", "return", "break", "continue", "switch", "case", "default",
@@ -702,6 +710,457 @@ static void add_language_specific_matches(const char *prefix, completion_context
     }
     if (completion_state.count > 0)
         completion_state.is_visible = 1;
+}
+
+/* -----------------------------------------------------------------------
+ * Source-level symbol extraction:
+ * Reads structs, typedefs, enums, unions, and function names from C/C++
+ * source text, Python text, and JS/TS text.  Results are stored in the
+ * source_symbol_cache pool and offered as tab completions.
+ * ----------------------------------------------------------------------- */
+
+/* Keywords that are NOT symbol names even when they appear before '(' */
+static const char *c_control_keywords[] = {
+    "if", "else", "while", "for", "do", "switch", "return", "sizeof",
+    "alignof", "typeof", "static_assert", NULL
+};
+
+static int is_c_control_kw(const char *tok)
+{
+    for (int i = 0; c_control_keywords[i]; i++) {
+        if (strcmp(tok, c_control_keywords[i]) == 0)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+/* Extract struct/union/enum names, typedef names, and function names from
+ * a block of C/C++ source text. */
+static void extract_c_symbols_from_text(const char *text, size_t text_len,
+                                        completion_pool_t *pool)
+{
+    enum { ST_NORMAL, ST_LINE_CMT, ST_BLOCK_CMT, ST_STRING, ST_CHAR } state = ST_NORMAL;
+
+    /* Sliding window of last two complete tokens */
+    char tok[MAX_COMPLETION_LEN];
+    size_t tok_len = 0;
+    char prev1[MAX_COMPLETION_LEN];   /* token before current */
+    prev1[0] = '\0';
+
+    /* typedef tracking */
+    int in_typedef = 0;
+    char last_ident[MAX_COMPLETION_LEN];
+    last_ident[0] = '\0';
+
+    int brace_depth = 0;
+
+    for (size_t i = 0; i < text_len; i++) {
+        unsigned char c = (unsigned char)text[i];
+        unsigned char next = (i + 1 < text_len) ? (unsigned char)text[i + 1] : 0;
+
+        switch (state) {
+        case ST_NORMAL:
+            if (c == '/' && next == '/') {
+                /* Flush pending token */
+                state = ST_LINE_CMT;
+                i++;
+                goto flush_token;
+            } else if (c == '/' && next == '*') {
+                state = ST_BLOCK_CMT;
+                i++;
+                goto flush_token;
+            } else if (c == '"') {
+                state = ST_STRING;
+                goto flush_token;
+            } else if (c == '\'') {
+                state = ST_CHAR;
+                goto flush_token;
+            } else if (isalnum(c) || c == '_') {
+                if (tok_len < sizeof(tok) - 1)
+                    tok[tok_len++] = (char)c;
+            } else {
+                /* Non-identifier character: flush token if any */
+flush_token:
+                if (tok_len > 0) {
+                    tok[tok_len] = '\0';
+                    /* Pattern: struct/union/enum <NAME> */
+                    if (strcmp(prev1, "struct") == 0 ||
+                        strcmp(prev1, "union")  == 0 ||
+                        strcmp(prev1, "enum")   == 0) {
+                        /* tok is the tag name (might be followed by { or ;) */
+                        pool_add(pool, tok);
+                    }
+                    /* Pattern: typedef → track last identifier at top level only */
+                    if (in_typedef && brace_depth == 0) {
+                        mystrscpy(last_ident, tok, sizeof(last_ident));
+                    }
+                    if (strcmp(tok, "typedef") == 0)
+                        in_typedef = 1;
+                    /* Advance sliding window */
+                    mystrscpy(prev1, tok, sizeof(prev1));
+                    tok_len = 0;
+                }
+                /* Pattern: IDENT '(' at top-level → function name */
+                if ((char)c == '(' && brace_depth == 0 && prev1[0] != '\0') {
+                    if (!is_c_control_kw(prev1) &&
+                        strcmp(prev1, "struct") != 0 &&
+                        strcmp(prev1, "union")  != 0 &&
+                        strcmp(prev1, "enum")   != 0 &&
+                        strcmp(prev1, "typedef") != 0) {
+                        pool_add(pool, prev1);
+                    }
+                }
+                /* End of typedef on ';' at top level only */
+                if ((char)c == ';' && in_typedef && brace_depth == 0) {
+                    if (last_ident[0])
+                        pool_add(pool, last_ident);
+                    in_typedef = 0;
+                    last_ident[0] = '\0';
+                }
+                if ((char)c == '{') brace_depth++;
+                else if ((char)c == '}' && brace_depth > 0) brace_depth--;
+            }
+            break;
+        case ST_LINE_CMT:
+            if (c == '\n') state = ST_NORMAL;
+            break;
+        case ST_BLOCK_CMT:
+            if (c == '*' && next == '/') { state = ST_NORMAL; i++; }
+            break;
+        case ST_STRING:
+            if (c == '\\') i++;
+            else if (c == '"') state = ST_NORMAL;
+            break;
+        case ST_CHAR:
+            if (c == '\\') i++;
+            else if (c == '\'') state = ST_NORMAL;
+            break;
+        }
+    }
+    /* Flush any remaining token */
+    if (state == ST_NORMAL && tok_len > 0) {
+        tok[tok_len] = '\0';
+        if (strcmp(prev1, "struct") == 0 ||
+            strcmp(prev1, "union")  == 0 ||
+            strcmp(prev1, "enum")   == 0) {
+            pool_add(pool, tok);
+        }
+        if (in_typedef)
+            pool_add(pool, tok);
+    }
+}
+
+/* Extract class and function names from Python source text. */
+static void extract_python_symbols_from_text(const char *text, size_t text_len,
+                                             completion_pool_t *pool)
+{
+    enum { ST_NORMAL, ST_LINE_CMT, ST_STRING1, ST_STRING3 } state = ST_NORMAL;
+
+    char tok[MAX_COMPLETION_LEN];
+    size_t tok_len = 0;
+    char prev1[MAX_COMPLETION_LEN];
+    prev1[0] = '\0';
+    int triple_count = 0;
+
+    for (size_t i = 0; i < text_len; i++) {
+        unsigned char c = (unsigned char)text[i];
+        unsigned char next  = (i + 1 < text_len) ? (unsigned char)text[i + 1] : 0;
+        unsigned char next2 = (i + 2 < text_len) ? (unsigned char)text[i + 2] : 0;
+
+        switch (state) {
+        case ST_NORMAL:
+            if (c == '#') {
+                state = ST_LINE_CMT;
+                goto py_flush;
+            } else if (c == '"' && next == '"' && next2 == '"') {
+                state = ST_STRING3;
+                i += 2;
+                triple_count = 0;
+                goto py_flush;
+            } else if (c == '"' || c == '\'') {
+                state = ST_STRING1;
+                goto py_flush;
+            } else if (isalnum(c) || c == '_') {
+                if (tok_len < sizeof(tok) - 1)
+                    tok[tok_len++] = (char)c;
+            } else {
+py_flush:
+                if (tok_len > 0) {
+                    tok[tok_len] = '\0';
+                    /* class NAME or def NAME */
+                    if (strcmp(prev1, "class") == 0 ||
+                        strcmp(prev1, "def")   == 0) {
+                        pool_add(pool, tok);
+                    }
+                    mystrscpy(prev1, tok, sizeof(prev1));
+                    tok_len = 0;
+                }
+            }
+            break;
+        case ST_LINE_CMT:
+            if (c == '\n') state = ST_NORMAL;
+            break;
+        case ST_STRING3:
+            if (c == '"') {
+                triple_count++;
+                if (triple_count == 3) state = ST_NORMAL;
+            } else {
+                triple_count = 0;
+            }
+            break;
+        case ST_STRING1:
+            if (c == '\\') i++;
+            else if (c == '"' || c == '\'') state = ST_NORMAL;
+            break;
+        }
+    }
+    if (state == ST_NORMAL && tok_len > 0) {
+        tok[tok_len] = '\0';
+        if (strcmp(prev1, "class") == 0 || strcmp(prev1, "def") == 0)
+            pool_add(pool, tok);
+    }
+}
+
+/* Extract function and class names from JS/TS source text. */
+static void extract_js_symbols_from_text(const char *text, size_t text_len,
+                                         completion_pool_t *pool)
+{
+    enum { ST_NORMAL, ST_LINE_CMT, ST_BLOCK_CMT, ST_STRING_SQ,
+           ST_STRING_DQ, ST_TEMPLATE } state = ST_NORMAL;
+
+    char tok[MAX_COMPLETION_LEN];
+    size_t tok_len = 0;
+    char prev1[MAX_COMPLETION_LEN];
+    char prev2[MAX_COMPLETION_LEN];
+    prev1[0] = '\0';
+    prev2[0] = '\0';
+
+    for (size_t i = 0; i < text_len; i++) {
+        unsigned char c    = (unsigned char)text[i];
+        unsigned char next = (i + 1 < text_len) ? (unsigned char)text[i + 1] : 0;
+
+        switch (state) {
+        case ST_NORMAL:
+            if (c == '/' && next == '/') { state = ST_LINE_CMT; i++; goto js_flush; }
+            else if (c == '/' && next == '*') { state = ST_BLOCK_CMT; i++; goto js_flush; }
+            else if (c == '\'') { state = ST_STRING_SQ; goto js_flush; }
+            else if (c == '"')  { state = ST_STRING_DQ; goto js_flush; }
+            else if (c == '`')  { state = ST_TEMPLATE; goto js_flush; }
+            else if (isalnum(c) || c == '_' || c == '$') {
+                if (tok_len < sizeof(tok) - 1)
+                    tok[tok_len++] = (char)c;
+            } else {
+js_flush:
+                if (tok_len > 0) {
+                    tok[tok_len] = '\0';
+                    /* function NAME or class NAME */
+                    if (strcmp(prev1, "function") == 0 ||
+                        strcmp(prev1, "class")    == 0) {
+                        pool_add(pool, tok);
+                    }
+                    mystrscpy(prev2, prev1, sizeof(prev2));
+                    mystrscpy(prev1, tok, sizeof(prev1));
+                    tok_len = 0;
+                } else {
+                    /* track '=' as a pseudo-token */
+                    if ((char)c == '=') {
+                        mystrscpy(prev2, prev1, sizeof(prev2));
+                        mystrscpy(prev1, "=", sizeof(prev1));
+                    }
+                }
+                /* function IDENT ( → IDENT before '(' */
+                if ((char)c == '(' && prev1[0] != '\0' &&
+                    strcmp(prev1, "function") != 0 &&
+                    strcmp(prev1, "if") != 0 &&
+                    strcmp(prev1, "while") != 0 &&
+                    strcmp(prev1, "for") != 0 &&
+                    strcmp(prev1, "switch") != 0) {
+                    /* only add if prev2 looks like a type/keyword indicating definition */
+                    if (strcmp(prev2, "function") == 0 ||
+                        strcmp(prev2, "async") == 0)
+                        pool_add(pool, prev1);
+                }
+            }
+            break;
+        case ST_LINE_CMT:
+            if (c == '\n') state = ST_NORMAL;
+            break;
+        case ST_BLOCK_CMT:
+            if (c == '*' && next == '/') { state = ST_NORMAL; i++; }
+            break;
+        case ST_STRING_SQ:
+            if (c == '\\') i++;
+            else if (c == '\'') state = ST_NORMAL;
+            break;
+        case ST_STRING_DQ:
+            if (c == '\\') i++;
+            else if (c == '"') state = ST_NORMAL;
+            break;
+        case ST_TEMPLATE:
+            if (c == '\\') i++;
+            else if (c == '`') state = ST_NORMAL;
+            break;
+        }
+    }
+    if (state == ST_NORMAL && tok_len > 0) {
+        tok[tok_len] = '\0';
+        if (strcmp(prev1, "function") == 0 || strcmp(prev1, "class") == 0)
+            pool_add(pool, tok);
+    }
+}
+
+/* Choose extractor based on file extension and dispatch. */
+static void extract_symbols_from_text(const char *fname,
+                                      const char *text, size_t text_len,
+                                      completion_pool_t *pool)
+{
+    if (fname == NULL || text == NULL || text_len == 0)
+        return;
+    if (is_c_like_file(fname))
+        extract_c_symbols_from_text(text, text_len, pool);
+    else if (is_python_file(fname))
+        extract_python_symbols_from_text(text, text_len, pool);
+    else if (is_node_file(fname))
+        extract_js_symbols_from_text(text, text_len, pool);
+    /* Java: class/method extraction could be added; for now rely on
+     * the existing java_class_cache. */
+}
+
+/* Scan a loaded buffer's lines and feed the text into the extractor. */
+static void scan_buffer_for_source_symbols(struct buffer *bp,
+                                           completion_pool_t *pool)
+{
+    if (bp == NULL || pool == NULL)
+        return;
+    if (bp->b_fname[0] == '\0')
+        return;
+
+    /* Accumulate lines into a temporary heap buffer */
+    struct line *lp = lforw(bp->b_linep);
+    size_t total = 0;
+    while (lp != bp->b_linep) {
+        total += (size_t)llength(lp) + 1; /* +1 for newline */
+        lp = lforw(lp);
+        if (total >= MAX_SOURCE_FILE_BYTES)
+            break;
+    }
+
+    char *buf = malloc(total + 1);
+    if (!buf)
+        return;
+
+    size_t pos = 0;
+    lp = lforw(bp->b_linep);
+    while (lp != bp->b_linep && pos < total) {
+        int len = llength(lp);
+        if (len > 0) {
+            size_t copy = (size_t)len;
+            if (pos + copy > total)
+                copy = total - pos;
+            memcpy(buf + pos, lp->l_text, copy);
+            pos += copy;
+        }
+        if (pos < total)
+            buf[pos++] = '\n';
+        lp = lforw(lp);
+    }
+    buf[pos] = '\0';
+
+    extract_symbols_from_text(bp->b_fname, buf, pos, pool);
+    free(buf);
+}
+
+/* Read a file from disk and feed its content into the extractor. */
+static void scan_file_for_source_symbols(const char *path,
+                                         completion_pool_t *pool)
+{
+    if (path == NULL || path[0] == '\0' || pool == NULL)
+        return;
+
+    FILE *fp = fopen(path, "r");
+    if (!fp)
+        return;
+
+    char *buf = malloc(MAX_SOURCE_FILE_BYTES + 1);
+    if (!buf) {
+        fclose(fp);
+        return;
+    }
+
+    size_t total = fread(buf, 1, MAX_SOURCE_FILE_BYTES, fp);
+    fclose(fp);
+    buf[total] = '\0';
+
+    extract_symbols_from_text(path, buf, total, pool);
+    free(buf);
+}
+
+/* Free all items in the source symbol cache pool (without freeing the pool struct). */
+static void source_symbol_cache_clear(void)
+{
+    for (int i = 0; i < source_symbol_cache.count; i++) {
+        free(source_symbol_cache.items[i]);
+        source_symbol_cache.items[i] = NULL;
+    }
+    source_symbol_cache.count = 0;
+}
+
+/* Rebuild the source_symbol_cache from:
+ *   1. The current buffer
+ *   2. All 4 file-reserve slots (file_reserve[4])
+ * Triggered when the current buffer's filename changes. */
+static void refresh_source_symbols(void)
+{
+    const char *cur_fname = (curbp && curbp->b_fname[0]) ? curbp->b_fname : "";
+
+    /* Only rebuild when the active file changes (or first call). */
+    if (strcmp(source_symbol_last_fname, cur_fname) == 0 &&
+        source_symbol_cache.count > 0)
+        return;
+
+    source_symbol_cache_clear();
+    mystrscpy(source_symbol_last_fname, cur_fname, sizeof(source_symbol_last_fname));
+
+    /* 1. Current buffer */
+    if (curbp)
+        scan_buffer_for_source_symbols(curbp, &source_symbol_cache);
+
+    /* 2. Slot files: file_reserve[0..3] */
+    for (int slot = 0; slot < 4; slot++) {
+        if (file_reserve[slot][0] == '\0')
+            continue;
+        /* If the slot file is the same as the current buffer, skip
+         * (already scanned). */
+        if (cur_fname[0] && strcmp(file_reserve[slot], cur_fname) == 0)
+            continue;
+
+        /* Check if it is already loaded as a buffer so we can scan
+         * in-memory rather than re-reading from disk. */
+        struct buffer *bp = bheadp;
+        int found_buf = FALSE;
+        while (bp) {
+            if (strcmp(bp->b_fname, file_reserve[slot]) == 0) {
+                scan_buffer_for_source_symbols(bp, &source_symbol_cache);
+                found_buf = TRUE;
+                break;
+            }
+            bp = bp->b_bufp;
+        }
+        if (!found_buf)
+            scan_file_for_source_symbols(file_reserve[slot],
+                                         &source_symbol_cache);
+    }
+}
+
+/* Add source-symbol matches for the given prefix. */
+static void collect_source_symbol_matches(const char *prefix,
+                                          completion_context_t ctx)
+{
+    if (ctx == COMPLETION_CONTEXT_PATH || prefix == NULL || *prefix == '\0')
+        return;
+
+    refresh_source_symbols();
+    add_matches_from_pool(&source_symbol_cache, prefix);
 }
 
 typedef struct {
@@ -1396,6 +1855,7 @@ int completion_try_at_cursor(void)
 
     completion_update(prefix, ctx);
     add_language_specific_matches(prefix, ctx);
+    collect_source_symbol_matches(prefix, ctx);
 
     if (line && ctx == COMPLETION_CONTEXT_DEFAULT) {
         char owner[MAX_COMPLETION_LEN];
