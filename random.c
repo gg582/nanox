@@ -63,7 +63,7 @@ static void set_indent(int target) {
             for (i = 0; i < target; ++i)
                 linsert(1, ' ');
         } else {
-            int step = tab_width + 1;
+            int step = tab_width;
             if (step == 0) step = 1; /* Avoid division by zero */
             int num_tabs = target / step;
             int num_spaces = target % step;
@@ -71,7 +71,13 @@ static void set_indent(int target) {
             while (num_spaces--) linsert(1, ' ');
         }
     }
-    curwp->w_doto = llength(curwp->w_dotp);
+    /* Move cursor to first non-whitespace character */
+    curwp->w_doto = 0;
+    while (curwp->w_doto < llength(curwp->w_dotp)) {
+        int ch2 = lgetc(curwp->w_dotp, curwp->w_doto);
+        if (ch2 != ' ' && ch2 != '\t') break;
+        curwp->w_doto++;
+    }
 }
 
 static int is_closing_block(struct line *lp) {
@@ -564,6 +570,17 @@ int insert_tab(int f, int n)
     if (n < 0)
         return FALSE;
 
+    /* If an indent/outdent range is active, commit it now (modern editor style) */
+    if (indent_selection_active && indent_start_lp != NULL) {
+        indent_end_lp = curwp->w_dotp;
+        indent_selection_active = FALSE;
+        return indent_apply_range(f, n);
+    }
+    /* If a fully-set range is pending, apply it */
+    if (indent_start_lp != NULL && indent_end_lp != NULL) {
+        return indent_apply_range(f, n);
+    }
+
     /* If we are in CMODE and at the beginning of the line, do smart re-indent */
     if ((curbp->b_mode & MDCMOD) != 0 && n == 1) {
         int i;
@@ -594,7 +611,7 @@ int insert_tab(int f, int n)
                     while (last_idx >= 0 && (lgetc(lp, last_idx) == ' ' || lgetc(lp, last_idx) == '\t'))
                         last_idx--;
                     if (last_idx >= 0 && lgetc(lp, last_idx) == '{')
-                        target += (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
+                        target += (curbp->b_tabsize ? curbp->b_tabsize : tab_width);
                     break;
                 }
                 lp = lback(lp);
@@ -640,7 +657,7 @@ int detab(int f, int n)
             /* if we have a tab */
             if (lgetc(curwp->w_dotp, curwp->w_doto) == '\t') {
                 ldelchar(1, FALSE);
-                        int step = tab_width + 1;
+                        int step = tab_width;
         if (step == 0) step = 1;
         insspace(TRUE, step - (curwp->w_doto % step));
             }
@@ -1116,7 +1133,7 @@ int indent(int f, int n)
         }
 
         if (bracef || ppf) {
-            target_indent += (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
+            target_indent += (curbp->b_tabsize ? curbp->b_tabsize : tab_width);
         }
 
         if (lnewline() == FALSE)
@@ -1127,12 +1144,62 @@ int indent(int f, int n)
     return TRUE;
 }
 
+/* Maximum detectable indentation step width (covers 2/3/4/6/8-space indentation) */
+#define MAX_INDENT_DETECT 8
+
+/*
+ * Detect the dominant indentation step from the current buffer content.
+ * Scans non-blank lines and counts how often each positive indent
+ * increment (1-MAX_INDENT_DETECT spaces) occurs, then returns the most
+ * common step.  Returns tab_width if the file is tab-indented.
+ */
+static int detect_indent_step(void)
+{
+    struct line *lp;
+    int freq[MAX_INDENT_DETECT + 1]; /* freq[1..MAX_INDENT_DETECT] */
+    int i, prev_indent = -1;
+
+    for (i = 0; i <= MAX_INDENT_DETECT; i++) freq[i] = 0;
+
+    /* Tab-indented file: return tab_width immediately */
+    for (lp = lforw(curbp->b_linep); lp != curbp->b_linep; lp = lforw(lp)) {
+        if (llength(lp) > 0 && lgetc(lp, 0) == '\t')
+            return tab_width;
+    }
+
+    for (lp = lforw(curbp->b_linep); lp != curbp->b_linep; lp = lforw(lp)) {
+        int blank = TRUE;
+        for (i = 0; i < llength(lp); i++) {
+            int c = lgetc(lp, i);
+            if (c != ' ' && c != '\t') { blank = FALSE; break; }
+        }
+        if (!blank) {
+            int ind = get_indent(lp);
+            if (prev_indent >= 0 && ind > prev_indent) {
+                int delta = ind - prev_indent;
+                if (delta >= 1 && delta <= MAX_INDENT_DETECT)
+                    freq[delta]++;
+            }
+            prev_indent = ind;
+        }
+    }
+
+    int best = tab_width, best_count = 0;
+    for (i = 1; i <= MAX_INDENT_DETECT; i++) {
+        if (freq[i] > best_count) {
+            best_count = freq[i];
+            best = i;
+        }
+    }
+    return best;
+}
+
 /*
  * Helper to adjust indentation by delta levels
  */
 static void adjust_indent(struct line *lp, int delta)
 {
-    int step = (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
+    int step = curbp->b_tabsize ? curbp->b_tabsize : detect_indent_step();
     int cur = get_indent(lp);
     int target = cur + delta * step;
     if (target < 0) target = 0;
@@ -1190,20 +1257,21 @@ static void announce_indent_state(const char *action)
             first = last;
             last = tmp;
         }
-        mlwrite("[%s: %s lines %ld-%ld | gg to %s]", action, mode, first, last,
+        mlwrite("[%s: lines %ld-%ld | Tab/gg: %s | BS: cancel]",
+                action, first, last,
                 (indent_range_type < 0) ? "outdent" : "indent");
         return;
     }
 
     if (indent_start_lp && start_line > 0) {
-        mlwrite("[%s: %s start line %ld | set end with Ctrl+Shift+%c, then gg]",
-                action, mode, start_line, start_key);
+        mlwrite("[%s: %s start line %ld | move to end, then Tab/gg | BS: cancel]",
+                action, mode, start_line);
         return;
     }
 
     if (indent_start_lp) {
-        mlwrite("[%s: %s start set | set end with Ctrl+Shift+%c, then gg]",
-                action, mode, start_key);
+        mlwrite("[%s: %s start set | move to end, then Tab/gg | BS: cancel]",
+                action, mode);
         return;
     }
 
@@ -1337,7 +1405,7 @@ int outdent_end_set(int f, int n)
 int indent_apply_range(int f, int n)
 {
     if (indent_start_lp == NULL || indent_end_lp == NULL) {
-        mlwrite("[gg: Range not set. Use Ctrl+J/Ctrl+Shift+J or Ctrl+H/Ctrl+Shift+H]");
+        mlwrite("[Range not set. Use Ctrl+J (indent) or Ctrl+H (outdent) to mark start, move cursor to end, then Tab or gg]");
         return FALSE;
     }
     if (curbp->b_mode & MDVIEW) return rdonly();
@@ -1386,9 +1454,9 @@ int indent_apply_range(int f, int n)
             first_line = last_line;
             last_line = tmp;
         }
-        mlwrite("[gg: %s lines %ld-%ld applied]", mode, first_line, last_line);
+        mlwrite("[%s applied: lines %ld-%ld]", mode, first_line, last_line);
     } else {
-        mlwrite("[gg: %s range applied]", mode);
+        mlwrite("[%s range applied]", mode);
     }
     
     /* Clear range after apply */
@@ -1412,6 +1480,11 @@ int g_prefix_handler(int f, int n)
 {
     int c = getcmd();
     if (c == 'g') {
+        /* If selection is active (start set but end not set), finalize with cursor */
+        if (indent_selection_active && indent_start_lp != NULL) {
+            indent_end_lp = curwp->w_dotp;
+            indent_selection_active = FALSE;
+        }
         return indent_apply_range(f, n);
     }
     /* Fallback: insert 'g' and then the next character */

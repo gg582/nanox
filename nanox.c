@@ -558,16 +558,16 @@ static const char *nanox_help_sheet[] = {
     "=>                      NANOX SYSTEM BINDINGS & SEARCH SPEC",
     "-------------------------------------------------------------------------------",
     "FILE & SLOT CONTROL     EDITING & SEARCH        INDENT / OUTDENT",
-    "F2 / ^S : Save File     F7 / ^X : Cut(S:End)    ^J / ^H : Start Range",
-    "F3 / ^O : Open File     F6 / ^W : Copy(S:End)   ^S+J / ^S+H : End Range",
-    "F4 / ^Q : Quit nanox    F8 / ^V : Paste         gg : Apply Range",
+    "F2 / ^S : Save File     F7 / ^X : Cut(S:End)    ^J : Start Indent Range",
+    "F3 / ^O : Open File     F6 / ^W : Copy(S:End)   ^H : Start Outdent Range",
+    "F4 / ^Q : Quit nanox    F8 / ^V : Paste         Tab/gg: Apply Range",
     "F1 / ^H : Help Menu     F5 / ^F : Search        BS : Cancel Range",
     "F9-F12 / ^1-^4 : Slot   ----------------------  ------------------",
     "===============================================================================",
-    "* ^S+J: Ctrl+Shift+J, ^S+H: Ctrl+Shift+H (End Range)",
-    "* ^J: Ctrl+J, ^H: Ctrl+H (Start Range)",
-    "* gg: Apply the selected indent/outdent to the range",
-    "* BS: Backspace (Cancels current range operation) ",
+    "* Indent/Outdent: Ctrl+J (indent) or Ctrl+H (outdent) to mark start line",
+    "* Move cursor to end line, then press Tab or gg to apply to the range",
+    "* Auto-detects file indentation width (spaces or tabs)",
+    "* BS: Backspace cancels current range operation",
     NULL
 };
 
