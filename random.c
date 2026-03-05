@@ -622,10 +622,6 @@ int insert_tab(int f, int n)
         }
     }
 
-    if (n == 1 && completion_try_at_cursor()) {
-        return TRUE;
-    }
-
     if (n == 0 || n > 1) {
         curbp->b_tabsize = n;
         if (!(curbp->b_flag & BFMAKE))
@@ -635,6 +631,17 @@ int insert_tab(int f, int n)
     if (!curbp->b_tabsize)
         return linsert(1, '\t');
     return linsert(curbp->b_tabsize - (getccol(FALSE) % curbp->b_tabsize), ' ');
+}
+
+int completion_menu_command(int f, int n)
+{
+    (void)f;
+    (void)n;
+    if (!completion_try_at_cursor()) {
+        TTbeep();
+        return FALSE;
+    }
+    return TRUE;
 }
 
 /*

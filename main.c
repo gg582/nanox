@@ -66,6 +66,7 @@
 #include "edef.h"
 #include "version.h"
 #include "nanox.h"                  /* Added for Nanox specific declarations */
+#include "completion.h"
 #include "command_mode.h"           /* F1 command mode */
 
 #include <signal.h>
@@ -81,6 +82,7 @@ static void nanox_refresh_ui(void)
         nanox_help_render();
     } else {
         update(FALSE);
+        completion_dropdown_render();
     }
 }
 
@@ -355,6 +357,11 @@ int main(int argc, char **argv)
     if (nanox_help_is_active()) {
         nanox_help_handle_key(c);
         goto loop;
+    }
+
+    if (completion_dropdown_is_active()) {
+        if (completion_dropdown_handle_key(c))
+            goto loop;
     }
 
     f = FALSE;

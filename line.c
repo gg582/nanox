@@ -47,8 +47,8 @@ struct line *lalloc(int used)
     }
     lp->l_size = size;
     lp->l_used = used;
-    lp->hl_start_state = (HighlightState){HS_NORMAL, 0};
-    lp->hl_end_state = (HighlightState){HS_NORMAL, 0};
+    lp->hl_start_state = (HighlightState){0};
+    lp->hl_end_state = (HighlightState){0};
     return lp;
 }
 

@@ -452,7 +452,7 @@ static void update_syntax_highlighting(struct buffer *bp) {
     if (!profile) return;
 
     struct line *lp = lforw(bp->b_linep);
-    HighlightState current_state = {HS_NORMAL, 0};
+    HighlightState current_state = {0};
     
     while (lp != bp->b_linep) {
         // Check if we can skip
@@ -994,6 +994,20 @@ void TTputs(const char *s)
         TTputc(c);
 }
 
+static void start_screen_reset_smoothing(void)
+{
+    /* Hide cursor and disable wrap so terminal clear happens without visible flicker */
+    TTputs("\x1b[?25l");           /* Hide cursor */
+    TTputs("\x1b[0m");             /* Reset attributes */
+    TTputs("\x1b[?7l");            /* Disable line wrap temporarily */
+}
+
+static void finish_screen_reset_smoothing(void)
+{
+    TTputs("\x1b[?7h");            /* Restore wrap mode */
+    TTputs("\x1b[?25h");           /* Show cursor */
+}
+
 /*
  * updgar:
  *  if the screen is garbage, clear the physical screen and
@@ -1011,8 +1025,10 @@ void updgar(void)
         TTsetcolors(normal.fg, normal.bg);
     }
 
+    start_screen_reset_smoothing();
     movecursor(0, 0);           /* Erase the screen. */
     (*term->t_eeop) ();
+    finish_screen_reset_smoothing();
     TTsetcolors(-1, -1);          /* Reset colors immediately after erase */
     TTflush();                  /* Force the clear to happen */
 
@@ -1591,4 +1607,3 @@ int newscreensize(int h, int w)
     update(TRUE);
     return TRUE;
 }
-

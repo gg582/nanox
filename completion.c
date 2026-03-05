@@ -24,8 +24,26 @@
 #include "nanox.h"
 
 completion_state_t completion_state;
+typedef struct {
+    int active;
+    size_t prefix_len;
+    int popup_row;
+    int popup_col;
+    int popup_width;
+    int popup_height;
+} completion_dropdown_state_t;
+
+static completion_dropdown_state_t completion_dropdown_state = { 0, 0 };
 
 static char completion_storage[MAX_COMPLETIONS][MAX_COMPLETION_LEN];
+
+static void completion_ensure_visible(void);
+static void completion_dropdown_activate(size_t prefix_len);
+static void completion_dropdown_deactivate(void);
+static void completion_dropdown_apply_selection(void);
+static void completion_dropdown_refresh_geometry(void);
+static void completion_draw_popup_box(void);
+static void completion_draw_minibuffer_list(int row, int col);
 
 typedef struct {
     char **items;
@@ -67,6 +85,68 @@ static java_member_entry_t *java_member_cache = NULL;
 static int java_member_cache_count = 0;
 static int java_member_cache_capacity = 0;
 
+#define COMPLETION_MINIBUFFER_MAX_VISIBLE 5
+#define COMPLETION_POPUP_MAX_VISIBLE 8
+#define COMPLETION_POPUP_MIN_CONTENT 12
+#define COMPLETION_POPUP_MAX_CONTENT 48
+
+static int completion_is_true_color(int color)
+{
+    return (color & 0xFF000000) == 0x01000000;
+}
+
+static int completion_mul_channel(int a, int b)
+{
+    return (a * b) / 255;
+}
+
+static int completion_mix_color(int base, int overlay)
+{
+    if (base == -1)
+        return overlay;
+    if (overlay == -1)
+        return base;
+    if (completion_is_true_color(base) && completion_is_true_color(overlay)) {
+        int br = (base >> 16) & 0xFF;
+        int bg = (base >> 8) & 0xFF;
+        int bb = base & 0xFF;
+        int or = (overlay >> 16) & 0xFF;
+        int og = (overlay >> 8) & 0xFF;
+        int ob = overlay & 0xFF;
+        int r = completion_mul_channel(br, or);
+        int g = completion_mul_channel(bg, og);
+        int b = completion_mul_channel(bb, ob);
+        return 0x01000000 | (r << 16) | (g << 8) | b;
+    }
+    return overlay;
+}
+
+static HighlightStyle completion_combine_style(HighlightStyle primary, HighlightStyle overlay)
+{
+    HighlightStyle result = primary;
+    result.fg = completion_mix_color(primary.fg, overlay.fg);
+    result.bg = completion_mix_color(primary.bg, overlay.bg);
+    result.bold = primary.bold || overlay.bold;
+    result.underline = primary.underline || overlay.underline;
+    result.italic = primary.italic || overlay.italic;
+    return result;
+}
+
+static void completion_apply_style(const HighlightStyle *style)
+{
+    if (!style)
+        return;
+    TTsetcolors(style->fg, style->bg);
+    TTsetattrs(style->bold, style->underline, style->italic);
+}
+
+static int completion_display_width(const char *text)
+{
+    if (text == NULL)
+        return 0;
+    return utf8_display_width(text, (int)strlen(text));
+}
+
 /* Source-level symbol cache: structs, typedefs, enums, functions from
  * the current buffer and file-reserve slot files. */
 static completion_pool_t source_symbol_cache = { NULL, 0, 0, MAX_SOURCE_SYMBOLS };
@@ -89,6 +169,29 @@ static int has_extension(const char *name, const char **exts, size_t count);
 static int prev_char_start(struct line *lp, int pos);
 
 static void completion_consider_candidate(const char *candidate, const char *prefix);
+
+static void completion_write_utf8_clipped(const char *text, int max_width)
+{
+    int used = 0;
+    int len = (int)strlen(text ? text : "");
+    int idx = 0;
+    while (idx < len && used < max_width) {
+        unicode_t uc;
+        int bytes = utf8_to_unicode((unsigned char *)text, idx, len, &uc);
+        if (bytes <= 0)
+            break;
+        int char_width = mystrnlen_raw_w(uc);
+        if (used + char_width > max_width)
+            break;
+        TTputc(uc);
+        used += char_width;
+        idx += bytes;
+    }
+    while (used < max_width) {
+        TTputc(' ');
+        used++;
+    }
+}
 
 static void pool_add(completion_pool_t *pool, const char *value)
 {
@@ -127,6 +230,7 @@ static void completion_reset_state(void)
     completion_state.count = 0;
     completion_state.selected_index = 0;
     completion_state.is_visible = 0;
+    completion_state.scroll_offset = 0;
 }
 
 static int completion_word_exists(const char *word)
@@ -1620,34 +1724,89 @@ void completion_update(const char *prefix, completion_context_t ctx)
     completion_state.is_visible = (completion_state.count > 0);
 }
 
-void completion_draw(int row, int col) {
-    if (!completion_state.is_visible) return;
+static int completion_visible_rows(void)
+{
+    int limit = completion_dropdown_state.active ? COMPLETION_POPUP_MAX_VISIBLE : COMPLETION_MINIBUFFER_MAX_VISIBLE;
+    if (completion_state.count < limit)
+        return completion_state.count;
+    return limit;
+}
 
-    int height = completion_state.count;
-    if (height > 5) height = 5; /* Limit height */
+static void completion_ensure_visible(void)
+{
+    int height = completion_visible_rows();
+    if (height <= 0) {
+        completion_state.scroll_offset = 0;
+        return;
+    }
+
+    if (completion_state.scroll_offset < 0)
+        completion_state.scroll_offset = 0;
+
+    int max_offset = completion_state.count - height;
+    if (max_offset < 0)
+        max_offset = 0;
+    if (completion_state.scroll_offset > max_offset)
+        completion_state.scroll_offset = max_offset;
+
+    if (completion_state.selected_index < completion_state.scroll_offset)
+        completion_state.scroll_offset = completion_state.selected_index;
+
+    if (completion_state.selected_index >= completion_state.scroll_offset + height)
+        completion_state.scroll_offset = completion_state.selected_index - height + 1;
+
+    if (completion_state.scroll_offset < 0)
+        completion_state.scroll_offset = 0;
+}
+
+static void completion_draw_minibuffer_list(int row, int col)
+{
+    if (!completion_state.is_visible)
+        return;
+
+    completion_ensure_visible();
+
+    int saved_row = ttrow;
+    int saved_col = ttcol;
+    int height = completion_visible_rows();
 
     for (int i = 0; i < height; i++) {
+        int idx = completion_state.scroll_offset + i;
+        if (idx >= completion_state.count)
+            break;
         int r = row - height + i;
-        if (r < 0) continue;
+        if (r < 0)
+            continue;
 
         movecursor(r, col);
-        if (i == completion_state.selected_index) {
+        if (idx == completion_state.selected_index)
             TTrev(TRUE);
-        }
-        
-        char buf[MAX_COMPLETION_LEN];
-        snprintf(buf, sizeof(buf), " %-20s ", completion_state.matches[i]);
-        
-        /* Display with proper UTF-8 handling if needed, but these are mostly ASCII */
-        for (int j = 0; buf[j]; j++) {
-            TTputc(buf[j]);
-        }
 
-        if (i == completion_state.selected_index) {
+        char buf[MAX_COMPLETION_LEN];
+        snprintf(buf, sizeof(buf), " %-20s ", completion_state.matches[idx]);
+        for (int j = 0; buf[j]; j++)
+            TTputc(buf[j]);
+        TTeeol();
+
+        if (idx == completion_state.selected_index)
             TTrev(FALSE);
-        }
     }
+    if (saved_row < HUGE && saved_col < HUGE)
+        movecursor(saved_row, saved_col);
     TTflush();
+}
+
+void completion_draw(int row, int col)
+{
+    if (!completion_state.is_visible)
+        return;
+
+    if (completion_dropdown_state.active) {
+        completion_draw_popup_box();
+        return;
+    }
+
+    completion_draw_minibuffer_list(row, col);
 }
 
 const char* completion_get_selected(void) {
@@ -1660,20 +1819,20 @@ const char* completion_get_selected(void) {
 void completion_next(void) {
     if (completion_state.count > 0) {
         completion_state.selected_index = (completion_state.selected_index + 1) % completion_state.count;
-        if (completion_state.selected_index >= 5) {
-            /* Scroll logic could be added here if we had more items visible */
-        }
+        completion_ensure_visible();
     }
 }
 
 void completion_prev(void) {
     if (completion_state.count > 0) {
         completion_state.selected_index = (completion_state.selected_index - 1 + completion_state.count) % completion_state.count;
+        completion_ensure_visible();
     }
 }
 
 void completion_hide(void) {
     completion_state.is_visible = 0;
+    completion_state.scroll_offset = 0;
 }
 
 static int prev_char_start(struct line *lp, int pos)
@@ -1804,43 +1963,178 @@ static void completion_insert_text(const char *text)
     linsert_block((char *)text, (int)strlen(text));
 }
 
-static size_t completion_longest_common(char *out, size_t out_sz)
+static void completion_dropdown_activate(size_t prefix_len)
 {
-    if (completion_state.count == 0 || out == NULL || out_sz == 0) {
-        if (out && out_sz)
-            out[0] = '\0';
-        return 0;
-    }
-
-    mystrscpy(out, completion_state.matches[0], out_sz);
-    for (int i = 1; i < completion_state.count; i++) {
-        int j = 0;
-        while (out[j] && completion_state.matches[i][j] && j < (int)out_sz - 1) {
-            if (out[j] != completion_state.matches[i][j])
-                break;
-            j++;
-        }
-        out[j] = '\0';
-    }
-    return strlen(out);
+    completion_dropdown_state.active = 1;
+    completion_dropdown_state.prefix_len = prefix_len;
+    completion_state.selected_index = 0;
+    completion_state.scroll_offset = 0;
+    completion_state.is_visible = (completion_state.count > 0);
+    completion_dropdown_refresh_geometry();
+    completion_ensure_visible();
 }
 
-static void report_matches(void)
+static void completion_dropdown_deactivate(void)
 {
-    if (completion_state.count == 0)
+    completion_dropdown_state.active = 0;
+    completion_hide();
+}
+
+static void completion_dropdown_apply_selection(void)
+{
+    const char *match = completion_get_selected();
+    if (match != NULL) {
+        size_t match_len = strlen(match);
+        if (completion_dropdown_state.prefix_len <= match_len) {
+            const char *tail = match + completion_dropdown_state.prefix_len;
+            if (*tail)
+                completion_insert_text(tail);
+            else
+                TTbeep();
+        }
+    }
+    completion_dropdown_deactivate();
+}
+
+static void completion_dropdown_refresh_geometry(void)
+{
+    if (!completion_dropdown_state.active)
         return;
-    char message[128];
-    int shown = completion_state.count < 3 ? completion_state.count : 3;
-    int pos = snprintf(message, sizeof(message), "Matches:");
-    for (int i = 0; i < shown; i++) {
-        pos += snprintf(message + pos, sizeof(message) - (size_t)pos, " %s", completion_state.matches[i]);
-        if (pos >= (int)sizeof(message))
+
+    completion_ensure_visible();
+
+    int visible = completion_visible_rows();
+    if (visible <= 0)
+        visible = 1;
+    completion_dropdown_state.popup_height = visible;
+
+    int content_width = COMPLETION_POPUP_MIN_CONTENT;
+    for (int i = 0; i < completion_state.count; i++) {
+        int w = completion_display_width(completion_state.matches[i]);
+        if (w > content_width)
+            content_width = w;
+        if (content_width >= COMPLETION_POPUP_MAX_CONTENT)
             break;
     }
-    if (completion_state.count > shown) {
-        snprintf(message + pos, sizeof(message) - (size_t)pos, " (+%d)", completion_state.count - shown);
+    if (content_width > COMPLETION_POPUP_MAX_CONTENT)
+        content_width = COMPLETION_POPUP_MAX_CONTENT;
+
+    int inner_width = content_width + 2; /* padding inside */
+    int popup_width = inner_width + 2;   /* account for border */
+
+    int safe_cols = term->t_ncol;
+    if (popup_width > safe_cols) {
+        popup_width = safe_cols;
+        if (popup_width < 4)
+            popup_width = 4;
+        inner_width = popup_width - 2;
     }
-    mlwrite(message);
+    completion_dropdown_state.popup_width = popup_width;
+
+    int total_height = completion_dropdown_state.popup_height + 2; /* borders */
+    int safe_bottom = term->t_nrow - 1; /* reserve last line for minibuffer */
+    if (safe_bottom < 0)
+        safe_bottom = 0;
+
+    int desired_row = currow + 1;
+    if (desired_row + total_height - 1 > safe_bottom)
+        desired_row = currow - total_height;
+    if (desired_row < 0)
+        desired_row = 0;
+    if (desired_row + total_height - 1 > safe_bottom)
+        desired_row = safe_bottom - total_height + 1;
+    if (desired_row < 0)
+        desired_row = 0;
+    completion_dropdown_state.popup_row = desired_row;
+
+    int desired_col = curcol;
+    if (desired_col + popup_width >= safe_cols)
+        desired_col = safe_cols - popup_width;
+    if (desired_col < 0)
+        desired_col = 0;
+    completion_dropdown_state.popup_col = desired_col;
+}
+
+static void completion_draw_popup_box(void)
+{
+    if (!completion_dropdown_state.active || !completion_state.is_visible)
+        return;
+
+    completion_dropdown_refresh_geometry();
+    completion_ensure_visible();
+
+    int box_row = completion_dropdown_state.popup_row;
+    int box_col = completion_dropdown_state.popup_col;
+    int popup_width = completion_dropdown_state.popup_width;
+    int visible = completion_dropdown_state.popup_height;
+    if (popup_width < 4)
+        popup_width = 4;
+    if (visible <= 0)
+        return;
+
+    int saved_row = ttrow;
+    int saved_col = ttcol;
+
+    int inner_width = popup_width - 2;
+    if (inner_width < 0)
+        inner_width = 0;
+    int text_width = inner_width - 2;
+    if (text_width < 0)
+        text_width = 0;
+
+    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+    HighlightStyle selection = colorscheme_get(HL_SELECTION);
+    HighlightStyle notice = colorscheme_get(HL_NOTICE);
+
+    HighlightStyle border_style = completion_combine_style(normal, notice);
+    HighlightStyle row_style = completion_combine_style(normal, selection);
+    HighlightStyle selected_style = completion_combine_style(selection, notice);
+
+    int total_height = visible + 2;
+
+    /* Top border */
+    movecursor(box_row, box_col);
+    completion_apply_style(&border_style);
+    TTputc('+');
+    for (int i = 0; i < popup_width - 2; i++)
+        TTputc('-');
+    TTputc('+');
+
+    /* Content rows */
+    for (int i = 0; i < visible; i++) {
+        int idx = completion_state.scroll_offset + i;
+        if (idx >= completion_state.count)
+            break;
+        int line_row = box_row + 1 + i;
+        const char *text = completion_state.matches[idx];
+        HighlightStyle *active_style = (idx == completion_state.selected_index) ? &selected_style : &row_style;
+
+        movecursor(line_row, box_col);
+        completion_apply_style(&border_style);
+        TTputc('|');
+
+        completion_apply_style(active_style);
+        TTputc(' ');
+        completion_write_utf8_clipped(text ? text : "", text_width);
+        TTputc(' ');
+
+        completion_apply_style(&border_style);
+        TTputc('|');
+    }
+
+    /* Bottom border */
+    movecursor(box_row + total_height - 1, box_col);
+    completion_apply_style(&border_style);
+    TTputc('+');
+    for (int i = 0; i < popup_width - 2; i++)
+        TTputc('-');
+    TTputc('+');
+
+    TTsetcolors(-1, -1);
+    TTsetattrs(0, 0, 0);
+    if (saved_row < HUGE && saved_col < HUGE)
+        movecursor(saved_row, saved_col);
+    TTflush();
 }
 
 int completion_try_at_cursor(void)
@@ -1876,13 +2170,6 @@ int completion_try_at_cursor(void)
         return FALSE;
 
     size_t prefix_len = strlen(prefix);
-    char common[MAX_COMPLETION_LEN];
-    size_t common_len = completion_longest_common(common, sizeof(common));
-
-    if (common_len > prefix_len) {
-        completion_insert_text(common + prefix_len);
-        return TRUE;
-    }
 
     if (completion_state.count == 1) {
         const char *match = completion_state.matches[0];
@@ -1895,6 +2182,47 @@ int completion_try_at_cursor(void)
         return TRUE;
     }
 
-    report_matches();
+    completion_dropdown_activate(prefix_len);
     return TRUE;
+}
+
+int completion_dropdown_is_active(void)
+{
+    return completion_dropdown_state.active;
+}
+
+int completion_dropdown_handle_key(int key)
+{
+    if (!completion_dropdown_state.active)
+        return 0;
+
+    switch (key) {
+    case (SPEC | 'A'):
+    case (CONTROL | 'P'):
+        completion_prev();
+        return 1;
+    case (SPEC | 'B'):
+    case (CONTROL | 'N'):
+        completion_next();
+        return 1;
+    case (CONTROL | 'M'):
+    case '\n':
+    case '\r':
+        completion_dropdown_apply_selection();
+        return 1;
+    case (CONTROL | '['):
+    case (CONTROL | 'G'):
+        completion_dropdown_deactivate();
+        return 1;
+    default:
+        completion_dropdown_deactivate();
+        return 0;
+    }
+}
+
+void completion_dropdown_render(void)
+{
+    if (!completion_dropdown_state.active)
+        return;
+    completion_draw(-1, -1);
 }

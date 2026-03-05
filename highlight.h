@@ -70,9 +70,17 @@ typedef enum {
     HS_TRIPLE_STRING
 } StateID;
 
+#define HL_STATE_STACK_MAX 8
+
 typedef struct {
     StateID state;
-    int sub_id; /* Index into config arrays for matching pairs */
+    int sub_id;       /* Block comment index or string metadata */
+    char string_delim;
+} HighlightStackEntry;
+
+typedef struct {
+    HighlightStackEntry stack[HL_STATE_STACK_MAX];
+    int depth;
 } HighlightState;
 
 void highlight_init(const char *rule_config_path);

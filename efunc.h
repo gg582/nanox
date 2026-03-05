@@ -63,6 +63,7 @@ extern int setccol(int pos);
 extern int twiddle(int f, int n);
 extern int quote(int f, int n);
 extern int insert_tab(int f, int n);
+extern int completion_menu_command(int f, int n);
 extern int detab(int f, int n);
 extern int entab(int f, int n);
 extern int trim(int f, int n);

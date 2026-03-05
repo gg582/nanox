@@ -755,6 +755,60 @@ static bool parse_rgb_color(const char *text, int pos, int color_len, int *r, in
     return false;
 }
 
+static inline void normalize_state(HighlightState *state)
+{
+    if (!state)
+        return;
+    if (state->depth < 0 || state->depth > HL_STATE_STACK_MAX)
+        state->depth = 0;
+}
+
+static inline StateID current_state(const HighlightState *state)
+{
+    if (!state || state->depth <= 0 || state->depth > HL_STATE_STACK_MAX)
+        return HS_NORMAL;
+    return state->stack[state->depth - 1].state;
+}
+
+static inline HighlightStackEntry *state_top(HighlightState *state)
+{
+    if (!state || state->depth <= 0 || state->depth > HL_STATE_STACK_MAX)
+        return NULL;
+    return &state->stack[state->depth - 1];
+}
+
+static inline void pop_state(HighlightState *state)
+{
+    if (state && state->depth > 0)
+        state->depth--;
+}
+
+static bool push_block_comment(HighlightState *state, int idx)
+{
+    if (!state || idx < 0)
+        return false;
+    if (state->depth >= HL_STATE_STACK_MAX)
+        return false;
+    state->stack[state->depth].state = HS_BLOCK_COMMENT;
+    state->stack[state->depth].sub_id = idx;
+    state->stack[state->depth].string_delim = 0;
+    state->depth++;
+    return true;
+}
+
+static bool push_string_state(HighlightState *state, bool triple, char delim)
+{
+    if (!state)
+        return false;
+    if (state->depth >= HL_STATE_STACK_MAX)
+        return false;
+    state->stack[state->depth].state = triple ? HS_TRIPLE_STRING : HS_STRING;
+    state->stack[state->depth].sub_id = 0;
+    state->stack[state->depth].string_delim = delim;
+    state->depth++;
+    return true;
+}
+
 void highlight_line(const char *text, int len, HighlightState start, const HighlightProfile *profile, SpanVec *out, HighlightState *end)
 {
     if (out) {
@@ -795,12 +849,15 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
     }
 
     HighlightState state = start;
+    normalize_state(&state);
     int pos = 0;
 
     while (pos < len) {
         unsigned char c = (unsigned char)text[pos];
 
-        if (state.state == HS_NORMAL) {
+        StateID active = current_state(&state);
+
+        if (active == HS_NORMAL) {
             /* 0. Control characters */
             if (is_control(c)) {
                 if (out) add_span(out, pos, pos + 1, HL_CONTROL);
@@ -925,30 +982,14 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             /* 1. Check Block Comments */
             bool matched_block = false;
             for (int i = 0; i < profile->block_comment_count; i++) {
-                if (starts_with(text + pos, profile->block_comments[i].start)) {
-                    state.state = HS_BLOCK_COMMENT;
-                    state.sub_id = i;
-                    
-                    int start_len = strlen(profile->block_comments[i].start);
-                    int search_pos = pos + start_len;
-                    bool found_end = false;
-                    const char *end_str = profile->block_comments[i].end;
-                    int end_len = strlen(end_str);
-
-                    while (search_pos <= len - end_len) {
-                        if (strncmp(text + search_pos, end_str, end_len) == 0) {
-                            found_end = true;
-                            search_pos += end_len;
-                            break;
-                        }
-                        search_pos++;
-                    }
-
-                    if (found_end) {
-                        if (out) add_span(out, pos, search_pos, HL_COMMENT);
-                        pos = search_pos;
-                        state.state = HS_NORMAL;
-                    } else {
+                const char *start_tok = profile->block_comments[i].start;
+                int start_len = strlen(start_tok);
+                if (start_len && starts_with(text + pos, start_tok)) {
+                    int start_pos = pos;
+                    if (out) add_span(out, start_pos, start_pos + start_len, HL_COMMENT);
+                    pos += start_len;
+                    if (!push_block_comment(&state, i)) {
+                        /* Stack overflow fallback: highlight rest as comment */
                         if (out) add_span(out, pos, len, HL_COMMENT);
                         pos = len;
                     }
@@ -983,18 +1024,22 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
 
             /* 4. Check Strings */
             if (profile->enable_triple_quotes && strncmp(text + pos, "\"\"\"", 3) == 0) {
-                state.state = HS_TRIPLE_STRING;
-                state.sub_id = '\"';
-                if (out) add_span(out, pos, pos + 3, HL_STRING);
+                if (push_string_state(&state, true, '"')) {
+                    if (out) add_span(out, pos, pos + 3, HL_STRING);
+                } else if (out) {
+                    add_span(out, pos, pos + 3, HL_STRING);
+                }
                 pos += 3;
                 continue;
             }
 
             char *delim_ptr = strchr(profile->string_delims, c);
             if (delim_ptr && *delim_ptr) {
-                state.state = HS_STRING;
-                state.sub_id = c;
-                if (out) add_span(out, pos, pos + 1, HL_STRING);
+                if (push_string_state(&state, false, c)) {
+                    if (out) add_span(out, pos, pos + 1, HL_STRING);
+                } else if (out) {
+                    add_span(out, pos, pos + 1, HL_STRING);
+                }
                 pos++;
                 continue;
             }
@@ -1120,31 +1165,49 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             if (out) add_span(out, pos, pos + 1, HL_NORMAL);
             pos++;
 
-        } else if (state.state == HS_BLOCK_COMMENT) {
-            int idx = state.sub_id;
-            const char *end_str = profile->block_comments[idx].end;
+        } else if (active == HS_BLOCK_COMMENT) {
+            HighlightStackEntry *frame = state_top(&state);
+            if (!frame) {
+                pop_state(&state);
+                continue;
+            }
+            const BlockCommentPair *pair = &profile->block_comments[frame->sub_id];
+            const char *end_str = pair->end;
             int end_len = strlen(end_str);
-            int search = pos;
-            bool found_end = false;
-            while (search <= len - end_len) {
-                if (strncmp(text + search, end_str, end_len) == 0) {
-                    found_end = true;
-                    search += end_len;
-                    break;
+            int chunk_start = pos;
+            int close_pos = -1;
+
+            if (end_len > 0) {
+                for (int scan = pos; scan <= len - end_len; ++scan) {
+                    if (strncmp(text + scan, end_str, end_len) == 0) {
+                        close_pos = scan;
+                        break;
+                    }
                 }
-                search++;
             }
-            if (found_end) {
-                if (out) add_span(out, pos, search, HL_COMMENT);
-                pos = search;
-                state.state = HS_NORMAL;
-            } else {
-                if (out) add_span(out, pos, len, HL_COMMENT);
-                pos = len;
+
+            if (close_pos >= 0) {
+                if (out && close_pos > chunk_start)
+                    add_span(out, chunk_start, close_pos, HL_COMMENT);
+                if (out)
+                    add_span(out, close_pos, close_pos + end_len, HL_COMMENT);
+                pos = close_pos + end_len;
+                pop_state(&state);
+                continue;
             }
-        } else if (state.state == HS_STRING || state.state == HS_TRIPLE_STRING) {
-            char delim = (char)state.sub_id;
-            bool is_triple = (state.state == HS_TRIPLE_STRING);
+
+            if (out)
+                add_span(out, chunk_start, len, HL_COMMENT);
+            pos = len;
+
+        } else if (active == HS_STRING || active == HS_TRIPLE_STRING) {
+            HighlightStackEntry *frame = state_top(&state);
+            if (!frame) {
+                pop_state(&state);
+                continue;
+            }
+            char delim = frame->string_delim;
+            bool is_triple = (active == HS_TRIPLE_STRING);
             
             if (text[pos] == '\\') {
                 int esc_len = 2;
@@ -1163,17 +1226,20 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             }
             
             if (is_triple) {
-                if (starts_with(text + pos, "\"\"\"")) {
+                if (pos + 3 <= len &&
+                    text[pos] == delim &&
+                    text[pos+1] == delim &&
+                    text[pos+2] == delim) {
                     if (out) add_span(out, pos, pos + 3, HL_STRING);
                     pos += 3;
-                    state.state = HS_NORMAL;
+                    pop_state(&state);
                     continue;
                 }
             } else {
                 if (text[pos] == delim) {
                     if (out) add_span(out, pos, pos + 1, HL_STRING);
                     pos++;
-                    state.state = HS_NORMAL;
+                    pop_state(&state);
                     continue;
                 }
             }

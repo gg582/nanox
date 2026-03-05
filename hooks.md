@@ -21,7 +21,7 @@ struct line {
 };
 ```
 
-Since `lalloc` in `line.c` allocates `sizeof(struct line) + size`, this change is automatically handled for new lines. You may need to initialize `hl_start_state` to `HS_NORMAL` in `lalloc`.
+Since `lalloc` in `line.c` allocates `sizeof(struct line) + size`, this change is automatically handled for new lines. You should zero-initialize `hl_start_state`/`hl_end_state` in `lalloc` so the highlight stack starts empty.
 
 ## 2. Display Structures (`display.c`)
 

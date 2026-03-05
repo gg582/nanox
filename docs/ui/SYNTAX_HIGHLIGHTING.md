@@ -10,7 +10,7 @@ Highlighting happens per-line during the display pass:
 
 ## 2. State-Based Highlighting
 To handle multi-line comments and strings, the engine is stateful:
-- **`HighlightState`**: Stores whether a line starts or ends inside a block comment or a triple-quoted string.
+- **`HighlightState`**: Maintains a small stack of scopes (block comments, triple/single quoted strings). Each opening delimiter pushes a frame; the matching closing delimiter pops it so once the stack empties the renderer can immediately resume normal syntax styling.
 - **Propagation**: If a line's end state changes (e.g., you just started a `/*`), it triggers a `WFHARD` flag on the *next* line to ensure it gets redrawn with the correct new context.
 
 ## 3. Rule Parsing (`highlight.ini`)

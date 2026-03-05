@@ -31,6 +31,7 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | 0x7F, forwdel },           /* Delete */
     { CONTROL | 'I', insert_tab },      /* Tab */
     { CONTROL | 'M', insert_newline },  /* Enter */
+    { CONTROL | '@', completion_menu_command }, /* Ctrl+Space: Autocomplete */
 
     /* Indentation/Outdentation */
     { CONTROL | 'H', outdent_start_set },

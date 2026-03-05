@@ -54,7 +54,7 @@ SRC += scraper.c
 OBJ += scraper.o
 HDR += scraper.h
 
-CC=gcc
+CC?=gcc
 WARNINGS=-Wall -Wstrict-prototypes -Wuninitialized
 
 # Extra warnings for static analysis (no debug/sanitizer, keeps binary small)
@@ -72,7 +72,7 @@ endif
 DEFINES += -DPOSIX -D_GNU_SOURCE
 
 CFLAGS=-Os -ffunction-sections -fdata-sections $(WARNINGS) $(DEFINES)
-LDFLAGS= -Wl,--gc-sections
+LDFLAGS?= -Wl,--gc-sections
 
 LIBS=hunspell
 ifeq ($(USE_NCURSES),1)

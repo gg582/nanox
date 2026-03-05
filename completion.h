@@ -16,6 +16,7 @@ typedef struct {
     int count;
     int selected_index;
     int is_visible;
+    int scroll_offset;
 } completion_state_t;
 
 extern completion_state_t completion_state;
@@ -28,5 +29,8 @@ void completion_next(void);
 void completion_prev(void);
 void completion_hide(void);
 int completion_try_at_cursor(void);
+int completion_dropdown_is_active(void);
+int completion_dropdown_handle_key(int key);
+void completion_dropdown_render(void);
 
 #endif /* COMPLETION_H */
