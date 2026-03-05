@@ -531,6 +531,17 @@ static bool is_html_profile(const HighlightProfile *profile)
     return (strcasecmp(profile->name, "html") == 0);
 }
 
+static bool profile_supports_at_annotations(const HighlightProfile *profile)
+{
+    if (!profile || profile->name[0] == '\0')
+        return false;
+    const char *name = profile->name;
+    return (strcasecmp(name, "java") == 0 ||
+            strcasecmp(name, "kotlin") == 0 ||
+            strcasecmp(name, "scala") == 0 ||
+            strcasecmp(name, "groovy") == 0);
+}
+
 /* Find closing delimiter for markdown formatting
  * Returns end position (after closing delimiter) or -1 if not found
  */
@@ -1082,6 +1093,17 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                 if (out) add_span(out, pos, pos + 1, HL_TERNARY);
                 pos++;
                 continue;
+            }
+            if (profile_supports_at_annotations(profile) && c == '@') {
+                int start = pos + 1;
+                int end = start;
+                while (end < len && (isalnum((unsigned char)text[end]) || text[end] == '_' || text[end] == '.'))
+                    end++;
+                if (end > start) {
+                    if (out) add_span(out, pos, end, HL_PREPROC);
+                    pos = end;
+                    continue;
+                }
             }
             if (profile->enable_bracket_highlight && is_punct(c)) {
                 if (out) add_span(out, pos, pos + 1, HL_BRACKET);

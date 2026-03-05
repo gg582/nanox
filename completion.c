@@ -39,11 +39,12 @@ static char completion_storage[MAX_COMPLETIONS][MAX_COMPLETION_LEN];
 
 static void completion_ensure_visible(void);
 static void completion_dropdown_activate(size_t prefix_len);
-static void completion_dropdown_deactivate(void);
+static void completion_dropdown_deactivate(int commit_preview);
 static void completion_dropdown_apply_selection(void);
 static void completion_dropdown_refresh_geometry(void);
 static void completion_draw_popup_box(void);
 static void completion_draw_minibuffer_list(int row, int col);
+static void completion_preview_apply_selected(void);
 
 typedef struct {
     char **items;
@@ -80,6 +81,16 @@ static int java_classpath_loaded = 0;
 static int java_symbols_loaded = 0;
 static int java_files_scanned = 0;
 static char java_classpath_string[4096];
+
+typedef struct {
+    int active;
+    struct line *line;
+    int start_offset;
+    int prefix_len;
+    int last_tail_len;
+} completion_preview_state_t;
+
+static completion_preview_state_t completion_preview_state = { 0 };
 
 static java_member_entry_t *java_member_cache = NULL;
 static int java_member_cache_count = 0;
@@ -169,6 +180,83 @@ static int has_extension(const char *name, const char **exts, size_t count);
 static int prev_char_start(struct line *lp, int pos);
 
 static void completion_consider_candidate(const char *candidate, const char *prefix);
+static void completion_preview_reset(void)
+{
+    completion_preview_state.active = 0;
+    completion_preview_state.line = NULL;
+    completion_preview_state.start_offset = 0;
+    completion_preview_state.prefix_len = 0;
+    completion_preview_state.last_tail_len = 0;
+}
+
+static void completion_preview_begin(struct line *line, int start, int prefix_len)
+{
+    completion_preview_state.active = 1;
+    completion_preview_state.line = line;
+    completion_preview_state.start_offset = start;
+    completion_preview_state.prefix_len = prefix_len;
+    completion_preview_state.last_tail_len = 0;
+}
+
+static void completion_preview_delete_tail(void)
+{
+    if (!completion_preview_state.active || completion_preview_state.last_tail_len <= 0 || !curwp)
+        return;
+
+    curwp->w_dotp = completion_preview_state.line;
+    curwp->w_doto = completion_preview_state.start_offset + completion_preview_state.prefix_len;
+    ldelete((long)completion_preview_state.last_tail_len, FALSE);
+    curwp->w_flag |= WFMOVE;
+    completion_preview_state.last_tail_len = 0;
+}
+
+static void completion_preview_abort(void)
+{
+    completion_preview_delete_tail();
+    completion_preview_reset();
+}
+
+static void completion_preview_commit(void)
+{
+    completion_preview_state.active = 0;
+    completion_preview_state.last_tail_len = 0;
+}
+
+static void completion_preview_apply_match(const char *match)
+{
+    if (!completion_preview_state.active || !match || !curwp)
+        return;
+
+    size_t match_len = strlen(match);
+    if (match_len < (size_t)completion_preview_state.prefix_len)
+        return;
+
+    const char *tail = match + completion_preview_state.prefix_len;
+    int tail_len = (int)strlen(tail);
+
+    completion_preview_delete_tail();
+
+    curwp->w_dotp = completion_preview_state.line;
+    curwp->w_doto = completion_preview_state.start_offset + completion_preview_state.prefix_len;
+
+    if (tail_len > 0) {
+        linsert_block((char *)tail, tail_len);
+        curwp->w_doto = completion_preview_state.start_offset + completion_preview_state.prefix_len + tail_len;
+    }
+
+    completion_preview_state.last_tail_len = tail_len;
+    curwp->w_flag |= WFMOVE;
+}
+
+static void completion_preview_apply_selected(void)
+{
+    if (!completion_preview_state.active)
+        return;
+    const char *match = completion_get_selected();
+    if (!match)
+        return;
+    completion_preview_apply_match(match);
+}
 
 static void completion_write_utf8_clipped(const char *text, int max_width)
 {
@@ -1974,26 +2062,32 @@ static void completion_dropdown_activate(size_t prefix_len)
     completion_ensure_visible();
 }
 
-static void completion_dropdown_deactivate(void)
+static void completion_dropdown_deactivate(int commit_preview)
 {
     completion_dropdown_state.active = 0;
+    if (commit_preview)
+        completion_preview_commit();
+    else
+        completion_preview_abort();
     completion_hide();
 }
 
 static void completion_dropdown_apply_selection(void)
 {
-    const char *match = completion_get_selected();
-    if (match != NULL) {
-        size_t match_len = strlen(match);
-        if (completion_dropdown_state.prefix_len <= match_len) {
-            const char *tail = match + completion_dropdown_state.prefix_len;
-            if (*tail)
-                completion_insert_text(tail);
-            else
-                TTbeep();
+    if (!completion_preview_state.active) {
+        const char *match = completion_get_selected();
+        if (match != NULL) {
+            size_t match_len = strlen(match);
+            if (completion_dropdown_state.prefix_len <= match_len) {
+                const char *tail = match + completion_dropdown_state.prefix_len;
+                if (*tail)
+                    completion_insert_text(tail);
+                else
+                    TTbeep();
+            }
         }
     }
-    completion_dropdown_deactivate();
+    completion_dropdown_deactivate(1);
 }
 
 static void completion_dropdown_refresh_geometry(void)
@@ -2143,6 +2237,7 @@ int completion_try_at_cursor(void)
     completion_context_t ctx = COMPLETION_CONTEXT_DEFAULT;
     struct line *line = NULL;
     int prefix_start = 0;
+    completion_preview_abort();
 
     if (!determine_completion_prefix(prefix, sizeof(prefix), &ctx, &line, &prefix_start, NULL))
         return FALSE;
@@ -2183,6 +2278,10 @@ int completion_try_at_cursor(void)
     }
 
     completion_dropdown_activate(prefix_len);
+    if (line) {
+        completion_preview_begin(line, prefix_start, (int)prefix_len);
+        completion_preview_apply_selected();
+    }
     return TRUE;
 }
 
@@ -2200,22 +2299,26 @@ int completion_dropdown_handle_key(int key)
     case (SPEC | 'A'):
     case (CONTROL | 'P'):
         completion_prev();
+        completion_preview_apply_selected();
         return 1;
     case (SPEC | 'B'):
     case (CONTROL | 'N'):
+    case (CONTROL | '@'):
         completion_next();
+        completion_preview_apply_selected();
         return 1;
     case (CONTROL | 'M'):
     case '\n':
     case '\r':
+    case (CONTROL | 'I'):
         completion_dropdown_apply_selection();
         return 1;
     case (CONTROL | '['):
     case (CONTROL | 'G'):
-        completion_dropdown_deactivate();
+        completion_dropdown_deactivate(0);
         return 1;
     default:
-        completion_dropdown_deactivate();
+        completion_dropdown_deactivate(0);
         return 0;
     }
 }

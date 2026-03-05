@@ -547,10 +547,30 @@ static void help_puts(const char *text)
         ttputc(*text++);
 }
 
-static void help_putsn(const char *text, int n)
+static void help_puts_width(const char *text, int max_cols)
 {
-    for (int i = 0; i < n && text[i]; i++)
-        ttputc(text[i]);
+    if (!text || max_cols <= 0)
+        return;
+
+    size_t len = strlen(text);
+    size_t idx = 0;
+    int used = 0;
+    const unsigned char *bytes = (const unsigned char *)text;
+
+    while (idx < len) {
+        unicode_t uc;
+        int consumed = utf8_to_unicode((unsigned char *)bytes, idx, len, &uc);
+        if (consumed <= 0)
+            break;
+
+        int width = mystrnlen_raw_w(uc);
+        if (used + width > max_cols)
+            break;
+
+        ttputc(uc);
+        used += width;
+        idx += consumed;
+    }
 }
 
 /* Help System Enhancements */
@@ -598,17 +618,20 @@ void nanox_help_render(void)
             if (strcmp(dynamic_topics[t].title, "Help Information") != 0) {
                 movecursor(r++, 2);
                 help_puts("=> ");
-                help_puts(dynamic_topics[t].title);
+                int avail = term->t_ncol - 2 - 3;
+                if (avail > 0)
+                    help_puts_width(dynamic_topics[t].title, avail);
             }
             for (size_t l = 0; l < dynamic_topics[t].line_count && r < max_r; l++) {
                 movecursor(r++, 2);
-                help_puts(dynamic_topics[t].lines[l]);
+                help_puts_width(dynamic_topics[t].lines[l], term->t_ncol - 2);
             }
         }
     } else {
+        int avail = term->t_ncol - 2;
         for (int i = 0; nanox_help_sheet[i] != NULL && i + 2 < max_r; ++i) {
             movecursor(i + 2, 2);
-            help_puts(nanox_help_sheet[i]);
+            help_puts_width(nanox_help_sheet[i], avail);
         }
     }
 
@@ -616,7 +639,7 @@ void nanox_help_render(void)
     movecursor(max_r, 0);
     for (int i = 0; i < term->t_ncol; i++) help_puts("-");
     movecursor(max_r, 2);
-    help_puts(" Press F1, ESC or Backspace to Exit Help ");
+    help_puts_width(" Press F1, ESC or Backspace to Exit Help ", term->t_ncol - 2);
 
     TTsetcolors(-1, -1);
     ttflush();

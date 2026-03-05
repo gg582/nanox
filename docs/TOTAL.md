@@ -24,6 +24,7 @@ The documentation is divided into the following categories:
 - **[Buffer & Window Relationship](core/BUFFER_WINDOW_MANAGEMENT.md)**: Explains the Model-View architecture linking buffers to viewport windows.
 
 ## 3. User Interface & Rendering
+- **[Basic UI Layout](ui/BASIC_UI.md)**: ASCII reconstruction of the default screen (modeline, gutter, hint rows, and lamps).
 - **[Rendering Engine](ui/RENDERING_ENGINE.md)**: Deep dive into the Virtual Screen, incremental updates, and ANSI output logic.
 - **[Syntax Highlighting](ui/SYNTAX_HIGHLIGHTING.md)**: Explanation of the state-based highlighting engine and language rules.
 - **[Status Bar & Indicators](ui/STATUS_SYSTEM.md)**: Documentation on the Modeline, Hint Bar, and the Lamp system (`--E` and `--W`).

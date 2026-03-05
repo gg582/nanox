@@ -11,12 +11,82 @@
 #include "efunc.h"
 #include "line.h"
 #include "command_mode.h"
+#include "utf8.h"
+#include "util.h"
+#include "colorscheme.h"
 
 #define CMD_BUF_SIZE 256
 
 static int cmd_active = 0;
 static char cmd_buffer[CMD_BUF_SIZE];
 static int cmd_pos = 0;
+
+static void command_mode_write_segment(const char *text, const HighlightStyle *style, int *col)
+{
+    if (!text || !*text || !style || !col || !term)
+        return;
+
+    TTsetcolors(style->fg, style->bg);
+    TTsetattrs(style->bold, style->underline, style->italic);
+
+    const unsigned char *bytes = (const unsigned char *)text;
+    int len = (int)strlen(text);
+    int idx = 0;
+
+    while (idx < len && *col < term->t_ncol) {
+        unicode_t uc;
+        int consumed = utf8_to_unicode((unsigned char *)bytes, idx, len, &uc);
+        if (consumed <= 0)
+            break;
+        int width = mystrnlen_raw_w(uc);
+        if (*col + width > term->t_ncol)
+            break;
+        TTputc(uc);
+        *col += width;
+        idx += consumed;
+    }
+}
+
+static void command_mode_draw_status(const char *status, const char *input, bool show_cursor)
+{
+    if (!discmd || !term)
+        return;
+
+    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+    HighlightStyle label = colorscheme_get(HL_NOTICE);
+    HighlightStyle status_style = colorscheme_get(HL_HEADER);
+    HighlightStyle input_style = colorscheme_get(HL_FUNCTION);
+
+    movecursor(term->t_nrow, 0);
+    int col = 0;
+
+    command_mode_write_segment("F1 ", &label, &col);
+    command_mode_write_segment("Command ", &label, &col);
+
+    if (status && *status)
+        command_mode_write_segment(status, &status_style, &col);
+
+    if (input && *input) {
+        if (status && *status)
+            command_mode_write_segment(" ", &status_style, &col);
+        command_mode_write_segment(input, &input_style, &col);
+    }
+
+    if (show_cursor)
+        command_mode_write_segment("_", &input_style, &col);
+
+    TTsetcolors(normal.fg, normal.bg);
+    TTsetattrs(normal.bold, normal.underline, normal.italic);
+    while (col < term->t_ncol) {
+        TTputc(' ');
+        col++;
+    }
+
+    TTsetcolors(-1, -1);
+    TTsetattrs(0, 0, 0);
+    TTflush();
+    mpresf = TRUE;
+}
 
 /* Initialize command mode system */
 void command_mode_init(void) {
@@ -43,8 +113,8 @@ void command_mode_activate(void) {
     sgarbf = TRUE;  /* Mark screen as garbage - forces atomic update */
     update(TRUE);   /* Full screen redraw - ensures buffer doesn't preempt message */
     
-    /* Show command prompt in status bar - this becomes atomic with the update */
-    mlwrite("F1 Command: [number] goto line | Help");
+    /* Show command prompt in status bar with themed colors */
+    command_mode_draw_status("[number] goto line | Help", NULL, false);
     
     /* DO NOT call update() here - let the main loop handle it to prevent preemption */
 }
@@ -159,8 +229,8 @@ void command_mode_render(void) {
     /* Mark current window for hard redraw to prevent buffer rendering from preempting message */
     curwp->w_flag |= WFHARD;
     
-    /* Show current command buffer in status bar */
-    mlwrite("F1 Command: %s_", cmd_buffer);
+    const char *status = (cmd_pos == 0) ? "[number] goto line | Help" : "Goto Line";
+    command_mode_draw_status(status, cmd_buffer, true);
     
     /* Force screen garbage flag for atomic display update */
     sgarbf = TRUE;
