@@ -60,7 +60,7 @@ static void render_gutter(int row, int lnum)
         vcp[i].underline = num_style.underline;
         vcp[i].italic = num_style.italic;
     }
-    vcp[5].ch = 0x2502; // Vertical bar │
+    vcp[5].ch = '|'; // ASCII vertical bar
     vcp[5].fg = num_style.fg;
     vcp[5].bg = num_style.bg;
     vcp[5].bold = num_style.bold;
