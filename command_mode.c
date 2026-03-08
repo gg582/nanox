@@ -16,10 +16,22 @@
 #include "colorscheme.h"
 
 #define CMD_BUF_SIZE 256
+#define REPLACE_PREVIEW 48
 
 static int cmd_active = 0;
 static char cmd_buffer[CMD_BUF_SIZE];
 static int cmd_pos = 0;
+
+static int parse_sed_expression(const char *expr, char *pattern, size_t pat_sz,
+    char *replacement, size_t rep_sz, int *is_global, int *is_caseless);
+static int apply_regex_to_line(struct line *lp, pcre2_code *code, pcre2_match_data *match_data,
+    const char *replacement, size_t repl_len, int is_global, int *total_count);
+static size_t utf8_advance(const char *text, size_t len, size_t offset);
+static void build_preview(const char *text, size_t len, char *dest, size_t dest_sz);
+static char *splice_text(char *text, size_t text_len, size_t start, size_t end,
+    const char *replacement, size_t repl_len, size_t *new_len);
+static int line_index_from_top(struct line *target);
+static void restore_cursor_to_index(int index, int offset);
 
 static void command_mode_write_segment(const char *text, const HighlightStyle *style, int *col)
 {
@@ -249,5 +261,380 @@ void command_mode_cleanup(void) {
 /* Command mode activation wrapper for key binding */
 int command_mode_activate_command(int f, int n) {
     command_mode_activate();
+    return TRUE;
+}
+
+/* --- Sed-style replace command implementation --- */
+
+static int read_sed_chunk(const char **pp, char delim, char *dest, size_t dest_sz, const char *label)
+{
+    size_t idx = 0;
+    const char *p = *pp;
+
+    if (dest_sz == 0)
+        return FALSE;
+
+    while (*p && *p != delim) {
+        unsigned char c = (unsigned char)*p++;
+        if (c == '\\') {
+            if (*p == '\0') {
+                mlwrite("Unterminated %s", label);
+                return FALSE;
+            }
+            c = (unsigned char)*p++;
+            switch (c) {
+            case 'n': c = '\n'; break;
+            case 't': c = '\t'; break;
+            case 'r': c = '\r'; break;
+            case '\\': c = '\\'; break;
+            default:
+                break;
+            }
+        }
+        if (idx + 1 >= dest_sz) {
+            mlwrite("%s too long", label);
+            return FALSE;
+        }
+        dest[idx++] = (char)c;
+    }
+
+    if (*p != delim) {
+        mlwrite("Unterminated %s", label);
+        return FALSE;
+    }
+
+    dest[idx] = '\0';
+    *pp = p + 1;
+    return TRUE;
+}
+
+static int parse_sed_expression(const char *expr, char *pattern, size_t pat_sz,
+    char *replacement, size_t rep_sz, int *is_global, int *is_caseless)
+{
+    const char *p = expr;
+    int global = FALSE;
+    int caseless = FALSE;
+
+    while (*p && isspace((unsigned char)*p))
+        p++;
+
+    if (*p != 's' && *p != 'S') {
+        mlwrite("Expression must begin with s/");
+        return FALSE;
+    }
+
+    p++;
+    char delim = *p++;
+    if (delim == '\0') {
+        mlwrite("Missing delimiter");
+        return FALSE;
+    }
+
+    if (!read_sed_chunk(&p, delim, pattern, pat_sz, "pattern"))
+        return FALSE;
+    if (pattern[0] == '\0') {
+        mlwrite("Empty pattern");
+        return FALSE;
+    }
+    if (!read_sed_chunk(&p, delim, replacement, rep_sz, "replacement"))
+        return FALSE;
+
+    while (*p) {
+        unsigned char c = (unsigned char)*p++;
+        if (isspace(c))
+            continue;
+        if (c == 'g' || c == 'G')
+            global = TRUE;
+        else if (c == 'i' || c == 'I')
+            caseless = TRUE;
+        else {
+            mlwrite("Unknown flag '%c'", c);
+            return FALSE;
+        }
+    }
+
+    if (strchr(pattern, '\n') != NULL) {
+        mlwrite("Multi-line patterns are not supported");
+        return FALSE;
+    }
+    if (strchr(replacement, '\n') != NULL) {
+        mlwrite("Multi-line replacements are not supported");
+        return FALSE;
+    }
+
+    *is_global = global;
+    *is_caseless = caseless;
+    return TRUE;
+}
+
+static size_t utf8_advance(const char *text, size_t len, size_t offset)
+{
+    if (offset >= len)
+        return len;
+
+    size_t next = offset + 1;
+    while (next < len && ((unsigned char)text[next] & 0xC0) == 0x80)
+        next++;
+    return next;
+}
+
+static void build_preview(const char *text, size_t len, char *dest, size_t dest_sz)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    size_t di = 0;
+    size_t i = 0;
+
+    if (dest_sz == 0)
+        return;
+
+    while (i < len && di < dest_sz - 1) {
+        unsigned char c = (unsigned char)text[i++];
+        if (c == '\n') {
+            if (di + 2 >= dest_sz)
+                break;
+            dest[di++] = '\\';
+            dest[di++] = 'n';
+        } else if (c == '\t') {
+            if (di + 2 >= dest_sz)
+                break;
+            dest[di++] = '\\';
+            dest[di++] = 't';
+        } else if (c < 0x20 || c == 0x7F) {
+            if (di + 4 >= dest_sz)
+                break;
+            dest[di++] = '\\';
+            dest[di++] = 'x';
+            dest[di++] = hex[(c >> 4) & 0xF];
+            dest[di++] = hex[c & 0xF];
+        } else {
+            dest[di++] = (char)c;
+        }
+    }
+
+    if (i < len && di + 4 < dest_sz) {
+        dest[di++] = '.';
+        dest[di++] = '.';
+        dest[di++] = '.';
+    }
+
+    dest[di] = '\0';
+}
+
+static char *splice_text(char *text, size_t text_len, size_t start, size_t end,
+    const char *replacement, size_t repl_len, size_t *new_len)
+{
+    size_t tail = text_len - end;
+    size_t next_len = text_len - (end - start) + repl_len;
+    char *result = malloc(next_len + 1);
+
+    if (result == NULL)
+        return NULL;
+
+    if (start > 0)
+        memcpy(result, text, start);
+    if (repl_len)
+        memcpy(result + start, replacement, repl_len);
+    if (tail)
+        memcpy(result + start + repl_len, text + end, tail);
+
+    result[next_len] = '\0';
+    free(text);
+    *new_len = next_len;
+    return result;
+}
+
+static int line_index_from_top(struct line *target)
+{
+    struct line *lp = lforw(curbp->b_linep);
+    int idx = 0;
+
+    while (lp != curbp->b_linep) {
+        if (lp == target)
+            return idx;
+        lp = lforw(lp);
+        idx++;
+    }
+    return -1;
+}
+
+static void restore_cursor_to_index(int index, int offset)
+{
+    struct line *lp = lforw(curbp->b_linep);
+    int idx = 0;
+
+    while (lp != curbp->b_linep && idx < index) {
+        lp = lforw(lp);
+        idx++;
+    }
+
+    if (lp == curbp->b_linep) {
+        struct line *last = lback(lp);
+        if (last != curbp->b_linep)
+            lp = last;
+    }
+
+    curwp->w_dotp = lp;
+    if (lp != curbp->b_linep) {
+        if (offset > lp->l_used)
+            offset = lp->l_used;
+        curwp->w_doto = offset;
+    } else {
+        curwp->w_doto = 0;
+    }
+    curwp->w_flag |= WFMOVE;
+}
+
+static int apply_regex_to_line(struct line *lp, pcre2_code *code, pcre2_match_data *match_data,
+    const char *replacement, size_t repl_len, int is_global, int *total_count)
+{
+    char *text = malloc(lp->l_used + 1);
+    size_t text_len = lp->l_used;
+    size_t search_offset = 0;
+    int changed = FALSE;
+
+    if (text == NULL) {
+        mlwrite("%%Out of memory");
+        return FALSE;
+    }
+
+    memcpy(text, lp->l_text, text_len);
+    text[text_len] = '\0';
+
+    while (search_offset <= text_len) {
+        int rc = pcre2_match(code, (PCRE2_SPTR)text, text_len, search_offset, 0, match_data, NULL);
+        if (rc < 0)
+            break;
+
+        PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(match_data);
+        size_t match_start = ovector[0];
+        size_t match_end = ovector[1];
+
+        int zero_width = (match_start == match_end);
+
+        int accept = is_global;
+        if (!is_global) {
+            char match_preview[REPLACE_PREVIEW];
+            char repl_preview[REPLACE_PREVIEW];
+            char prompt[REPLACE_PREVIEW * 2 + 32];
+
+            build_preview(text + match_start, match_end - match_start, match_preview, sizeof(match_preview));
+            build_preview(replacement, repl_len, repl_preview, sizeof(repl_preview));
+            snprintf(prompt, sizeof(prompt), "Replace '%s' with '%s'", match_preview, repl_preview);
+            accept = mlyesno(prompt);
+        }
+
+        size_t next_offset = match_end;
+
+        if (accept == TRUE) {
+            changed = TRUE;
+            (*total_count)++;
+            size_t new_len;
+            char *new_text = splice_text(text, text_len, match_start, match_end, replacement, repl_len, &new_len);
+            if (new_text == NULL) {
+                mlwrite("%%Out of memory");
+                free(text);
+                return FALSE;
+            }
+            text = new_text;
+            text_len = new_len;
+            next_offset = match_start + repl_len;
+        }
+
+        if (zero_width && next_offset == match_start) {
+            next_offset = utf8_advance(text, text_len, match_start);
+            if (next_offset == match_start)
+                next_offset++;
+        }
+
+        if (next_offset > text_len)
+            break;
+
+        search_offset = next_offset;
+    }
+
+    if (changed) {
+        curwp->w_dotp = lp;
+        curwp->w_doto = 0;
+        ldelete(llength(lp), FALSE);
+        if (text_len > 0)
+            linsert_block(text, (int)text_len);
+    }
+
+    free(text);
+    return TRUE;
+}
+
+int sed_replace_command(int f, int n)
+{
+    char expr[NSTRING];
+    char pattern[NPAT];
+    char replacement[NSTRING];
+    int is_global = FALSE;
+    int is_caseless = FALSE;
+    int status;
+    int total = 0;
+    int original_index;
+    int original_offset;
+    pcre2_code *code;
+    pcre2_match_data *match_data;
+    int errornumber;
+    PCRE2_SIZE erroffset;
+    uint32_t options = PCRE2_UTF | PCRE2_UCP | PCRE2_MULTILINE;
+    size_t repl_len;
+
+    if (curbp->b_mode & MDVIEW)
+        return rdonly();
+
+    status = minibuf_input("sed replace: ", expr, sizeof(expr));
+    if (status != TRUE)
+        return status;
+
+    if (!parse_sed_expression(expr, pattern, sizeof(pattern), replacement, sizeof(replacement), &is_global, &is_caseless))
+        return FALSE;
+
+    if (is_caseless)
+        options |= PCRE2_CASELESS;
+
+    code = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED, options, &errornumber, &erroffset, NULL);
+    if (code == NULL) {
+        char errbuf[128];
+        pcre2_get_error_message(errornumber, (PCRE2_UCHAR *)errbuf, sizeof(errbuf));
+        mlwrite("Regex error at %d: %s", (int)erroffset, errbuf);
+        return FALSE;
+    }
+
+    match_data = pcre2_match_data_create_from_pattern(code, NULL);
+    if (match_data == NULL) {
+        pcre2_code_free(code);
+        mlwrite("%%Out of memory");
+        return FALSE;
+    }
+
+    original_index = line_index_from_top(curwp->w_dotp);
+    original_offset = curwp->w_doto;
+    repl_len = strlen(replacement);
+
+    struct line *lp = lforw(curbp->b_linep);
+    while (lp != curbp->b_linep) {
+        struct line *next = lforw(lp);
+        if (!apply_regex_to_line(lp, code, match_data, replacement, repl_len, is_global, &total)) {
+            pcre2_match_data_free(match_data);
+            pcre2_code_free(code);
+            restore_cursor_to_index(original_index < 0 ? 0 : original_index, original_offset);
+            return FALSE;
+        }
+        lp = next;
+    }
+
+    pcre2_match_data_free(match_data);
+    pcre2_code_free(code);
+
+    restore_cursor_to_index(original_index < 0 ? 0 : original_index, original_offset);
+
+    if (total == 0)
+        mlwrite("No matches for pattern");
+    else
+        mlwrite("Replaced %d occurrence%s", total, total == 1 ? "" : "s");
+
     return TRUE;
 }

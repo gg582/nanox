@@ -56,6 +56,7 @@ struct key_tab keytab[NBINDS] = {
     /* DATA EXPLORATION & SEARCH */
     { SPEC | 'U', nanox_search_engine },  /* F5 */
     { CONTROL | 'F', nanox_search_engine },
+    { CONTROL | 'R', sed_replace_command },
 
     /* DATA DELETION & COPY (CUT/COPY) */
     { SPEC | 'W', cutln_start_copy },              /* F6: Start Copy */

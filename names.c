@@ -127,6 +127,7 @@ struct name_bind names[] = {
     { "meta-prefix", metafn },
     { "name-buffer", namebuffer },
     { "nanox-search", nanox_search_engine },
+    { "sed-replace", sed_replace_command },
     { "newline", insert_newline },
     { "newline-and-indent", indent },
     { "next-buffer", nextbuffer },
