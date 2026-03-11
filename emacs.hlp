@@ -18,8 +18,9 @@ F8-F12 : File Slots     ^V / ^Y : Paste         ------------------
   the first queued file opens through the F8 slot. When a slotted file is closed, the next
   queued file fills that empty slot.
 * In tty mode the line-number gutter uses a Unicode separator (│).
-* If nanox config sets no_function_slot = true, slot access switches to Ctrl+Alt+number mode
-  and the slot pool expands to 64 entries instead of staying limited to F8-F12.
+* If nanox config sets no_function_slot = true, the bottom bar switches from F9-12 Slot
+  to ^A+num Slot, slot access switches to Ctrl+Alt+number mode, and the slot pool expands
+  to 64 entries instead of staying limited to F8-F12.
 * ^S+J: Ctrl+Shift+J, ^S+H: Ctrl+Shift+H (End Range)
 * ^J: Ctrl+J, ^H: Ctrl+H (Start Range)
 * ^R: Sed Replace
