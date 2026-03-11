@@ -1490,7 +1490,11 @@ int indent_cancel(int f, int n)
 /* g prefix handler for gg */
 int g_prefix_handler(int f, int n)
 {
-    int c = getcmd();
+    int c;
+
+    while ((c = getcmd()) == 0)
+        ;
+
     if (c == 'g') {
         /* If selection is active (start set but end not set), finalize with cursor */
         if (indent_selection_active && indent_start_lp != NULL) {
