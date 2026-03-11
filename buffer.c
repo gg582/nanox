@@ -146,11 +146,13 @@ int zotbuf(struct buffer *bp)
     struct buffer *bp1;
     struct buffer *bp2;
     int s;
+    char closed_fname[NFILEN];
 
     if (bp->b_nwnd != 0) {          /* Error if on screen.  */
         mlwrite("Buffer is being displayed");
         return FALSE;
     }
+    strcpy(closed_fname, bp->b_fname);
     if ((s = bclear(bp)) != TRUE)       /* Blow text away.      */
         return s;
     free((char *)bp->b_linep);      /* Release header line. */
@@ -166,6 +168,7 @@ int zotbuf(struct buffer *bp)
     else
         bp1->b_bufp = bp2;
     free((char *)bp);           /* Release buffer block */
+    nanox_handle_closed_file(closed_fname);
     return TRUE;
 }
 

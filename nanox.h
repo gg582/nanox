@@ -11,6 +11,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define NANOX_SLOT_MAX 64
+
 enum nanox_lamp_state {
     NANOX_LAMP_OFF = 0,
     NANOX_LAMP_WARN,
@@ -28,10 +30,11 @@ struct nanox_config {
     int soft_tab_width;
     bool case_sensitive_default;
     bool nonr;
+    bool no_function_slot;
 };
 
 extern struct nanox_config nanox_cfg;
-extern char file_reserve[4][PATH_MAX];
+extern char file_reserve[NANOX_SLOT_MAX][PATH_MAX];
 
 void nanox_init(void);
 void nanox_apply_config(void);
@@ -56,10 +59,21 @@ int reserve_set_1(int f, int n);
 int reserve_set_2(int f, int n);
 int reserve_set_3(int f, int n);
 int reserve_set_4(int f, int n);
+int reserve_set_5(int f, int n);
 int reserve_jump_1(int f, int n);
 int reserve_jump_2(int f, int n);
 int reserve_jump_3(int f, int n);
 int reserve_jump_4(int f, int n);
+int reserve_jump_5(int f, int n);
+int reserve_jump_fallback_1(int f, int n);
+int reserve_jump_fallback_2(int f, int n);
+int reserve_jump_fallback_3(int f, int n);
+int reserve_jump_fallback_4(int f, int n);
+int reserve_jump_fallback_5(int f, int n);
+int reserve_jump_numeric_mode(int f, int n);
+void nanox_queue_startup_file(const char *path);
+int nanox_open_startup_slot(void);
+void nanox_handle_closed_file(const char *path);
 
 void nanox_message_prefix(const char *input, char *output, size_t outsz);
 void help_close(void);

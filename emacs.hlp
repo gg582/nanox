@@ -2,12 +2,24 @@
 =>                      NANOX SYSTEM BINDINGS & SEARCH SPEC
 -------------------------------------------------------------------------------
 FILE & SLOT CONTROL     EDITING & SEARCH        INDENT / OUTDENT
-F2 / ^S : Save File     F7 / ^X : Cut(S:End)    ^J / ^H : Start Range
-F3 / ^O : Open File     F6 / ^W : Copy(S:End)   ^S+J / ^S+H : End Range
-F4 / ^Q : Quit nanox    F8 / ^V : Paste         gg : Apply Range
-F1 / ^H : Help Menu     F5 / ^F : Search        BS : Cancel Range
-F9-F12 / ^1-^4 : Slot   ----------------------  ------------------
+F2 / ^S : Save File     ^K : Cut Current Line   ^J / ^H : Start Range
+F3 / ^O : Open File     F7 / ^X : Cut(S:End)    ^S+J / ^S+H : End Range
+F4 / ^Q : Quit nanox    F6 / ^W : Copy(S:End)   gg : Apply Range
+F1 / ^H : Help Menu     ^A+^C : Command Mode    BS : Cancel Range
+F8-F12 : File Slots     ^V / ^Y : Paste         ------------------
 ===============================================================================
+* ^A+^C means Ctrl+Alt+C. It opens command mode.
+* Command mode accepts line numbers, help, viblock-edit, and viblock-replace.
+* viblock-edit: start at the current cursor, move to the opposite corner, press Enter,
+  then type the shared text to insert on every selected line.
+* viblock-replace: same rectangle workflow, but the selected block is replaced on every line.
+* Slots now use F8-F12 by default. Ctrl+Alt+8/9/0/-/= act as fallback slot keys.
+* nx *.txt does not immediately open every file. Files are queued into F8-F12 slots and
+  the first queued file opens through the F8 slot. When a slotted file is closed, the next
+  queued file fills that empty slot.
+* In tty mode the line-number gutter uses a Unicode separator (│).
+* If nanox config sets no_function_slot = true, slot access switches to Ctrl+Alt+number mode
+  and the slot pool expands to 64 entries instead of staying limited to F8-F12.
 * ^S+J: Ctrl+Shift+J, ^S+H: Ctrl+Shift+H (End Range)
 * ^J: Ctrl+J, ^H: Ctrl+H (Start Range)
 * ^R: Sed Replace

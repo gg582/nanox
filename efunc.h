@@ -234,19 +234,34 @@ extern int cutln_start_cut(int f, int n);
 extern int cutln_end_copy(int f, int n);
 extern int cutln_start_copy(int f, int n);
 extern int cutln_paste_menu(int f, int n);
+extern int cutln_cut_current_line(int f, int n);
 
 /* command_mode.c */
 extern int command_mode_activate_command(int f, int n);
 extern int sed_replace_command(int f, int n);
+extern int command_mode_block_is_active(void);
+extern int command_mode_block_handle_key(int c, int f, int n);
+extern int command_mode_block_selection_contains(struct line *lp, int col_start, int col_end);
 
 extern int reserve_set_1(int f, int n);
 extern int reserve_set_2(int f, int n);
 extern int reserve_set_3(int f, int n);
 extern int reserve_set_4(int f, int n);
+extern int reserve_set_5(int f, int n);
 extern int reserve_jump_1(int f, int n);
 extern int reserve_jump_2(int f, int n);
 extern int reserve_jump_3(int f, int n);
 extern int reserve_jump_4(int f, int n);
+extern int reserve_jump_5(int f, int n);
+extern int reserve_jump_fallback_1(int f, int n);
+extern int reserve_jump_fallback_2(int f, int n);
+extern int reserve_jump_fallback_3(int f, int n);
+extern int reserve_jump_fallback_4(int f, int n);
+extern int reserve_jump_fallback_5(int f, int n);
+extern int reserve_jump_numeric_mode(int f, int n);
+extern void nanox_queue_startup_file(const char *path);
+extern int nanox_open_startup_slot(void);
+extern void nanox_handle_closed_file(const char *path);
 extern int filewrite(int f, int n);
 extern int filesave(int f, int n);
 extern int writeout(char *fn);

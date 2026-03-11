@@ -156,6 +156,8 @@ int main(int argc, char **argv)
     int searchflag;                /* Do we need to search at start? */
     int saveflag;                /* temp store for lastflag */
     int errflag;                /* C error processing? */
+    int slot_startup_mode;          /* use slot queue for CLI files */
+    int file_arg_count;             /* number of CLI file args */
     char bname[NBUFN];            /* buffer name of file to read */
     int newc;
 
@@ -197,6 +199,14 @@ int main(int argc, char **argv)
     firstfile = TRUE;            /* no file to edit yet */
     startflag = FALSE;            /* startup file not executed yet */
     errflag = FALSE;            /* not doing C error parsing */
+    file_arg_count = 0;
+
+    for (carg = 1; carg < argc; ++carg) {
+        if (argv[carg][0] == '+' || argv[carg][0] == '-' || argv[carg][0] == '@')
+            continue;
+        file_arg_count++;
+    }
+    slot_startup_mode = (file_arg_count > 1);
 
     /* Parse the command line */
     for (carg = 1; carg < argc; ++carg) {
@@ -252,6 +262,11 @@ int main(int argc, char **argv)
         } else {
 
             /* Process an input file */
+            if (slot_startup_mode) {
+                nanox_queue_startup_file(argv[carg]);
+                firstfile = FALSE;
+                continue;
+            }
 
             /* set up a buffer for this file */
             makename(bname, argv[carg]);
@@ -302,7 +317,9 @@ int main(int argc, char **argv)
 
     /* if there are any files to read, read the first one! */
     bp = bfind("main", FALSE, 0);
-    if (firstfile == FALSE && (gflags & GFREAD)) {
+    if (slot_startup_mode && (gflags & GFREAD)) {
+        nanox_open_startup_slot();
+    } else if (firstfile == FALSE && (gflags & GFREAD)) {
         swbuffer(firstbp);
         zotbuf(bp);
     } else
@@ -356,6 +373,11 @@ int main(int argc, char **argv)
     /* Nanox help system handling */
     if (nanox_help_is_active()) {
         nanox_help_handle_key(c);
+        goto loop;
+    }
+
+    if (command_mode_is_active()) {
+        command_mode_handle_key(c);
         goto loop;
     }
 
@@ -448,6 +470,11 @@ int main(int argc, char **argv)
     /* Check if paste slot is active and handle the key */
     if (check_paste_slot_active()) {
         paste_slot_handle_key(c);
+        goto loop;
+    }
+
+    if (command_mode_block_is_active()) {
+        command_mode_block_handle_key(c, f, n);
         goto loop;
     }
 

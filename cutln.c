@@ -11,6 +11,45 @@
 #include "line.h"
 #include "paste_slot.h"
 
+static void cutln_prime_kill_buffer(void)
+{
+    if ((lastflag & CFKILL) == 0)
+        kdelete();
+    thisflag |= CFKILL;
+}
+
+int cutln_cut_current_line(int f, int n)
+{
+    struct line *lp = curwp->w_dotp;
+    int len;
+
+    if (curbp->b_mode & MDVIEW)
+        return rdonly();
+    if (lp == curbp->b_linep)
+        return FALSE;
+
+    len = llength(lp);
+    cutln_prime_kill_buffer();
+
+    for (int i = 0; i < len; ++i) {
+        if (kinsert((unsigned char)lgetc(lp, i)) != TRUE)
+            return FALSE;
+    }
+    if (lforw(lp) != curbp->b_linep) {
+        if (kinsert('\n') != TRUE)
+            return FALSE;
+    }
+
+    curwp->w_dotp = lp;
+    curwp->w_doto = 0;
+    if (ldelete(len + ((lforw(lp) != curbp->b_linep) ? 1 : 0), FALSE) != TRUE)
+        return FALSE;
+
+    curwp->w_flag |= WFHARD;
+    mlwrite("Line cut.");
+    return TRUE;
+}
+
 /*
  * F7: CutLn End (Perform Cut)
  * Only works if selection (mark) is active.

@@ -39,6 +39,7 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | 'J', indent_start_set },
     { CONTROL | SHIFT | 'J', indent_end_set },
     { 'g', g_prefix_handler },
+    { META | CONTROL | 'C', command_mode_activate_command }, /* Ctrl+Alt+C */
 
     /* SYSTEM */
     { SPEC | 'P', nanox_help_command },  /* F1 */
@@ -69,23 +70,31 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | 'X', cutln_start_cut },            /* Ctrl+X: Start Cut */
     { CONTROL | SHIFT | 'X', cutln_end_cut },      /* Ctrl+Shift+X: End Cut */
     
-    { CONTROL | 'K', cutln_start_cut },            /* Ctrl+K: Start Cut */
+    { CONTROL | 'K', cutln_cut_current_line },     /* Ctrl+K: Cut Current Line */
     { CONTROL | SHIFT | 'K', cutln_end_cut },      /* Ctrl+Shift+K: End Cut */
 
     /* DATA INSERTION (PASTE) */
-    { SPEC | 'Y', yank },                 /* F8 */
     { CONTROL | 'V', yank },
     { CONTROL | 'Y', yank },
 
     /* SLOT SWITCHING */
-    { SPEC | '`', reserve_jump_1 },       /* F9 */
-    { CONTROL | '1', reserve_jump_1 },
-    { SPEC | 'a', reserve_jump_2 },       /* F10 */
-    { CONTROL | '2', reserve_jump_2 },
-    { SPEC | '{', reserve_jump_3 },       /* F11 */
-    { CONTROL | '3', reserve_jump_3 },
-    { SPEC | '}', reserve_jump_4 },       /* F12 */
-    { CONTROL | '4', reserve_jump_4 },
+    { SPEC | 'Y', reserve_jump_1 },       /* F8 */
+    { SPEC | '`', reserve_jump_2 },       /* F9 */
+    { SPEC | 'a', reserve_jump_3 },       /* F10 */
+    { SPEC | '{', reserve_jump_4 },       /* F11 */
+    { SPEC | '}', reserve_jump_5 },       /* F12 */
+    { META | CONTROL | '8', reserve_jump_fallback_1 },
+    { META | CONTROL | '9', reserve_jump_fallback_2 },
+    { META | CONTROL | '0', reserve_jump_fallback_3 },
+    { META | CONTROL | '-', reserve_jump_fallback_4 },
+    { META | CONTROL | '=', reserve_jump_fallback_5 },
+    { META | CONTROL | '1', reserve_jump_numeric_mode },
+    { META | CONTROL | '2', reserve_jump_numeric_mode },
+    { META | CONTROL | '3', reserve_jump_numeric_mode },
+    { META | CONTROL | '4', reserve_jump_numeric_mode },
+    { META | CONTROL | '5', reserve_jump_numeric_mode },
+    { META | CONTROL | '6', reserve_jump_numeric_mode },
+    { META | CONTROL | '7', reserve_jump_numeric_mode },
 
     { CONTROL | 'G', gotoline },         /* Ctrl+G: Goto Line */
 

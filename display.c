@@ -60,7 +60,7 @@ static void render_gutter(int row, int lnum)
         vcp[i].underline = num_style.underline;
         vcp[i].italic = num_style.italic;
     }
-    vcp[5].ch = '|'; // ASCII vertical bar
+    vcp[5].ch = 0x2502;
     vcp[5].fg = num_style.fg;
     vcp[5].bg = num_style.bg;
     vcp[5].bold = num_style.bold;
@@ -640,6 +640,7 @@ static void show_line(struct window *wp, struct line *lp)
 
     int current_span_idx = 0;
     int char_idx = 0; /* byte index */
+    int text_col = 0;
 
     while (char_idx < len) {
         int style = HL_NORMAL;
@@ -657,6 +658,10 @@ static void show_line(struct window *wp, struct line *lp)
 
         unicode_t c;
         int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
+        int next_col = next_column(text_col, c, tab_width);
+
+        if (command_mode_block_selection_contains(lp, text_col, next_col))
+            style = HL_SELECTION;
 
         HighlightStyle style_def = colorscheme_get(style);
         HighlightStyle normal_def = colorscheme_get(HL_NORMAL);
@@ -669,6 +674,7 @@ static void show_line(struct window *wp, struct line *lp)
 
         vtputc(c);
         char_idx += bytes;
+        text_col = next_col;
     }
 
     span_vec_free(&spans);
@@ -741,40 +747,51 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
         }
     }
 
-    int current_span_idx = 0;
-    int line_start_idx = 0;
+        int current_span_idx = 0;
+        int line_start_idx = 0;
+        int line_start_col = 0;
 
-    while(line_start_idx < len) {
-        int char_idx = line_start_idx;
-        int current_col = vtcol;
-        int last_space_idx = -1;
+        while(line_start_idx < len) {
+            int char_idx = line_start_idx;
+            int current_col = vtcol;
+            int last_space_idx = -1;
+            int text_col = line_start_col;
+            int last_space_col = -1;
 
-        // Determine the segment to render
-        int segment_end_idx = len;
-        while(char_idx < len) {
-            unicode_t c;
-            int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
-            int char_width = get_char_width(c, current_col);
+            // Determine the segment to render
+            int segment_end_idx = len;
+            int segment_end_col = text_col;
+            while(char_idx < len) {
+                unicode_t c;
+                int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
+                int char_width = get_char_width(c, current_col);
+                int next_text_col = next_column(text_col, c, tab_width);
 
-            if (c == ' ' || c == '\t') {
-                last_space_idx = char_idx;
-            }
-
-            if (current_col + char_width > term->t_ncol && char_idx > line_start_idx) {
-                if (last_space_idx != -1) {
-                    segment_end_idx = last_space_idx + 1;
-                } else {
-                    segment_end_idx = char_idx;
+                if (c == ' ' || c == '\t') {
+                    last_space_idx = char_idx;
+                    last_space_col = next_text_col;
                 }
-                goto render_segment;
+
+                if (current_col + char_width > term->t_ncol && char_idx > line_start_idx) {
+                    if (last_space_idx != -1) {
+                        segment_end_idx = last_space_idx + 1;
+                        segment_end_col = last_space_col;
+                    } else {
+                        segment_end_idx = char_idx;
+                        segment_end_col = text_col;
+                    }
+                    goto render_segment;
+                }
+                current_col += char_width;
+                text_col = next_text_col;
+                char_idx += bytes;
             }
-            current_col += char_width;
-            char_idx += bytes;
-        }
+            segment_end_col = text_col;
 
 render_segment:
         // Render the segment
         char_idx = line_start_idx;
+        text_col = line_start_col;
         while(char_idx < segment_end_idx) {
             int style = HL_NORMAL;
             while (current_span_idx < spans.count) {
@@ -791,6 +808,9 @@ render_segment:
 
             unicode_t c;
             int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
+            int next_text_col = next_column(text_col, c, tab_width);
+            if (command_mode_block_selection_contains(lp, text_col, next_text_col))
+                style = HL_SELECTION;
             HighlightStyle style_def = colorscheme_get(style);
             HighlightStyle normal_def = colorscheme_get(HL_NORMAL);
 
@@ -802,9 +822,11 @@ render_segment:
             
             vtputc(c);
             char_idx += bytes;
+            text_col = next_text_col;
         }
 
         line_start_idx = segment_end_idx;
+        line_start_col = segment_end_col;
 
         if (line_start_idx < len) {
             vtrow++;

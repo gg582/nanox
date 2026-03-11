@@ -36,11 +36,16 @@ struct nanox_config nanox_cfg = {
     .soft_tab = false,
     .soft_tab_width = 8,
     .case_sensitive_default = false,
+    .no_function_slot = false,
 };
 
-char file_reserve[4][PATH_MAX];
+char file_reserve[NANOX_SLOT_MAX][PATH_MAX];
 
 static enum nanox_lamp_state lamp_state = NANOX_LAMP_OFF;
+static char **startup_slot_queue = NULL;
+static size_t startup_slot_queue_count = 0;
+static size_t startup_slot_queue_cap = 0;
+static size_t startup_slot_queue_next = 0;
 
 struct nanox_help_topic {
     char *title;
@@ -201,6 +206,7 @@ static void config_defaults(void)
     nanox_cfg.soft_tab_width = 8;
     nanox_cfg.case_sensitive_default = false;
     nanox_cfg.nonr = false;
+    nanox_cfg.no_function_slot = false;
 }
 
 static bool parse_bool(const char *value, bool *out)
@@ -250,6 +256,9 @@ static void parse_ui_option(const char *key, const char *value)
         }
     } else if (strcasecmp(key, "nonr") == 0) {
         if (!parse_bool(value, &nanox_cfg.nonr))
+            mark_config_error();
+    } else if (strcasecmp(key, "no_function_slot") == 0) {
+        if (!parse_bool(value, &nanox_cfg.no_function_slot))
             mark_config_error();
     }
 }
@@ -580,12 +589,18 @@ static const char *nanox_help_sheet[] = {
     "=>                      NANOX SYSTEM BINDINGS & SEARCH SPEC",
     "-------------------------------------------------------------------------------",
     "FILE & SLOT CONTROL     EDITING & SEARCH        INDENT / OUTDENT",
-    "F2 / ^S : Save File     F7 / ^X : Cut(S:End)    ^J : Start Indent Range",
-    "F3 / ^O : Open File     F6 / ^W : Copy(S:End)   ^H : Start Outdent Range",
-    "F4 / ^Q : Quit nanox    F8 / ^V : Paste         Tab/gg: Apply Range",
-    "F1 / ^H : Help Menu     F5 / ^F : Search        BS : Cancel Range",
-    "F9-F12 / ^1-^4 : Slot   ----------------------  ------------------",
+    "F2 / ^S : Save File     ^K : Cut Current Line   ^J : Start Indent Range",
+    "F3 / ^O : Open File     F7 / ^X : Cut(S:End)    ^H : Start Outdent Range",
+    "F4 / ^Q : Quit nanox    F6 / ^W : Copy(S:End)   Tab/gg: Apply Range",
+    "F1 / ^H : Help Menu     ^A+^C : Command Mode    BS : Cancel Range",
+    "F8-F12 : File Slots     ^V/^Y : Paste           ------------------",
     "===============================================================================",
+    "* Ctrl+Alt+C opens command mode (goto/help/viblock-edit/viblock-replace)",
+    "* viblock-edit inserts the same text on each selected line",
+    "* viblock-replace replaces the selected rectangle on each selected line",
+    "* F8-F12 are slot jumps; Ctrl+Alt+8/9/0/-/= are fallback slot keys",
+    "* nx *.txt queues files into slots instead of opening every file immediately",
+    "* no_function_slot = true switches slots to Ctrl+Alt+number mode with 64 slots",
     "* Indent/Outdent: Ctrl+J (indent) or Ctrl+H (outdent) to mark start line",
     "* Move cursor to end line, then press Tab or gg to apply to the range",
     "* Auto-detects file indentation width (spaces or tabs)",
@@ -687,12 +702,75 @@ int nanox_help_handle_key(int key)
     return TRUE;
 }
 
+static int slot_capacity(void)
+{
+    return nanox_cfg.no_function_slot ? NANOX_SLOT_MAX : 5;
+}
+
 static const char *slot_name(int slot)
 {
-    static const char *names[] = { "F9", "F10", "F11", "F12" };
-    if (slot < 0 || slot >= 4)
+    static char label[32];
+    static const char *names[] = { "F8", "F9", "F10", "F11", "F12" };
+
+    if (slot < 0 || slot >= slot_capacity())
         return "?";
-    return names[slot];
+    if (!nanox_cfg.no_function_slot && slot < 5)
+        return names[slot];
+    snprintf(label, sizeof(label), "slot %d", slot + 1);
+    return label;
+}
+
+static void seed_startup_slots(void)
+{
+    int max_slots = slot_capacity();
+
+    for (int i = 0; i < max_slots && startup_slot_queue_next < startup_slot_queue_count; ++i) {
+        if (file_reserve[i][0])
+            continue;
+        mystrscpy(file_reserve[i], startup_slot_queue[startup_slot_queue_next++], sizeof(file_reserve[i]));
+    }
+}
+
+void nanox_queue_startup_file(const char *path)
+{
+    char **new_queue;
+    char *copy;
+
+    if (!path || !*path)
+        return;
+
+    if (startup_slot_queue_count == startup_slot_queue_cap) {
+        size_t new_cap = startup_slot_queue_cap ? startup_slot_queue_cap * 2 : 8;
+        new_queue = realloc(startup_slot_queue, sizeof(char *) * new_cap);
+        if (!new_queue)
+            return;
+        startup_slot_queue = new_queue;
+        startup_slot_queue_cap = new_cap;
+    }
+
+    copy = malloc(strlen(path) + 1);
+    if (!copy)
+        return;
+    strcpy(copy, path);
+    startup_slot_queue[startup_slot_queue_count++] = copy;
+}
+
+void nanox_handle_closed_file(const char *path)
+{
+    int max_slots = slot_capacity();
+
+    if (!path || !*path)
+        return;
+
+    for (int i = 0; i < max_slots; ++i) {
+        if (strcmp(file_reserve[i], path) != 0)
+            continue;
+        file_reserve[i][0] = '\0';
+        if (startup_slot_queue_next < startup_slot_queue_count) {
+            mystrscpy(file_reserve[i], startup_slot_queue[startup_slot_queue_next++], sizeof(file_reserve[i]));
+        }
+        break;
+    }
 }
 
 static int reserve_set(int slot)
@@ -702,7 +780,7 @@ static int reserve_set(int slot)
     char msg[PATH_MAX + 64];
     int rc;
 
-    if (slot < 0 || slot >= 4) return FALSE;
+    if (slot < 0 || slot >= slot_capacity()) return FALSE;
 
     snprintf(prompt, sizeof(prompt), "Reserve %s file: ", slot_name(slot));
     rc = minibuf_input(prompt, path, sizeof(path));
@@ -721,12 +799,11 @@ static int reserve_jump(int slot)
     int rc;
     char msg[PATH_MAX + 64];
 
-    if (slot < 0 || slot >= 4) return FALSE;
+    if (slot < 0 || slot >= slot_capacity()) return FALSE;
 
     if (!file_reserve[slot][0]) {
         nanox_set_lamp(NANOX_LAMP_WARN);
-        snprintf(msg, sizeof(msg), "%s is empty (use Ctrl+%s to reserve)",
-            slot_name(slot), slot_name(slot));
+        snprintf(msg, sizeof(msg), "%s is empty", slot_name(slot));
         minibuf_show(msg);
         return FALSE;
     }
@@ -741,15 +818,48 @@ static int reserve_jump(int slot)
     return rc;
 }
 
+int nanox_open_startup_slot(void)
+{
+    seed_startup_slots();
+    if (!file_reserve[0][0])
+        return FALSE;
+    return reserve_jump(0);
+}
+
+int reserve_jump_numeric_mode(int f, int n)
+{
+    char buf[16];
+    int slot;
+    int max_slots = slot_capacity();
+
+    if (!nanox_cfg.no_function_slot)
+        return FALSE;
+    if (minibuf_input("Open slot (1-64): ", buf, sizeof(buf)) != TRUE)
+        return FALSE;
+    slot = atoi(buf);
+    if (slot < 1 || slot > max_slots) {
+        mlwrite("Slot must be between 1 and %d", max_slots);
+        return FALSE;
+    }
+    return reserve_jump(slot - 1);
+}
+
 int reserve_set_1(int f, int n) { return reserve_set(0); }
 int reserve_set_2(int f, int n) { return reserve_set(1); }
 int reserve_set_3(int f, int n) { return reserve_set(2); }
 int reserve_set_4(int f, int n) { return reserve_set(3); }
+int reserve_set_5(int f, int n) { return reserve_set(4); }
 
 int reserve_jump_1(int f, int n) { return reserve_jump(0); }
 int reserve_jump_2(int f, int n) { return reserve_jump(1); }
 int reserve_jump_3(int f, int n) { return reserve_jump(2); }
 int reserve_jump_4(int f, int n) { return reserve_jump(3); }
+int reserve_jump_5(int f, int n) { return reserve_jump(4); }
+int reserve_jump_fallback_1(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(0); }
+int reserve_jump_fallback_2(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(1); }
+int reserve_jump_fallback_3(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(2); }
+int reserve_jump_fallback_4(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(3); }
+int reserve_jump_fallback_5(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(4); }
 
 void nanox_cleanup(void)
 {
@@ -767,6 +877,15 @@ void nanox_cleanup(void)
         free(dynamic_topics);
         dynamic_topics = NULL;
         dynamic_topic_count = 0;
+    }
+    if (startup_slot_queue) {
+        for (size_t i = 0; i < startup_slot_queue_count; ++i)
+            free(startup_slot_queue[i]);
+        free(startup_slot_queue);
+        startup_slot_queue = NULL;
+        startup_slot_queue_count = 0;
+        startup_slot_queue_cap = 0;
+        startup_slot_queue_next = 0;
     }
 }
 
