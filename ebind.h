@@ -76,18 +76,18 @@ struct key_tab keytab[NBINDS] = {
     /* DATA INSERTION (PASTE) */
     { CONTROL | 'V', yank },
     { CONTROL | 'Y', yank },
+    { SPEC | 'Y', yank },                /* F8 */
+    { META | CONTROL | '8', yank },      /* Ctrl+Alt+8 */
 
     /* SLOT SWITCHING */
-    { SPEC | 'Y', reserve_jump_1 },       /* F8 */
-    { SPEC | '`', reserve_jump_2 },       /* F9 */
-    { SPEC | 'a', reserve_jump_3 },       /* F10 */
-    { SPEC | '{', reserve_jump_4 },       /* F11 */
-    { SPEC | '}', reserve_jump_5 },       /* F12 */
-    { META | CONTROL | '8', reserve_jump_fallback_1 },
-    { META | CONTROL | '9', reserve_jump_fallback_2 },
-    { META | CONTROL | '0', reserve_jump_fallback_3 },
-    { META | CONTROL | '-', reserve_jump_fallback_4 },
-    { META | CONTROL | '=', reserve_jump_fallback_5 },
+    { SPEC | '`', reserve_jump_1 },       /* F9 */
+    { SPEC | 'a', reserve_jump_2 },       /* F10 */
+    { SPEC | '{', reserve_jump_3 },       /* F11 */
+    { SPEC | '}', reserve_jump_4 },       /* F12 */
+    { META | CONTROL | '9', reserve_jump_fallback_1 },
+    { META | CONTROL | '0', reserve_jump_fallback_2 },
+    { META | CONTROL | '-', reserve_jump_fallback_3 },
+    { META | CONTROL | '=', reserve_jump_fallback_4 },
     { META | CONTROL | '1', reserve_jump_numeric_mode },
     { META | CONTROL | '2', reserve_jump_numeric_mode },
     { META | CONTROL | '3', reserve_jump_numeric_mode },

@@ -593,12 +593,13 @@ static const char *nanox_help_sheet[] = {
     "F3 / ^O : Open File     F7 / ^X : Cut(S:End)    ^H : Start Outdent Range",
     "F4 / ^Q : Quit nanox    F6 / ^W : Copy(S:End)   Tab/gg: Apply Range",
     "F1 / ^H : Help Menu     ^A+^C : Command Mode    BS : Cancel Range",
-    "F8-F12 : File Slots     ^V/^Y : Paste           ------------------",
+    "F9-F12 : File Slots     F8/^V/^Y : Paste        ------------------",
     "===============================================================================",
     "* Ctrl+Alt+C opens command mode (goto/help/viblock-edit/viblock-replace)",
     "* viblock-edit inserts the same text on each selected line",
     "* viblock-replace replaces the selected rectangle on each selected line",
-    "* F8-F12 are slot jumps; Ctrl+Alt+8, 9, 0, -, = map to F8-F12",
+    "* F9-F12 are slot jumps; Ctrl+Alt+9, 0, -, = map to F9-F12",
+    "* F8 (and Ctrl+Alt+8) pastes from the copy/cut buffer",
     "* nx *.txt queues files into slots instead of opening every file immediately",
     "* no_function_slot = true changes the hint bar to ^A+num Slot and switches",
     "  slot access to Ctrl+Alt+number mode with 64 slots",
@@ -705,17 +706,17 @@ int nanox_help_handle_key(int key)
 
 static int slot_capacity(void)
 {
-    return nanox_cfg.no_function_slot ? NANOX_SLOT_MAX : 5;
+    return nanox_cfg.no_function_slot ? NANOX_SLOT_MAX : 4;
 }
 
 static const char *slot_name(int slot)
 {
     static char label[32];
-    static const char *names[] = { "F8", "F9", "F10", "F11", "F12" };
+    static const char *names[] = { "F9", "F10", "F11", "F12" };
 
     if (slot < 0 || slot >= slot_capacity())
         return "?";
-    if (!nanox_cfg.no_function_slot && slot < 5)
+    if (!nanox_cfg.no_function_slot && slot < 4)
         return names[slot];
     snprintf(label, sizeof(label), "slot %d", slot + 1);
     return label;
@@ -852,18 +853,15 @@ int reserve_set_1(int f, int n) { return reserve_set(0); }
 int reserve_set_2(int f, int n) { return reserve_set(1); }
 int reserve_set_3(int f, int n) { return reserve_set(2); }
 int reserve_set_4(int f, int n) { return reserve_set(3); }
-int reserve_set_5(int f, int n) { return reserve_set(4); }
 
 int reserve_jump_1(int f, int n) { return reserve_jump(0); }
 int reserve_jump_2(int f, int n) { return reserve_jump(1); }
 int reserve_jump_3(int f, int n) { return reserve_jump(2); }
 int reserve_jump_4(int f, int n) { return reserve_jump(3); }
-int reserve_jump_5(int f, int n) { return reserve_jump(4); }
 int reserve_jump_fallback_1(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(0); }
 int reserve_jump_fallback_2(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(1); }
 int reserve_jump_fallback_3(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(2); }
 int reserve_jump_fallback_4(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(3); }
-int reserve_jump_fallback_5(int f, int n) { return nanox_cfg.no_function_slot ? reserve_jump_numeric_mode(f, n) : reserve_jump(4); }
 
 void nanox_cleanup(void)
 {
