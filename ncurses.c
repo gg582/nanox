@@ -95,6 +95,7 @@ static int get_pair(int fg, int bg) {
 }
 
 void ncurses_open(void) {
+    ttopen();
     setlocale(LC_ALL, "");
     initscr();
     raw();
@@ -113,6 +114,7 @@ void ncurses_open(void) {
 
 void ncurses_close(void) {
     endwin();
+    ttclose();
 }
 
 void ncurses_kopen(void) {
@@ -122,40 +124,7 @@ void ncurses_kclose(void) {
 }
 
 int ncurses_getchar(void) {
-    wint_t wc;
-    int result = wget_wch(stdscr, &wc);
-
-    if (result == ERR)
-        return 0;
-
-    if (result == KEY_CODE_YES) {
-        switch (wc) {
-        case KEY_UP: return SPEC | 'A';
-        case KEY_DOWN: return SPEC | 'B';
-        case KEY_LEFT: return SPEC | 'D';
-        case KEY_RIGHT: return SPEC | 'C';
-        case KEY_PPAGE: return SPEC | '5';
-        case KEY_NPAGE: return SPEC | '6';
-        case KEY_HOME: return SPEC | 'H';
-        case KEY_END: return SPEC | 'F';
-        case KEY_IC: return SPEC | 'L';
-        case KEY_DC: return SPEC | 127;
-        case KEY_BACKSPACE: return 0x08;
-        default:
-            if (wc >= KEY_F(1) && wc <= KEY_F(12)) {
-                static const int f_map[] = {
-                    'P', 'Q', 'R', 'S', 'U', 'W', 'X', 'Y', '`', 'a', '{', '}'
-                };
-                return SPEC | f_map[wc - KEY_F(1)];
-            }
-            return 0;
-        }
-    }
-
-    if (wc == 127)
-        return 0x08;
-
-    return (int)wc;
+    return ttgetc();
 }
 
 int ncurses_putchar(int c) {

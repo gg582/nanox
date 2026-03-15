@@ -27,4 +27,5 @@ F9-F12 : File Slots     F8/^V/^Y : Paste        ------------------
 * ^R: Sed Replace
 * gg: Apply the selected indent/outdent to the range
 * BS: Backspace (Cancels current range operation)
+* ^K: Kill current line. Prefix with ^U <n> (e.g., ^U 3 ^K) to kill multiple lines at once.
 * Interactive (y/n) prompt appears after each search match.

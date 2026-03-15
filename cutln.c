@@ -20,32 +20,42 @@ static void cutln_prime_kill_buffer(void)
 
 int cutln_cut_current_line(int f, int n)
 {
-    struct line *lp = curwp->w_dotp;
-    int has_next_line;
-    int len;
+    int lines_to_cut = 1;
 
     if (curbp->b_mode & MDVIEW)
         return rdonly();
-    if (lp == curbp->b_linep)
+
+    if (f != FALSE) {
+        if (n <= 0)
+            return FALSE;
+        lines_to_cut = n;
+    }
+
+    if (curwp->w_dotp == curbp->b_linep)
         return FALSE;
 
-    len = llength(lp);
-    has_next_line = (lforw(lp) != curbp->b_linep);
     cutln_prime_kill_buffer();
 
-    for (int i = 0; i < len; ++i) {
-        if (kinsert((unsigned char)lgetc(lp, i)) != TRUE)
-            return FALSE;
-    }
-    if (has_next_line) {
-        if (kinsert('\n') != TRUE)
-            return FALSE;
-    }
+    while (lines_to_cut--) {
+        struct line *lp = curwp->w_dotp;
+        long chunk;
+        int len;
+        int has_next_line;
 
-    curwp->w_dotp = lp;
-    curwp->w_doto = 0;
-    if (ldelete(len + (has_next_line ? 1 : 0), FALSE) != TRUE)
-        return FALSE;
+        if (lp == curbp->b_linep)
+            break;
+
+        curwp->w_dotp = lp;
+        curwp->w_doto = 0;
+        len = llength(lp);
+        has_next_line = (lforw(lp) != curbp->b_linep);
+        chunk = len + (has_next_line ? 1L : 0L);
+        if (chunk == 0)
+            chunk = 1;
+
+        if (ldelete(chunk, TRUE) != TRUE)
+            return FALSE;
+    }
 
     curwp->w_flag |= WFHARD;
     mlwrite("Line cut.");

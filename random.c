@@ -1310,6 +1310,15 @@ static void indent_reset_range(void)
     indent_range_type = 0;
 }
 
+static int indent_range_pending(void)
+{
+    if (indent_selection_active)
+        return TRUE;
+    if (indent_start_lp != NULL && indent_end_lp != NULL)
+        return TRUE;
+    return FALSE;
+}
+
 static int indent_set_range_from_mark(void)
 {
     if (curwp->w_markp == NULL) {
@@ -1491,6 +1500,9 @@ int indent_cancel(int f, int n)
 int g_prefix_handler(int f, int n)
 {
     int c;
+
+    if (!indent_range_pending())
+        return linsert(1, 'g');
 
     while ((c = getcmd()) == 0)
         ttpause();
