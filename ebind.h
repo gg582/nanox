@@ -39,7 +39,7 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | 'J', indent_start_set },
     { CONTROL | SHIFT | 'J', indent_end_set },
     { 'g', g_prefix_handler },
-    { META | CONTROL | 'C', command_mode_activate_command }, /* Ctrl+Alt+C */
+    { CONTROL | 'V', command_mode_activate_command }, /* Ctrl+V: Command Mode */
 
     /* SYSTEM */
     { SPEC | 'P', nanox_help_command },  /* F1 */
@@ -74,7 +74,6 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | SHIFT | 'K', cutln_end_cut },      /* Ctrl+Shift+K: End Cut */
 
     /* DATA INSERTION (PASTE) */
-    { CONTROL | 'V', yank },
     { CONTROL | 'Y', yank },
     { SPEC | 'Y', yank },                /* F8 */
     { META | CONTROL | '8', yank },      /* Ctrl+Alt+8 */

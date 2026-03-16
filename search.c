@@ -138,91 +138,96 @@ int forwsearch(int f, int n)
 int nanox_search_engine(int f, int n)
 {
     char query[NPAT];
-    int status;
     static int last_dir = FORWARD;
-    int dir = last_dir;
 
-    /* Get search string using minibuffer */
-    status = minibuf_input("Search: ", query, NPAT);
-    if (status != TRUE) {
-        nanox_request_underbar_redraw();
-        return status;
-    }
-
-    /* Handle empty query - use last pattern and last direction */
-    if (status == FALSE || query[0] == '\0') {
-        if (pat[0] == '\0') {
-            mlwrite("No pattern set");
+    while (1) {
+        int input_status = minibuf_input("Search: ", query, NPAT);
+        if (input_status != TRUE) {
             nanox_request_underbar_redraw();
-            return FALSE;
+            return input_status;
         }
-        dir = last_dir;
-    } else {
-        /* Parse suffix &nx or &pr */
+
+        int dir = last_dir;
+        int status = TRUE;
         int len = strlen(query);
         int has_suffix = 0;
-        if (len >= 3) {
-            if (strcmp(query + len - 3, "&nx") == 0) {
-                dir = FORWARD;
-                query[len - 3] = '\0';
-                has_suffix = 1;
-            } else if (strcmp(query + len - 3, "&pr") == 0) {
-                dir = REVERSE;
-                query[len - 3] = '\0';
-                has_suffix = 1;
-            }
-        }
 
-        /* Update global patterns ONLY if keyword is not empty */
-        if (query[0] != '\0') {
-            strcpy(pat, query);
-            rvstrscpy(tap, query, NPAT);
-            
-            /* Re-generate magic patterns if in magic mode */
-            if (curwp->w_bufp->b_mode & MDMAGIC) {
-                mcstr();
-            }
-        } else if (has_suffix) {
-            /* Suffix only - use previous pattern */
+        if (query[0] == '\0') {
             if (pat[0] == '\0') {
                 mlwrite("No pattern set");
                 nanox_request_underbar_redraw();
                 return FALSE;
             }
-        }
-        last_dir = dir;
-    }
-
-    while (1) {
-        if ((magical && curwp->w_bufp->b_mode & MDMAGIC) != 0) {
-            if (dir == FORWARD)
-                status = mcscanner(&mcpat[0], FORWARD, PTEND);
-            else
-                status = mcscanner(&tapcm[0], REVERSE, PTBEG);
         } else {
-            if (dir == FORWARD)
-                status = scanner(&pat[0], FORWARD, PTEND);
-            else
-                status = scanner(&tap[0], REVERSE, PTBEG);
+            if (len >= 3) {
+                if (strcmp(query + len - 3, "&nx") == 0) {
+                    dir = FORWARD;
+                    query[len - 3] = '\0';
+                    has_suffix = 1;
+                } else if (strcmp(query + len - 3, "&pr") == 0) {
+                    dir = REVERSE;
+                    query[len - 3] = '\0';
+                    has_suffix = 1;
+                }
+            }
+
+            if (query[0] != '\0') {
+                strcpy(pat, query);
+                rvstrscpy(tap, query, NPAT);
+                
+                if (curwp->w_bufp->b_mode & MDMAGIC) {
+                    mcstr();
+                }
+            } else if (has_suffix) {
+                if (pat[0] == '\0') {
+                    mlwrite("No pattern set");
+                    nanox_request_underbar_redraw();
+                    return FALSE;
+                }
+            }
+            last_dir = dir;
         }
 
-        if (status != TRUE) {
-            mlwrite("No more matches.");
-            break;
-        }
+        int restart = FALSE;
 
-        /* Position found, update display */
-        update(TRUE);
+        while (1) {
+            if ((magical && curwp->w_bufp->b_mode & MDMAGIC) != 0) {
+                if (dir == FORWARD)
+                    status = mcscanner(&mcpat[0], FORWARD, PTEND);
+                else
+                    status = mcscanner(&tapcm[0], REVERSE, PTBEG);
+            } else {
+                if (dir == FORWARD)
+                    status = scanner(&pat[0], FORWARD, PTEND);
+                else
+                    status = scanner(&tap[0], REVERSE, PTBEG);
+            }
 
-        /* Interactive prompt */
-        mlwrite("Search Next? (y/n)");
-        int c = tgetc();
-        if (c != 'y' && c != 'Y') {
+            if (status != TRUE) {
+                mlwrite("No more matches.");
+                break;
+            }
+
+            update(TRUE);
+
+            mlwrite("Search Next? (y/n or Enter new)");
+            int c = tgetc();
+            if (c == 'y' || c == 'Y') {
+                continue;
+            }
+            if (c == '\r' || c == '\n' || c == (CONTROL | 'M')) {
+                restart = TRUE;
+                mlwrite("");
+                break;
+            }
             mlwrite("");
             break;
         }
-        /* Loop continues to find next match in same direction */
+
+        if (!restart)
+            break;
     }
+
     nanox_request_underbar_redraw();
     return TRUE;
 }

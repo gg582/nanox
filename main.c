@@ -376,11 +376,6 @@ int main(int argc, char **argv)
         goto loop;
     }
 
-    if (command_mode_is_active()) {
-        command_mode_handle_key(c);
-        goto loop;
-    }
-
     if (completion_dropdown_is_active()) {
         if (completion_dropdown_handle_key(c))
             goto loop;

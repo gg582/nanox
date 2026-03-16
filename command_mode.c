@@ -18,9 +18,6 @@
 #define CMD_BUF_SIZE 256
 #define REPLACE_PREVIEW 48
 
-static int cmd_active = 0;
-static char cmd_buffer[CMD_BUF_SIZE];
-static int cmd_pos = 0;
 static int block_active = 0;
 static int block_replace = 0;
 static struct line *block_anchor_line = NULL;
@@ -41,6 +38,14 @@ static int block_visual_column(struct line *lp, int offset);
 static void block_bounds(int *top, int *bottom, int *left, int *right);
 static int line_offset_for_column(struct line *lp, int target_col, int *actual_col);
 static void render_block_status(void);
+static void command_mode_prompt(void);
+static void execute_command(const char *input);
+static void command_mode_trim(char *text);
+static int command_mode_parse_line_range(const char *text, int *start_line, int *end_line);
+static int command_mode_apply_indent_range(int start_line, int end_line, int indent_direction);
+static int command_mode_handle_range_command(const char *input, const char *name, int indent_direction);
+static int command_mode_total_lines(void);
+static struct line *command_mode_line_at_number(int number);
 
 static void command_mode_write_segment(const char *text, const HighlightStyle *style, int *col)
 {
@@ -111,37 +116,15 @@ static void command_mode_draw_status(const char *status, const char *input, bool
 
 /* Initialize command mode system */
 void command_mode_init(void) {
-    cmd_active = 0;
-    cmd_buffer[0] = '\0';
-    cmd_pos = 0;
     block_active = 0;
     block_replace = 0;
     block_anchor_line = NULL;
     block_anchor_offset = 0;
 }
 
-/* Check if command mode is active */
-int command_mode_is_active(void) {
-    return cmd_active;
-}
-
 /* Activate F1 command mode */
 void command_mode_activate(void) {
-    cmd_active = 1;
-    cmd_buffer[0] = '\0';
-    cmd_pos = 0;
-    
-    /* Mark current window for full redisplay to synchronize display state */
-    curwp->w_flag |= WFHARD | WFMODE;
-    
-    /* Force complete screen reset and redraw */
-    sgarbf = TRUE;  /* Mark screen as garbage - forces atomic update */
-    update(TRUE);   /* Full screen redraw - ensures buffer doesn't preempt message */
-    
-    /* Show command prompt in status bar with themed colors */
-    command_mode_draw_status("[number] goto line | help | viblock-edit | viblock-replace", NULL, false);
-    
-    /* DO NOT call update() here - let the main loop handle it to prevent preemption */
+    command_mode_prompt();
 }
 
 /* Execute goto line command */
@@ -191,101 +174,111 @@ static void start_block_mode(int replace_mode)
 }
 
 /* Parse and execute command */
-static void execute_command(void) {
-    if (cmd_pos == 0) {
+static void command_mode_trim(char *text)
+{
+    if (!text)
+        return;
+
+    char *start = text;
+    while (*start && isspace((unsigned char)*start))
+        start++;
+
+    if (start != text)
+        memmove(text, start, strlen(start) + 1);
+
+    size_t len = strlen(text);
+    while (len > 0 && isspace((unsigned char)text[len - 1]))
+        len--;
+    text[len] = '\0';
+}
+
+static void command_mode_prompt(void)
+{
+    char input[CMD_BUF_SIZE];
+    int status = minibuf_input("Command Mode: ", input, sizeof(input));
+    if (status == TRUE)
+        execute_command(input);
+    nanox_request_underbar_redraw();
+}
+
+static int command_mode_handle_range_command(const char *input, const char *name, int indent_direction)
+{
+    size_t cmd_len = strlen(name);
+    if (strncasecmp(input, name, cmd_len) != 0)
+        return FALSE;
+
+    const char *range = input + cmd_len;
+    if (*range && !isspace((unsigned char)*range))
+        return FALSE;
+
+    while (*range && isspace((unsigned char)*range))
+        range++;
+
+    if (*range == '\0') {
+        mlwrite("[%s syntax: %s start-end]", name, name);
+        return TRUE;
+    }
+
+    int start_line, end_line;
+    if (!command_mode_parse_line_range(range, &start_line, &end_line)) {
+        mlwrite("[%s range must be start-end]", name);
+        return TRUE;
+    }
+
+    command_mode_apply_indent_range(start_line, end_line, indent_direction);
+    return TRUE;
+}
+
+static void execute_command(const char *input) {
+    if (input == NULL || *input == '\0') {
         mlwrite("Empty command");
         return;
     }
-    
-    cmd_buffer[cmd_pos] = '\0';
+
+    char buffer[CMD_BUF_SIZE];
+    mystrscpy(buffer, input, sizeof(buffer));
+    command_mode_trim(buffer);
+
+    if (buffer[0] == '\0') {
+        mlwrite("Empty command");
+        return;
+    }
+
+    if (command_mode_handle_range_command(buffer, "indent", 1))
+        return;
+    if (command_mode_handle_range_command(buffer, "outdent", -1))
+        return;
     
     /* Check if it's a number (goto line) */
     int is_number = 1;
-    for (int i = 0; i < cmd_pos; i++) {
-        if (!isdigit((unsigned char)cmd_buffer[i])) {
+    for (char *p = buffer; *p; ++p) {
+        if (!isdigit((unsigned char)*p)) {
             is_number = 0;
             break;
         }
     }
     
     if (is_number) {
-        int line_num = atoi(cmd_buffer);
+        int line_num = atoi(buffer);
         execute_goto_line(line_num);
     }
     /* Check for Help command (case insensitive) */
-    else if (strcasecmp(cmd_buffer, "help") == 0 || strcasecmp(cmd_buffer, "h") == 0) {
+    else if (strcasecmp(buffer, "help") == 0 || strcasecmp(buffer, "h") == 0) {
         execute_help();
     }
-    else if (strcasecmp(cmd_buffer, "viblock-edit") == 0 || strcasecmp(cmd_buffer, "viblock edit") == 0) {
+    else if (strcasecmp(buffer, "viblock-edit") == 0 || strcasecmp(buffer, "viblock edit") == 0) {
         start_block_mode(FALSE);
     }
-    else if (strcasecmp(cmd_buffer, "viblock-replace") == 0 || strcasecmp(cmd_buffer, "viblock replace") == 0) {
+    else if (strcasecmp(buffer, "viblock-replace") == 0 || strcasecmp(buffer, "viblock replace") == 0) {
         start_block_mode(TRUE);
     }
     else {
-        mlwrite("Unknown command: %s", cmd_buffer);
+        mlwrite("Unknown command: %s", buffer);
     }
-}
-
-/* Handle key input in command mode */
-int command_mode_handle_key(int c) {
-    if (!cmd_active) return 0;
-    
-    switch (c) {
-        case 0x0D: /* Enter */
-        case 0x0A: /* LF */
-        case CONTROL | 'M': /* Some terminals report Enter as Ctrl+M */
-            execute_command();
-            cmd_active = 0;
-            return 1;
-            
-        case 0x1B: /* ESC */
-            mlwrite("Command cancelled");
-            cmd_active = 0;
-            return 1;
-            
-        case 0x7F: /* Backspace/DEL */
-        case 0x08: /* Ctrl+H */
-            if (cmd_pos > 0) {
-                cmd_pos--;
-                cmd_buffer[cmd_pos] = '\0';
-                command_mode_render();
-            }
-            return 1;
-            
-        default:
-            /* Accept printable characters */
-            if (c >= 0x20 && c < 0x7F && cmd_pos < CMD_BUF_SIZE - 1) {
-                cmd_buffer[cmd_pos++] = (char)c;
-                cmd_buffer[cmd_pos] = '\0';
-                command_mode_render();
-            }
-            return 1;
-    }
-}
-
-/* Render command mode UI (status bar) */
-void command_mode_render(void) {
-    if (!cmd_active) return;
-    
-    /* Mark current window for hard redraw to prevent buffer rendering from preempting message */
-    curwp->w_flag |= WFHARD;
-    
-    const char *status = (cmd_pos == 0) ? "[number] goto line | help | viblock-edit | viblock-replace" : "Command";
-    command_mode_draw_status(status, cmd_buffer, true);
-    
-    /* Force screen garbage flag for atomic display update */
-    sgarbf = TRUE;
-    
-    /* DO NOT call update() here - message will be shown by main loop's update cycle
-     * This prevents the message from being buried by a second buffer redraw */
 }
 
 /* Cleanup command mode */
 void command_mode_cleanup(void) {
-    cmd_active = 0;
-    cmd_buffer[0] = '\0';
-    cmd_pos = 0;
     block_active = 0;
     block_replace = 0;
     block_anchor_line = NULL;
@@ -525,6 +518,125 @@ static void restore_saved_cursor(int index, int offset)
         return;
     }
     restore_cursor_to_index(index, offset);
+}
+
+static int command_mode_total_lines(void)
+{
+    int total = 0;
+    struct line *lp = lforw(curbp->b_linep);
+    while (lp != curbp->b_linep) {
+        total++;
+        lp = lforw(lp);
+    }
+    return total;
+}
+
+static struct line *command_mode_line_at_number(int number)
+{
+    struct line *lp = lforw(curbp->b_linep);
+    int idx = 1;
+    while (lp != curbp->b_linep && idx < number) {
+        lp = lforw(lp);
+        idx++;
+    }
+    if (lp == curbp->b_linep)
+        return NULL;
+    return lp;
+}
+
+static int command_mode_parse_line_range(const char *text, int *start_line, int *end_line)
+{
+    if (!text || !start_line || !end_line)
+        return FALSE;
+
+    char buffer[CMD_BUF_SIZE];
+    mystrscpy(buffer, text, sizeof(buffer));
+
+    char *dash = strchr(buffer, '-');
+    if (!dash)
+        return FALSE;
+
+    *dash = '\0';
+    char *left = buffer;
+    char *right = dash + 1;
+
+    command_mode_trim(left);
+    command_mode_trim(right);
+
+    if (*left == '\0' || *right == '\0')
+        return FALSE;
+
+    char *endptr;
+    long start = strtol(left, &endptr, 10);
+    if (*endptr != '\0')
+        return FALSE;
+    long end = strtol(right, &endptr, 10);
+    if (*endptr != '\0')
+        return FALSE;
+
+    if (start > end) {
+        long tmp = start;
+        start = end;
+        end = tmp;
+    }
+
+    if (start < 1)
+        start = 1;
+    if (end < 1)
+        end = 1;
+
+    *start_line = (int)start;
+    *end_line = (int)end;
+    return TRUE;
+}
+
+static int command_mode_apply_indent_range(int start_line, int end_line, int indent_direction)
+{
+    int total = command_mode_total_lines();
+    if (total <= 0) {
+        mlwrite("Buffer is empty");
+        return FALSE;
+    }
+
+    if (start_line < 1)
+        start_line = 1;
+    if (end_line < 1)
+        end_line = 1;
+    if (start_line > total)
+        start_line = total;
+    if (end_line > total)
+        end_line = total;
+    if (start_line > end_line) {
+        int tmp = start_line;
+        start_line = end_line;
+        end_line = tmp;
+    }
+
+    struct line *start_lp = command_mode_line_at_number(start_line);
+    struct line *end_lp = command_mode_line_at_number(end_line);
+    if (!start_lp || !end_lp) {
+        mlwrite("Invalid line range");
+        return FALSE;
+    }
+
+    struct line *saved_start = indent_start_lp;
+    struct line *saved_end = indent_end_lp;
+    int saved_type = indent_range_type;
+    int saved_active = indent_selection_active;
+
+    indent_start_lp = start_lp;
+    indent_end_lp = end_lp;
+    indent_range_type = indent_direction;
+    indent_selection_active = FALSE;
+
+    int status = indent_apply_range(FALSE, 1);
+
+    indent_start_lp = saved_start;
+    indent_end_lp = saved_end;
+    indent_range_type = saved_type;
+    indent_selection_active = saved_active;
+
+    return status;
 }
 
 static int block_visual_column(struct line *lp, int offset)
