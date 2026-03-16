@@ -5,11 +5,15 @@ FILE & SLOT CONTROL     EDITING & SEARCH        INDENT / OUTDENT
 F2 / ^S : Save File     ^K : Cut Current Line   ^J / ^H : Start Range
 F3 / ^O : Open File     F7 / ^X : Cut(S:End)    ^S+J / ^S+H : End Range
 F4 / ^Q : Quit nanox    F6 / ^W : Copy(S:End)   gg : Apply Range
-F1 / ^H : Help Menu     ^A+^C : Command Mode    BS : Cancel Range
-F9-F12 : File Slots     F8/^V/^Y : Paste        ------------------
+F1 / ^H : Help Menu     ^V : Command Mode       BS : Cancel Range
+F9-F12 : File Slots     F8/^Y : Paste           ------------------
 ===============================================================================
-* ^A+^C means Ctrl+Alt+C. It opens command mode.
-* Command mode accepts line numbers, help, viblock-edit, and viblock-replace.
+* ^V means Ctrl+V. Pressing it opens Command Mode in the minibuffer.
+* Command Mode flow:
+  1. Press ^V, type a command when the "Command Mode:" minibuffer appears, then hit Enter.
+  2. Supported commands remain line numbers, help, viblock-edit, viblock-replace, etc.
+  3. New range commands: "indent 8-12" or "outdent 12-8" apply indentation to lines 8 through 12
+     (range order is normalized automatically). Existing mark-based indent/outdent shortcuts still work.
 * viblock-edit: start at the current cursor, move to the opposite corner, press Enter,
   then type the shared text to insert on every selected line.
 * viblock-replace: same rectangle workflow, but the selected block is replaced on every line.
@@ -28,4 +32,4 @@ F9-F12 : File Slots     F8/^V/^Y : Paste        ------------------
 * gg: Apply the selected indent/outdent to the range
 * BS: Backspace (Cancels current range operation)
 * ^K: Kill current line. Prefix with ^U <n> (e.g., ^U 3 ^K) to kill multiple lines at once.
-* Interactive (y/n) prompt appears after each search match.
+* After each search match press Y to continue or Enter to open a fresh "Search:" prompt instantly.
