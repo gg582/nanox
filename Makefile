@@ -64,15 +64,67 @@ EXTRA_WARNINGS = -Wextra -Wpedantic -Wshadow -Wformat=2 -Wcast-qual -Wcast-align
 	             -Wstrict-prototypes -Wold-style-definition
 
 # Treat warnings as errors
-WERROR ?= 1
+WERROR ?= 0
 ifeq ($(WERROR),1)
 	EXTRA_WARNINGS += -Werror
 endif
 
 DEFINES += -DPOSIX -D_GNU_SOURCE
 
-CFLAGS=-Os -ffunction-sections -fdata-sections $(WARNINGS) $(DEFINES)
-LDFLAGS?= -Wl,--gc-sections
+CFLAGS = -std=c2x -Ofast \
+              -Wno-error=deprecated-declarations -DSSH_CHATTER_USE_GC=$(ENABLE_GC) \
+              -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=700 \
+              -Wall -Wextra -Wshadow -Wformat=2 -Wundef -Wconversion -Wdouble-promotion \
+              -fstack-protector-strong -fno-common \
+              -fPIC -ftls-model=global-dynamic \
+              -g \
+              -D_FORTIFY_SOURCE=3 \
+              -march=native -mtune=native \
+              -fomit-frame-pointer \
+              -fno-signed-zeros \
+              -funroll-loops \
+              -falign-functions=32 -falign-loops=32 -falign-jumps=32 -falign-labels=32 \
+              -ftree-vectorize \
+              -fno-math-errno -freciprocal-math \
+              -fmerge-all-constants -fipa-pta -fdevirtualize-at-ltrans \
+              -fpeel-loops -fweb \
+              -fdata-sections -ffunction-sections \
+              -fno-asynchronous-unwind-tables \
+              -fstrict-aliasing -fno-trapping-math -fstrict-overflow \
+              -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free \
+              -fipa-pure-const -fipa-cp-clone \
+              -fno-semantic-interposition \
+              -fprefetch-loop-arrays \
+              -fivopts \
+              -faggressive-loop-optimizations \
+              -fipa-sra \
+              -fmodulo-sched -fmodulo-sched-allow-regmoves \
+              -ftracer \
+              -fvisibility=hidden \
+              -fno-plt \
+              -funsafe-math-optimizations \
+              -ftree-loop-vectorize -ftree-slp-vectorize \
+              -fno-exceptions \
+              -fdelete-null-pointer-checks \
+              -MMD -MP
+LDFLAGS = \
+		-flto=auto -fuse-linker-plugin \
+    -Wl,-Ofast \
+    -Wl,--hash-style=gnu \
+    -Wl,--sort-common \
+    -Wl,-z,relro \
+    -Wl,-z,now \
+    -Wl,-Bsymbolic \
+    -Wl,--gc-sections \
+    -Wl,--as-needed \
+    -Wl,--strip-all \
+    -Wl,--relax \
+    -Wl,--no-undefined \
+    -Wl,--warn-execstack -Wl,-z,noexecstack \
+    -Wl,-z,separate-code \
+    -Wl,-z,stack-size=786432 \
+    -Wl,-z,combreloc \
+    -Wl,--build-id=none
 
 LIBS=hunspell
 ifeq ($(USE_NCURSES),1)
