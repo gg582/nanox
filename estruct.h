@@ -11,8 +11,8 @@
 #ifndef ESTRUCT_H_
 #define ESTRUCT_H_
 
-#define MAXCOL  4096
-#define MAXROW  4096
+#define MAXCOL  512
+#define MAXROW  1024
 
 /* System dependant library redefinitions, structures and includes. */
 
