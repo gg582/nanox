@@ -1460,9 +1460,11 @@ int indent_apply_range(int f, int n)
     long end_line = line_number_for(lp2);
 
     scan = first;
-    while (scan != lforw(last)) {
+    struct line *stop = lforw(last);
+    while (scan != stop) {
+        struct line *next = lforw(scan);
         adjust_indent(scan, indent_range_type);
-        scan = lforw(scan);
+        scan = next;
     }
     
     lchange(WFHARD);
