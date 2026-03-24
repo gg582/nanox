@@ -326,20 +326,32 @@ char *gtenv(char *vname)
  */
 static char *getkill(void)
 {
-    int size;               /* max number of chars to return */
+    int size;               /* chars copied from current chunk */
+    int out = 0;
     static char value[NSTRING];     /* temp buffer for value */
+    struct kill *kp;
 
     if (kbufh == NULL)
         /* no kill buffer....just a null string */
         value[0] = 0;
     else {
-        /* copy in the contents... */
-        if (kused < NSTRING)
-            size = kused;
-        else
-            size = NSTRING - 1;
-        memcpy(value, kbufh->d_chunk, size);
-        value[size] = 0;
+        for (kp = kbufh; kp != NULL && out < NSTRING - 1; kp = kp->d_next) {
+            int chunk_used = (kp->d_next == NULL) ? kused : KBLOCK;
+            if (chunk_used < 0)
+                chunk_used = 0;
+            if (chunk_used > KBLOCK)
+                chunk_used = KBLOCK;
+
+            size = chunk_used;
+            if (size > (NSTRING - 1 - out))
+                size = NSTRING - 1 - out;
+
+            if (size > 0) {
+                memcpy(value + out, kp->d_chunk, (size_t)size);
+                out += size;
+            }
+        }
+        value[out] = 0;
     }
 
     /* and return the constructed value */

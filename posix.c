@@ -34,12 +34,30 @@ static int handle_bracketed_paste(void);
 
 static int kbdflgs;             /* saved keyboard fd flags      */
 static int kbdpoll;             /* in O_NDELAY mode             */
+static int tty_is_raw = FALSE;
 
 static struct termios otermios;         /* original terminal characteristics */
 static struct termios ntermios;         /* charactoristics to use inside */
 
 #define TBUFSIZ 128
 static char tobuf[TBUFSIZ];         /* terminal output buffer */
+
+static void ttrestore_terminal(void)
+{
+    if (!tty_is_raw)
+        return;
+
+    /* Disable bracketed paste mode before restoring cooked terminal state. */
+    write(1, "\033[?2004l", 8);
+    tcsetattr(0, TCSADRAIN, &otermios);
+    tty_is_raw = FALSE;
+}
+
+static void ttfatal_exit(int status)
+{
+    ttrestore_terminal();
+    _exit(status);
+}
 
 /*
  * This function is called once to set up the terminal device streams.
@@ -56,8 +74,9 @@ void ttopen(void)
      */
     ntermios = otermios;
 
-    /* raw CR/NL etc input handling, but keep ISTRIP if we're on a 7-bit line */
-    ntermios.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | PARMRK | INPCK | INLCR | IGNCR | ICRNL | IXON | IXOFF);
+    /* Fully raw UTF-8-safe input handling */
+    ntermios.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | PARMRK | INPCK | ISTRIP
+                  | INLCR | IGNCR | ICRNL | IXON | IXOFF);
 
     /* raw CR/NR etc output handling */
     ntermios.c_oflag &= ~(OPOST | ONLCR | OLCUC | OCRNL | ONOCR | ONLRET);
@@ -71,6 +90,8 @@ void ttopen(void)
     ntermios.c_cc[VMIN] = 1;
     ntermios.c_cc[VTIME] = 0;
     tcsetattr(0, TCSADRAIN, &ntermios); /* and activate them */
+    tty_is_raw = TRUE;
+    atexit(ttrestore_terminal);
 
     /*
      * provide a smaller terminal output buffer so that
@@ -97,9 +118,7 @@ void ttopen(void)
  */
 void ttclose(void)
 {
-    /* Disable bracketed paste mode */
-    write(1, "\033[?2004l", 8);
-    tcsetattr(0, TCSADRAIN, &otermios); /* restore terminal settings */
+    ttrestore_terminal();
 }
 
 /*
@@ -143,7 +162,7 @@ void ttflush(void)
         status = fflush(stdout);
     }
     if (status < 0)
-        exit(15);
+        ttfatal_exit(15);
 }
 
 /*

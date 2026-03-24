@@ -702,7 +702,7 @@ int kinsert(int c)
     }
 
     /* and now insert the character */
-    kbufp->d_chunk[kused++] = c;
+    kbufp->d_chunk[kused++] = (char)(unsigned char)c;
     return TRUE;
 }
 
@@ -715,7 +715,7 @@ int yank(int f, int n)
 {
     int c;
     int i;
-    char *sp;               /* pointer into string to insert */
+    unsigned char *sp;          /* pointer into string to insert */
     struct kill *kp;            /* pointer into kill buffer */
 
     if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
@@ -734,9 +734,9 @@ int yank(int f, int n)
                 i = kused;
             else
                 i = KBLOCK;
-            sp = kp->d_chunk;
+            sp = (unsigned char *)kp->d_chunk;
             while (i--) {
-                c = *sp++;
+                c = (int)*sp++;
                 if (c == '\r') {
                     if (lnewline() == FALSE)
                         return FALSE;
