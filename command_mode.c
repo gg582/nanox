@@ -1127,8 +1127,8 @@ static int command_mode_handle_set_nr_command(const char *input)
     const char *args = NULL;
     char range[64];
     char opt1[32];
-    char opt2[32];
     int parsed;
+    int consumed = 0;
     int start_line;
     int end_line;
     int reverse = FALSE;
@@ -1153,11 +1153,17 @@ static int command_mode_handle_set_nr_command(const char *input)
 
     range[0] = '\0';
     opt1[0] = '\0';
-    opt2[0] = '\0';
-    parsed = sscanf(args, "%63s %31s %31s", range, opt1, opt2);
+    parsed = sscanf(args, "%63s %31s %n", range, opt1, &consumed);
     if (parsed < 1 || parsed > 2) {
         mlwrite("[viblock-set-nr syntax: viblock-set-nr start-end [rev]]");
         return TRUE;
+    }
+    while (args[consumed] != '\0') {
+        if (!isspace((unsigned char)args[consumed])) {
+            mlwrite("[viblock-set-nr syntax: viblock-set-nr start-end [rev]]");
+            return TRUE;
+        }
+        consumed++;
     }
     if (!command_mode_parse_line_range(range, &start_line, &end_line)) {
         mlwrite("[viblock-set-nr range must be start-end]");
@@ -1281,9 +1287,9 @@ static int command_mode_handle_flip_command(const char *input)
     }
 
     if (start2 < start1) {
-        int t;
-        t = start1; start1 = start2; start2 = t;
-        t = end1; end1 = end2; end2 = t;
+        int swap_temp;
+        swap_temp = start1; start1 = start2; start2 = swap_temp;
+        swap_temp = end1; end1 = end2; end2 = swap_temp;
     }
 
     if (command_mode_swap_ranges(start1, end1, start2, end2) == TRUE)
