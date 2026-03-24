@@ -507,6 +507,46 @@ static bool is_operator(char c)
     return strchr("+-*/%=&|<>!^~", c) != NULL;
 }
 
+static bool is_keyword_boundary_char(char c)
+{
+    if (c == 0)
+        return true;
+    if (isspace((unsigned char)c))
+        return true;
+
+    switch (c) {
+    case '(':
+    case ')':
+    case '{':
+    case '}':
+    case '[':
+    case ']':
+    case ',':
+    case ';':
+    case ':':
+    case '?':
+    case '!':
+    case '%':
+    case '+':
+    case '-':
+    case '*':
+    case '/':
+    case '&':
+    case '|':
+    case '^':
+    case '~':
+    case '=':
+    case '<':
+    case '>':
+    case '\'':
+    case '"':
+        return true;
+    default:
+        break;
+    }
+    return false;
+}
+
 static bool starts_with(const char *text, const char *prefix)
 {
     return strncmp(text, prefix, strlen(prefix)) == 0;
@@ -1127,12 +1167,16 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     char word[MAX_TOKEN_LEN];
                     int word_len = next_stop - pos;
                     HighlightStyleID style = HL_NORMAL;
+                    bool found = false;
+                    char prev_char = (pos > 0) ? text[pos - 1] : '\0';
+                    char next_char = (next_stop < len) ? text[next_stop] : '\0';
+                    bool allow_keyword_match = is_keyword_boundary_char(prev_char) &&
+                                               is_keyword_boundary_char(next_char);
 
-                    if (word_len < MAX_TOKEN_LEN) {
+                    if (word_len < MAX_TOKEN_LEN && allow_keyword_match) {
                         memcpy(word, text + pos, word_len);
                         word[word_len] = 0;
 
-                        bool found = false;
                         /* Order of precedence: Return > Flow > Preproc > Type > Keyword */
                         for (int i = 0; i < profile->return_keyword_count; i++) {
                             if (strcmp(word, profile->return_keywords[i]) == 0) {
@@ -1167,14 +1211,14 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                                 }
                             }
                         }
-                        
-                        /* Function detection: identifier followed by '(' */
-                        if (!found) {
-                            int s = next_stop;
-                            while (s < len && isspace((unsigned char)text[s])) s++;
-                            if (s < len && text[s] == '(') {
-                                style = HL_FUNCTION;
-                            }
+                    }
+                    
+                    /* Function detection: identifier followed by '(' */
+                    if (!found) {
+                        int s = next_stop;
+                        while (s < len && isspace((unsigned char)text[s])) s++;
+                        if (s < len && text[s] == '(') {
+                            style = HL_FUNCTION;
                         }
                     }
                     add_span(out, pos, next_stop, style);
