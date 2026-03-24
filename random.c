@@ -582,6 +582,13 @@ int insert_tab(int f, int n)
         return indent_apply_range(f, n);
     }
 
+    /* Prefer completion when cursor is on a symbol/path prefix.
+     * This enables TAB -> open candidates, TAB again -> focus list. */
+    if (n == 1 && nanox_cfg.autocomplete) {
+        if (completion_try_at_cursor())
+            return TRUE;
+    }
+
     /* If we are in CMODE and at the beginning of the line, do smart re-indent */
     if ((curbp->b_mode & MDCMOD) != 0 && n == 1) {
         int i;

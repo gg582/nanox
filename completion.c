@@ -2394,17 +2394,6 @@ int completion_try_at_cursor(void)
 
     size_t prefix_len = strlen(prefix);
 
-    if (completion_state.count == 1) {
-        const char *match = completion_state.matches[0];
-        const char *tail = match + prefix_len;
-        if (*tail) {
-            completion_insert_text(tail);
-        } else {
-            TTbeep();
-        }
-        return TRUE;
-    }
-
     completion_dropdown_activate(prefix_len);
     if (line) {
         completion_preview_begin(line, prefix_start, (int)prefix_len);
