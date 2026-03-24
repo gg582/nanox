@@ -26,6 +26,8 @@
 completion_state_t completion_state;
 typedef struct {
     int active;
+    int focused;
+    int tab_primed;
     size_t prefix_len;
     int popup_row;
     int popup_col;
@@ -33,7 +35,7 @@ typedef struct {
     int popup_height;
 } completion_dropdown_state_t;
 
-static completion_dropdown_state_t completion_dropdown_state = { 0, 0 };
+static completion_dropdown_state_t completion_dropdown_state = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
 static char completion_storage[MAX_COMPLETIONS][MAX_COMPLETION_LEN];
 static int completion_scores[MAX_COMPLETIONS];
@@ -104,46 +106,13 @@ static int java_member_cache_capacity = 0;
 #define COMPLETION_POPUP_MIN_CONTENT 12
 #define COMPLETION_POPUP_MAX_CONTENT 48
 
-static int completion_is_true_color(int color)
+static HighlightStyle completion_resolve_style(HighlightStyle style, HighlightStyle fallback)
 {
-    return (color & 0xFF000000) == 0x01000000;
-}
-
-static int completion_mul_channel(int a, int b)
-{
-    return (a * b) / 255;
-}
-
-static int completion_mix_color(int base, int overlay)
-{
-    if (base == -1)
-        return overlay;
-    if (overlay == -1)
-        return base;
-    if (completion_is_true_color(base) && completion_is_true_color(overlay)) {
-        int br = (base >> 16) & 0xFF;
-        int bg = (base >> 8) & 0xFF;
-        int bb = base & 0xFF;
-        int or = (overlay >> 16) & 0xFF;
-        int og = (overlay >> 8) & 0xFF;
-        int ob = overlay & 0xFF;
-        int r = completion_mul_channel(br, or);
-        int g = completion_mul_channel(bg, og);
-        int b = completion_mul_channel(bb, ob);
-        return 0x01000000 | (r << 16) | (g << 8) | b;
-    }
-    return overlay;
-}
-
-static HighlightStyle completion_combine_style(HighlightStyle primary, HighlightStyle overlay)
-{
-    HighlightStyle result = primary;
-    result.fg = completion_mix_color(primary.fg, overlay.fg);
-    result.bg = completion_mix_color(primary.bg, overlay.bg);
-    result.bold = primary.bold || overlay.bold;
-    result.underline = primary.underline || overlay.underline;
-    result.italic = primary.italic || overlay.italic;
-    return result;
+    if (style.fg == -1)
+        style.fg = fallback.fg;
+    if (style.bg == -1)
+        style.bg = fallback.bg;
+    return style;
 }
 
 static void completion_apply_style(const HighlightStyle *style)
@@ -2184,6 +2153,8 @@ static void completion_insert_text(const char *text)
 static void completion_dropdown_activate(size_t prefix_len)
 {
     completion_dropdown_state.active = 1;
+    completion_dropdown_state.focused = 0;
+    completion_dropdown_state.tab_primed = 0;
     completion_dropdown_state.prefix_len = prefix_len;
     completion_state.selected_index = 0;
     completion_state.scroll_offset = 0;
@@ -2195,6 +2166,8 @@ static void completion_dropdown_activate(size_t prefix_len)
 static void completion_dropdown_deactivate(int commit_preview)
 {
     completion_dropdown_state.active = 0;
+    completion_dropdown_state.focused = 0;
+    completion_dropdown_state.tab_primed = 0;
     if (commit_preview)
         completion_preview_commit();
     else
@@ -2306,13 +2279,14 @@ static void completion_draw_popup_box(void)
     if (text_width < 0)
         text_width = 0;
 
-    HighlightStyle normal = colorscheme_get(HL_NORMAL);
-    HighlightStyle selection = colorscheme_get(HL_SELECTION);
-    HighlightStyle notice = colorscheme_get(HL_NOTICE);
-
-    HighlightStyle border_style = completion_combine_style(normal, notice);
-    HighlightStyle row_style = completion_combine_style(normal, selection);
-    HighlightStyle selected_style = completion_combine_style(selection, notice);
+    HighlightStyle normal = completion_resolve_style(colorscheme_get(HL_NORMAL), colorscheme_get(HL_NORMAL));
+    HighlightStyle selection = completion_resolve_style(colorscheme_get(HL_SELECTION), normal);
+    HighlightStyle notice = completion_resolve_style(colorscheme_get(HL_NOTICE), normal);
+    HighlightStyle border_style = notice;
+    if (border_style.bg == -1)
+        border_style.bg = normal.bg;
+    HighlightStyle row_style = normal;
+    HighlightStyle selected_style = selection;
 
     int total_height = visible + 2;
 
@@ -2377,10 +2351,8 @@ int completion_try_at_cursor(void)
 
     completion_update(prefix, ctx);
     int lsp_active = completion_should_use_lsp();
-    if (lsp_active) {
-        add_language_specific_matches(prefix, ctx);
-        collect_source_symbol_matches(prefix, ctx);
-    }
+    add_language_specific_matches(prefix, ctx);
+    collect_source_symbol_matches(prefix, ctx);
 
     if (lsp_active && line && ctx == COMPLETION_CONTEXT_DEFAULT) {
         char owner[MAX_COMPLETION_LEN];
@@ -2416,7 +2388,8 @@ int completion_try_at_cursor(void)
     completion_dropdown_activate(prefix_len);
     if (line) {
         completion_preview_begin(line, prefix_start, (int)prefix_len);
-        completion_preview_apply_selected();
+        if (completion_dropdown_state.focused)
+            completion_preview_apply_selected();
     }
     return TRUE;
 }
@@ -2431,24 +2404,53 @@ int completion_dropdown_handle_key(int key)
     if (!completion_dropdown_state.active)
         return 0;
 
+    if (!completion_dropdown_state.focused) {
+        if (key == (CONTROL | 'I')) {
+            if (completion_dropdown_state.tab_primed) {
+                completion_dropdown_state.focused = 1;
+                completion_dropdown_state.tab_primed = 0;
+                completion_preview_apply_selected();
+            } else {
+                completion_dropdown_state.tab_primed = 1;
+            }
+            return 1;
+        }
+
+        completion_dropdown_state.tab_primed = 0;
+        if (key == (CONTROL | '[') || key == (CONTROL | 'G')) {
+            completion_dropdown_deactivate(0);
+            return 1;
+        }
+        completion_dropdown_deactivate(0);
+        return 0;
+    }
+
     switch (key) {
     case (SPEC | 'A'):
     case (CONTROL | 'P'):
+    case (SPEC | 'P'):
         completion_prev();
         completion_preview_apply_selected();
         return 1;
     case (SPEC | 'B'):
     case (CONTROL | 'N'):
+    case (SPEC | 'N'):
     case (CONTROL | '@'):
+    case (CONTROL | 'I'):
         completion_next();
         completion_preview_apply_selected();
         return 1;
     case (CONTROL | 'M'):
     case '\n':
     case '\r':
-    case (CONTROL | 'I'):
         completion_dropdown_apply_selection();
         return 1;
+    case (SPEC | 'C'):
+    case (SPEC | 'D'):
+    case (CONTROL | 'B'):
+    case (CONTROL | 'F'):
+        completion_dropdown_deactivate(0);
+        return 0;
     case (CONTROL | '['):
     case (CONTROL | 'G'):
         completion_dropdown_deactivate(0);

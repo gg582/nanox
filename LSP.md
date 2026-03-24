@@ -15,6 +15,24 @@ Supported servers:
 
 ---
 
+## Completion UI / LSP integration behavior
+
+When `autocomplete=true`, nanox now shows UTF-8 safe completion candidates in a popup mini-buffer below the cursor.
+
+Key flow:
+
+* `Tab` once: keep typing context and keep the popup open.
+* `Tab` twice: enter popup selection mode.
+* `Up/Down`: move selection.
+* `Enter`: commit selected completion.
+* `Left/Right`: leave popup selection mode and return to normal cursor movement.
+* Popup foreground/background/selection colors follow the active colorscheme highlight styles (`normal`, `selection`, `notice`).
+
+LSP-aware mode (`use_lsp=true`) augments completion sources when a matching server binary is found in `$PATH`.
+In addition, source-symbol and language-specific symbol extraction is always used so completion remains useful even without an installed server.
+
+---
+
 ## clangd (C / C++)
 
 ### Binary name
