@@ -44,6 +44,10 @@ static void command_mode_trim(char *text);
 static int command_mode_parse_line_range(const char *text, int *start_line, int *end_line);
 static int command_mode_apply_indent_range(int start_line, int end_line, int indent_direction);
 static int command_mode_handle_range_command(const char *input, const char *name, int indent_direction);
+static int command_mode_handle_lint_command(const char *input);
+static int command_mode_handle_set_nr_command(const char *input);
+static int command_mode_handle_flip_command(const char *input);
+static int command_mode_apply_indent_lint(void);
 static int command_mode_total_lines(void);
 static struct line *command_mode_line_at_number(int number);
 
@@ -229,6 +233,19 @@ static int command_mode_handle_range_command(const char *input, const char *name
     return TRUE;
 }
 
+static int command_mode_handle_lint_command(const char *input)
+{
+    char buffer[CMD_BUF_SIZE];
+    mystrscpy(buffer, input, sizeof(buffer));
+    command_mode_trim(buffer);
+
+    if (!(strcasecmp(buffer, "lint") == 0 || strcasecmp(buffer, "tidy") == 0))
+        return FALSE;
+
+    command_mode_apply_indent_lint();
+    return TRUE;
+}
+
 static void execute_command(const char *input) {
     if (input == NULL || *input == '\0') {
         mlwrite("Empty command");
@@ -247,6 +264,12 @@ static void execute_command(const char *input) {
     if (command_mode_handle_range_command(buffer, "indent", 1))
         return;
     if (command_mode_handle_range_command(buffer, "outdent", -1))
+        return;
+    if (command_mode_handle_lint_command(buffer))
+        return;
+    if (command_mode_handle_set_nr_command(buffer))
+        return;
+    if (command_mode_handle_flip_command(buffer))
         return;
     
     /* Check if it's a number (goto line) */
@@ -637,6 +660,635 @@ static int command_mode_apply_indent_range(int start_line, int end_line, int ind
     indent_selection_active = saved_active;
 
     return status;
+}
+
+static int command_mode_get_indent(const struct line *lp)
+{
+    int col = 0;
+    int i;
+    int len = llength((struct line *)lp);
+    for (i = 0; i < len; ++i) {
+        int c = lgetc((struct line *)lp, i);
+        if (c != ' ' && c != '\t')
+            break;
+        if (c == '\t')
+            col = nextab(col);
+        else
+            col++;
+    }
+    return col;
+}
+
+static int command_mode_is_blank_line(const struct line *lp)
+{
+    int i;
+    int len = llength((struct line *)lp);
+    for (i = 0; i < len; ++i) {
+        int c = lgetc((struct line *)lp, i);
+        if (c != ' ' && c != '\t')
+            return FALSE;
+    }
+    return TRUE;
+}
+
+static int command_mode_detect_indent_step(void)
+{
+    struct line *lp;
+    int freq[9];
+    int prev_indent = -1;
+    int i;
+    int best = tab_width;
+    int best_count = 0;
+
+    for (i = 0; i < 9; i++)
+        freq[i] = 0;
+
+    for (lp = lforw(curbp->b_linep); lp != curbp->b_linep; lp = lforw(lp)) {
+        if (llength(lp) > 0 && lgetc(lp, 0) == '\t')
+            return (tab_width > 0) ? tab_width : 1;
+    }
+
+    for (lp = lforw(curbp->b_linep); lp != curbp->b_linep; lp = lforw(lp)) {
+        if (!command_mode_is_blank_line(lp)) {
+            int ind = command_mode_get_indent(lp);
+            if (prev_indent >= 0 && ind > prev_indent) {
+                int delta = ind - prev_indent;
+                if (delta >= 1 && delta <= 8)
+                    freq[delta]++;
+            }
+            prev_indent = ind;
+        }
+    }
+
+    for (i = 1; i <= 8; i++) {
+        if (freq[i] > best_count) {
+            best_count = freq[i];
+            best = i;
+        }
+    }
+    if (best <= 0)
+        best = 1;
+    return best;
+}
+
+static int command_mode_line_starts_with_closing_block(const struct line *lp)
+{
+    int i = 0;
+    int len = llength((struct line *)lp);
+    char word[32];
+    int wlen = 0;
+    char *ext = strrchr(curbp->b_fname, '.');
+
+    while (i < len) {
+        int c = lgetc((struct line *)lp, i);
+        if (c != ' ' && c != '\t')
+            break;
+        i++;
+    }
+    if (i >= len)
+        return FALSE;
+
+    {
+        int c = lgetc((struct line *)lp, i);
+        if (c == '}' || c == ')' || c == ']')
+            return TRUE;
+    }
+
+    while (i < len && wlen < (int)sizeof(word) - 1) {
+        int c = lgetc((struct line *)lp, i);
+        if (c == ' ' || c == '\t' || c == '\n' ||
+            c == '(' || c == '{' || c == '[' || c == ')' || c == '}' || c == ']')
+            break;
+        word[wlen++] = (char)c;
+        i++;
+    }
+    word[wlen] = '\0';
+    if (wlen == 0 || ext == NULL)
+        return FALSE;
+
+    if (strcasecmp(ext, ".sh") == 0 || strcasecmp(ext, ".bash") == 0) {
+        if (strcmp(word, "fi") == 0 || strcmp(word, "done") == 0 ||
+            strcmp(word, "esac") == 0 || strcmp(word, "else") == 0 ||
+            strcmp(word, "elif") == 0)
+            return TRUE;
+    } else if (strcasecmp(ext, ".py") == 0) {
+        if (strcmp(word, "else") == 0 || strcmp(word, "elif") == 0 ||
+            strcmp(word, "except") == 0 || strcmp(word, "finally") == 0)
+            return TRUE;
+    } else if (strcasecmp(ext, ".lua") == 0) {
+        if (strcmp(word, "end") == 0 || strcmp(word, "else") == 0 ||
+            strcmp(word, "elseif") == 0 || strcmp(word, "until") == 0)
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
+static int command_mode_line_ends_with_open_block(const struct line *lp)
+{
+    int i;
+    int len = llength((struct line *)lp);
+
+    for (i = len - 1; i >= 0; --i) {
+        int c = lgetc((struct line *)lp, i);
+        if (c == ' ' || c == '\t')
+            continue;
+        return (c == '{' || c == '(' || c == '[') ? TRUE : FALSE;
+    }
+    return FALSE;
+}
+
+static int command_mode_set_indent_on_line(struct line *lp, int target)
+{
+    int ch;
+
+    if (target < 0)
+        target = 0;
+    curwp->w_dotp = lp;
+    curwp->w_doto = 0;
+
+    while (curwp->w_doto < llength(curwp->w_dotp)) {
+        ch = lgetc(curwp->w_dotp, curwp->w_doto);
+        if (ch != ' ' && ch != '\t')
+            break;
+        if (ldelchar(1, FALSE) != TRUE)
+            return FALSE;
+    }
+
+    if (target > 0) {
+        if (nanox_cfg.soft_tab) {
+            int i;
+            for (i = 0; i < target; ++i) {
+                if (linsert(1, ' ') != TRUE)
+                    return FALSE;
+            }
+        } else {
+            int step = tab_width;
+            int tabs;
+            int spaces;
+            if (step <= 0)
+                step = 1;
+            tabs = target / step;
+            spaces = target % step;
+            while (tabs--) {
+                if (linsert(1, '\t') != TRUE)
+                    return FALSE;
+            }
+            while (spaces--) {
+                if (linsert(1, ' ') != TRUE)
+                    return FALSE;
+            }
+        }
+    }
+    return TRUE;
+}
+
+static int command_mode_apply_indent_lint(void)
+{
+    int total = command_mode_total_lines();
+    int step;
+    int changed = 0;
+    int original_index = line_index_from_top(curwp->w_dotp);
+    int original_offset = curwp->w_doto;
+    struct line *lp;
+    struct line *prev_code = NULL;
+
+    if (curbp->b_mode & MDVIEW)
+        return rdonly();
+
+    if (total <= 0) {
+        mlwrite("Buffer is empty");
+        return FALSE;
+    }
+
+    step = command_mode_detect_indent_step();
+    if (step <= 0)
+        step = 1;
+
+    for (lp = lforw(curbp->b_linep); lp != curbp->b_linep; lp = lforw(lp)) {
+        int target;
+
+        if (command_mode_is_blank_line(lp))
+            continue;
+
+        target = prev_code ? command_mode_get_indent(prev_code) : 0;
+        if (prev_code && command_mode_line_ends_with_open_block(prev_code))
+            target += step;
+        if (command_mode_line_starts_with_closing_block(lp))
+            target -= step;
+        if (target < 0)
+            target = 0;
+
+        if (command_mode_get_indent(lp) != target) {
+            if (command_mode_set_indent_on_line(lp, target) != TRUE) {
+                restore_saved_cursor(original_index, original_offset);
+                return FALSE;
+            }
+            changed++;
+        }
+
+        prev_code = lp;
+    }
+
+    restore_saved_cursor(original_index, original_offset);
+    if (changed > 0)
+        lchange(WFHARD);
+    mlwrite("lint tidy applied (%d line%s, step %d)", changed, (changed == 1) ? "" : "s", step);
+    return TRUE;
+}
+
+static int command_mode_parse_numbering_prefix(const unsigned char *text, int len,
+    int *indent_end, int *content_start, char *suffix, size_t suffix_sz)
+{
+    int i = 0;
+    int j;
+    int k;
+    size_t si = 0;
+    char delim;
+
+    while (i < len && (text[i] == ' ' || text[i] == '\t'))
+        i++;
+    if (indent_end)
+        *indent_end = i;
+
+    j = i;
+    while (j < len && isdigit(text[j]))
+        j++;
+    if (j == i || j >= len)
+        return FALSE;
+
+    delim = (char)text[j];
+    if (!(delim == '.' || delim == ':' || delim == ')'))
+        return FALSE;
+
+    k = j + 1;
+    while (k < len && (text[k] == ' ' || text[k] == '\t'))
+        k++;
+    if (content_start)
+        *content_start = k;
+
+    if (suffix && suffix_sz > 0) {
+        suffix[si++] = delim;
+        if (k == j + 1) {
+            if (si < suffix_sz - 1)
+                suffix[si++] = ' ';
+        } else {
+            int t;
+            for (t = j + 1; t < k && si < suffix_sz - 1; ++t)
+                suffix[si++] = (char)text[t];
+        }
+        suffix[si] = '\0';
+    }
+    return TRUE;
+}
+
+static int command_mode_line_number_of(struct line *target)
+{
+    int line = 1;
+    struct line *lp = lforw(curbp->b_linep);
+    while (lp != curbp->b_linep) {
+        if (lp == target)
+            return line;
+        lp = lforw(lp);
+        line++;
+    }
+    return -1;
+}
+
+static int command_mode_guess_numbering_suffix(int start_line, int end_line, char *suffix, size_t suffix_sz)
+{
+    struct line *lp = command_mode_line_at_number(start_line);
+    int line = start_line;
+    struct {
+        char value[8];
+        int count;
+    } candidates[8];
+    int candidate_count = 0;
+    int best = -1;
+
+    if (!lp || !suffix || suffix_sz == 0)
+        return FALSE;
+
+    while (lp != curbp->b_linep && line <= end_line) {
+        char current[8];
+        if (command_mode_parse_numbering_prefix(lp->l_text, llength(lp), NULL, NULL, current, sizeof(current))) {
+            int i;
+            int found = -1;
+            for (i = 0; i < candidate_count; ++i) {
+                if (strcmp(candidates[i].value, current) == 0) {
+                    found = i;
+                    break;
+                }
+            }
+            if (found >= 0) {
+                candidates[found].count++;
+            } else if (candidate_count < 8) {
+                mystrscpy(candidates[candidate_count].value, current, sizeof(candidates[candidate_count].value));
+                candidates[candidate_count].count = 1;
+                candidate_count++;
+            }
+        }
+        lp = lforw(lp);
+        line++;
+    }
+
+    if (candidate_count == 0) {
+        mystrscpy(suffix, ". ", suffix_sz);
+        return TRUE;
+    }
+
+    {
+        int i;
+        for (i = 0; i < candidate_count; ++i) {
+            if (best < 0 || candidates[i].count > candidates[best].count)
+                best = i;
+        }
+    }
+    mystrscpy(suffix, candidates[best].value, suffix_sz);
+    return TRUE;
+}
+
+static int command_mode_apply_numbering_range(int start_line, int end_line, int reverse)
+{
+    int total = command_mode_total_lines();
+    int line;
+    int changed = 0;
+    int original_index = line_index_from_top(curwp->w_dotp);
+    int original_offset = curwp->w_doto;
+    struct line *lp;
+    char suffix[8];
+
+    if (curbp->b_mode & MDVIEW)
+        return rdonly();
+
+    if (total <= 0) {
+        mlwrite("Buffer is empty");
+        return FALSE;
+    }
+
+    if (start_line < 1)
+        start_line = 1;
+    if (end_line < 1)
+        end_line = 1;
+    if (start_line > total)
+        start_line = total;
+    if (end_line > total)
+        end_line = total;
+    if (start_line > end_line) {
+        int tmp = start_line;
+        start_line = end_line;
+        end_line = tmp;
+    }
+
+    if (!command_mode_guess_numbering_suffix(start_line, end_line, suffix, sizeof(suffix))) {
+        mlwrite("Failed to detect numbering format");
+        return FALSE;
+    }
+
+    lp = command_mode_line_at_number(start_line);
+    if (!lp) {
+        mlwrite("Invalid range");
+        return FALSE;
+    }
+
+    line = start_line;
+    while (lp != curbp->b_linep && line <= end_line) {
+        int len = llength(lp);
+        char *text = malloc((size_t)len + 1);
+        int indent_end = 0;
+        int content_start = 0;
+        int new_number = reverse ? (end_line - (line - start_line)) : (start_line + (line - start_line));
+        char number_buf[32];
+        int number_len;
+        int suffix_len = (int)strlen(suffix);
+        int new_len;
+        char *new_text;
+        struct line *next = lforw(lp);
+
+        if (!text) {
+            restore_saved_cursor(original_index, original_offset);
+            mlwrite("%%Out of memory");
+            return FALSE;
+        }
+        memcpy(text, lp->l_text, (size_t)len);
+        text[len] = '\0';
+
+        if (!command_mode_parse_numbering_prefix((unsigned char *)text, len, &indent_end, &content_start, NULL, 0))
+            content_start = indent_end;
+
+        snprintf(number_buf, sizeof(number_buf), "%d", new_number);
+        number_len = (int)strlen(number_buf);
+        new_len = indent_end + number_len + suffix_len + (len - content_start);
+        new_text = malloc((size_t)new_len + 1);
+        if (!new_text) {
+            free(text);
+            restore_saved_cursor(original_index, original_offset);
+            mlwrite("%%Out of memory");
+            return FALSE;
+        }
+
+        if (indent_end > 0)
+            memcpy(new_text, text, (size_t)indent_end);
+        memcpy(new_text + indent_end, number_buf, (size_t)number_len);
+        memcpy(new_text + indent_end + number_len, suffix, (size_t)suffix_len);
+        if (len - content_start > 0)
+            memcpy(new_text + indent_end + number_len + suffix_len, text + content_start, (size_t)(len - content_start));
+        new_text[new_len] = '\0';
+
+        curwp->w_dotp = lp;
+        curwp->w_doto = 0;
+        if (ldelete(llength(lp), FALSE) != TRUE ||
+            (new_len > 0 && linsert_block(new_text, new_len) != TRUE)) {
+            free(new_text);
+            free(text);
+            restore_saved_cursor(original_index, original_offset);
+            return FALSE;
+        }
+
+        free(new_text);
+        free(text);
+        changed++;
+        lp = next;
+        line++;
+    }
+
+    restore_saved_cursor(original_index, original_offset);
+    if (changed > 0)
+        lchange(WFHARD);
+    mlwrite("viblock-set-nr applied: lines %d-%d (%s)", start_line, end_line, reverse ? "reverse" : "forward");
+    return TRUE;
+}
+
+static int command_mode_handle_set_nr_command(const char *input)
+{
+    const char *name1 = "viblock-set-nr";
+    const char *name2 = "vibloc-set-nr";
+    size_t cmd_len = 0;
+    const char *args = NULL;
+    char range[64];
+    char opt1[32];
+    char opt2[32];
+    int parsed;
+    int start_line;
+    int end_line;
+    int reverse = FALSE;
+
+    if (strncasecmp(input, name1, strlen(name1)) == 0) {
+        cmd_len = strlen(name1);
+    } else if (strncasecmp(input, name2, strlen(name2)) == 0) {
+        cmd_len = strlen(name2);
+    } else {
+        return FALSE;
+    }
+
+    args = input + cmd_len;
+    if (*args && !isspace((unsigned char)*args))
+        return FALSE;
+    while (*args && isspace((unsigned char)*args))
+        args++;
+    if (*args == '\0') {
+        mlwrite("[viblock-set-nr syntax: viblock-set-nr start-end [rev]]");
+        return TRUE;
+    }
+
+    range[0] = '\0';
+    opt1[0] = '\0';
+    opt2[0] = '\0';
+    parsed = sscanf(args, "%63s %31s %31s", range, opt1, opt2);
+    if (parsed < 1 || parsed > 2) {
+        mlwrite("[viblock-set-nr syntax: viblock-set-nr start-end [rev]]");
+        return TRUE;
+    }
+    if (!command_mode_parse_line_range(range, &start_line, &end_line)) {
+        mlwrite("[viblock-set-nr range must be start-end]");
+        return TRUE;
+    }
+    if (parsed == 2) {
+        if (strcasecmp(opt1, "rev") == 0 || strcasecmp(opt1, "reverse") == 0) {
+            reverse = TRUE;
+        } else {
+            mlwrite("[viblock-set-nr option must be rev]");
+            return TRUE;
+        }
+    }
+
+    command_mode_apply_numbering_range(start_line, end_line, reverse);
+    return TRUE;
+}
+
+static int command_mode_swap_ranges(int first_start, int first_end, int second_start, int second_end)
+{
+    struct line *a_start = command_mode_line_at_number(first_start);
+    struct line *a_end = command_mode_line_at_number(first_end);
+    struct line *b_start = command_mode_line_at_number(second_start);
+    struct line *b_end = command_mode_line_at_number(second_end);
+    struct line *pre_a;
+    struct line *post_a;
+    struct line *pre_b;
+    struct line *post_b;
+    int adjacent;
+    int cursor_line = command_mode_line_number_of(curwp->w_dotp);
+    int cursor_off = curwp->w_doto;
+
+    if (!a_start || !a_end || !b_start || !b_end) {
+        mlwrite("Invalid line range");
+        return FALSE;
+    }
+
+    pre_a = lback(a_start);
+    post_a = lforw(a_end);
+    pre_b = lback(b_start);
+    post_b = lforw(b_end);
+    adjacent = (post_a == b_start);
+
+    lforw(pre_a) = b_start;
+    lback(b_start) = pre_a;
+
+    if (adjacent) {
+        lforw(b_end) = a_start;
+        lback(a_start) = b_end;
+    } else {
+        lforw(b_end) = post_a;
+        lback(post_a) = b_end;
+        lforw(pre_b) = a_start;
+        lback(a_start) = pre_b;
+    }
+
+    lforw(a_end) = post_b;
+    lback(post_b) = a_end;
+
+    if (cursor_line >= 1)
+        restore_cursor_to_index(cursor_line - 1, cursor_off);
+    lchange(WFHARD);
+    curwp->w_flag |= WFMOVE | WFHARD | WFMODE;
+    return TRUE;
+}
+
+static int command_mode_handle_flip_command(const char *input)
+{
+    const char *name = "viblock-flip";
+    size_t cmd_len = strlen(name);
+    const char *args = input + cmd_len;
+    char range1[64];
+    char range2[64];
+    char extra[32];
+    int parsed;
+    int start1;
+    int end1;
+    int start2;
+    int end2;
+    int total;
+
+    if (strncasecmp(input, name, cmd_len) != 0)
+        return FALSE;
+    if (*args && !isspace((unsigned char)*args))
+        return FALSE;
+    while (*args && isspace((unsigned char)*args))
+        args++;
+    if (*args == '\0') {
+        mlwrite("[viblock-flip syntax: viblock-flip a-b c-d]");
+        return TRUE;
+    }
+
+    range1[0] = '\0';
+    range2[0] = '\0';
+    extra[0] = '\0';
+    parsed = sscanf(args, "%63s %63s %31s", range1, range2, extra);
+    if (parsed != 2) {
+        mlwrite("[viblock-flip syntax: viblock-flip a-b c-d]");
+        return TRUE;
+    }
+    if (!command_mode_parse_line_range(range1, &start1, &end1) ||
+        !command_mode_parse_line_range(range2, &start2, &end2)) {
+        mlwrite("[viblock-flip range must be start-end]");
+        return TRUE;
+    }
+
+    total = command_mode_total_lines();
+    if (total <= 0) {
+        mlwrite("Buffer is empty");
+        return TRUE;
+    }
+
+    if (start1 < 1) start1 = 1;
+    if (start2 < 1) start2 = 1;
+    if (end1 > total) end1 = total;
+    if (end2 > total) end2 = total;
+
+    if (!(end1 < start2 || end2 < start1)) {
+        mlwrite("[viblock-flip requires non-overlapping ranges]");
+        return TRUE;
+    }
+
+    if (start2 < start1) {
+        int t;
+        t = start1; start1 = start2; start2 = t;
+        t = end1; end1 = end2; end2 = t;
+    }
+
+    if (command_mode_swap_ranges(start1, end1, start2, end2) == TRUE)
+        mlwrite("viblock-flip applied: %d-%d <-> %d-%d", start1, end1, start2, end2);
+    return TRUE;
 }
 
 static int block_visual_column(struct line *lp, int offset)
