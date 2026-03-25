@@ -520,7 +520,7 @@ static void collect_buffer_words(const char *prefix)
         int len = llength(lp);
         int i = 0;
         while (i < len && completion_state.count < MAX_COMPLETIONS) {
-            unicode_t uc;
+            unicode_t uc = 0;
             int bytes = utf8_to_unicode(lp->l_text, (unsigned)i, (unsigned)len, &uc);
             if (bytes <= 0)
                 bytes = 1;
@@ -529,7 +529,7 @@ static void collect_buffer_words(const char *prefix)
                 int start = i;
                 i += bytes;
                 while (i < len) {
-                    unicode_t next;
+                    unicode_t next = 0;
                     int consumed = utf8_to_unicode(lp->l_text, (unsigned)i, (unsigned)len, &next);
                     if (consumed <= 0)
                         consumed = 1;
@@ -2106,7 +2106,7 @@ static int extract_word_prefix(struct line *lp, int offset, char *dest, size_t d
     int start = offset;
     while (start > 0) {
         int candidate = prev_char_start(lp, start);
-        unicode_t uc;
+        unicode_t uc = 0;
         int bytes = utf8_to_unicode(lp->l_text, (unsigned)candidate, (unsigned)len, &uc);
         if (bytes <= 0)
             bytes = 1;
@@ -2139,7 +2139,7 @@ static int extract_path_prefix(struct line *lp, int offset, char *dest, size_t d
     int start = offset;
     while (start > 0) {
         int candidate = prev_char_start(lp, start);
-        unicode_t uc;
+        unicode_t uc = 0;
         int bytes = utf8_to_unicode(lp->l_text, (unsigned)candidate, (unsigned)len, &uc);
         if (bytes <= 0)
             bytes = 1;
