@@ -181,6 +181,7 @@ static void completion_preview_delete_tail(void)
     curwp->w_dotp = completion_preview_state.line;
     curwp->w_doto = completion_preview_state.start_offset + completion_preview_state.prefix_len;
     ldelete((long)completion_preview_state.last_tail_len, FALSE);
+    completion_preview_state.line = curwp->w_dotp;
     curwp->w_flag |= WFMOVE;
     completion_preview_state.last_tail_len = 0;
 }
@@ -219,6 +220,7 @@ static void completion_preview_apply_match(const char *match)
         curwp->w_doto = completion_preview_state.start_offset + completion_preview_state.prefix_len + tail_len;
     }
 
+    completion_preview_state.line = curwp->w_dotp;
     completion_preview_state.last_tail_len = tail_len;
     curwp->w_flag |= WFMOVE;
 }
