@@ -203,6 +203,8 @@ fn_t getname(void)
                         while (TRUE) {
                             /* add the next char in */
                             buf[cpos] = ffp->n_name[cpos];
+                            if (buf[cpos] == '\0' || cpos >= NSTRING - 1)
+                                goto onward;
 
                             /* scan through the candidates */
                             cffp = ffp + 1;
