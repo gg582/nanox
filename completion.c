@@ -306,7 +306,7 @@ static void pool_add(completion_pool_t *pool, const char *value)
     if (pool->max_items > 0 && pool->count >= pool->max_items)
         return;
     for (int i = 0; i < pool->count; i++) {
-        if (strcmp(pool->items[i], value) == 0)
+        if (pool->items[i] != NULL && strcmp(pool->items[i], value) == 0)
             return;
     }
     if (pool->count == pool->capacity) {
@@ -317,7 +317,10 @@ static void pool_add(completion_pool_t *pool, const char *value)
         pool->items = tmp;
         pool->capacity = new_capacity;
     }
-    pool->items[pool->count++] = strdup(value);
+    char *copy = strdup(value);
+    if (!copy)
+        return;
+    pool->items[pool->count++] = copy;
 }
 
 static void add_matches_from_pool(const completion_pool_t *pool, const char *prefix)
@@ -325,6 +328,8 @@ static void add_matches_from_pool(const completion_pool_t *pool, const char *pre
     if (pool == NULL || prefix == NULL)
         return;
     for (int i = 0; i < pool->count; i++) {
+        if (pool->items[i] == NULL)
+            continue;
         completion_consider_candidate(pool->items[i], prefix);
         if (completion_state.count >= MAX_COMPLETIONS)
             break;
@@ -343,7 +348,7 @@ static void completion_reset_state(void)
 static int completion_word_exists(const char *word)
 {
     for (int i = 0; i < completion_state.count; i++) {
-        if (strcmp(completion_state.matches[i], word) == 0)
+        if (completion_state.matches[i] != NULL && strcmp(completion_state.matches[i], word) == 0)
             return TRUE;
     }
     return FALSE;
@@ -1548,7 +1553,8 @@ static java_member_entry_t *find_java_member_entry(const char *class_name)
     if (class_name == NULL)
         return NULL;
     for (int i = 0; i < java_member_cache_count; i++) {
-        if (strcmp(java_member_cache[i].class_name, class_name) == 0)
+        if (java_member_cache[i].class_name != NULL &&
+            strcmp(java_member_cache[i].class_name, class_name) == 0)
             return &java_member_cache[i];
     }
     return NULL;
@@ -1571,6 +1577,10 @@ static java_member_entry_t *get_java_member_entry(const char *class_name)
     }
     entry = &java_member_cache[java_member_cache_count++];
     entry->class_name = strdup(class_name);
+    if (entry->class_name == NULL) {
+        java_member_cache_count--;
+        return NULL;
+    }
     entry->members.items = NULL;
     entry->members.count = 0;
     entry->members.capacity = 0;
@@ -2044,24 +2054,30 @@ void completion_draw(int row, int col)
 }
 
 const char* completion_get_selected(void) {
-    if (completion_state.is_visible && completion_state.selected_index < completion_state.count) {
+    if (completion_state.is_visible &&
+        completion_state.selected_index >= 0 &&
+        completion_state.selected_index < completion_state.count) {
         return completion_state.matches[completion_state.selected_index];
     }
     return NULL;
 }
 
 void completion_next(void) {
-    if (completion_state.count > 0) {
-        completion_state.selected_index = (completion_state.selected_index + 1) % completion_state.count;
-        completion_ensure_visible();
-    }
+    if (completion_state.count <= 0)
+        return;
+    if (completion_state.selected_index < 0 || completion_state.selected_index >= completion_state.count)
+        completion_state.selected_index = 0;
+    completion_state.selected_index = (completion_state.selected_index + 1) % completion_state.count;
+    completion_ensure_visible();
 }
 
 void completion_prev(void) {
-    if (completion_state.count > 0) {
-        completion_state.selected_index = (completion_state.selected_index - 1 + completion_state.count) % completion_state.count;
-        completion_ensure_visible();
-    }
+    if (completion_state.count <= 0)
+        return;
+    if (completion_state.selected_index < 0 || completion_state.selected_index >= completion_state.count)
+        completion_state.selected_index = 0;
+    completion_state.selected_index = (completion_state.selected_index - 1 + completion_state.count) % completion_state.count;
+    completion_ensure_visible();
 }
 
 void completion_hide(void) {
