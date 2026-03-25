@@ -1540,6 +1540,11 @@ static int apply_regex_to_line(struct line *lp, pcre2_code *code, pcre2_match_da
             char repl_preview[REPLACE_PREVIEW];
             char prompt[REPLACE_PREVIEW * 2 + 32];
 
+            curwp->w_dotp = lp;
+            curwp->w_doto = (int)match_start;
+            curwp->w_flag |= WFMOVE;
+            update(FALSE);
+
             build_preview(text + match_start, match_end - match_start, match_preview, sizeof(match_preview));
             build_preview(replacement, repl_len, repl_preview, sizeof(repl_preview));
             snprintf(prompt, sizeof(prompt), "Replace '%s' with '%s'", match_preview, repl_preview);
