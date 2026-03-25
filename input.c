@@ -58,24 +58,21 @@ static int erase_prev_glyph(char *buf, int *cpos)
  */
 int mlyesno(char *prompt)
 {
-    char c;                 /* input character */
+    int c;                  /* input character */
     char buf[NPAT];             /* prompt to user */
 
-    for (;;) {
-        /* build and prompt the user */
-        mystrscpy(buf, prompt, sizeof(buf));
-        strcat(buf, " (y/n)? ");
-        mlwrite(buf);
+    /* build and prompt the user */
+    mystrscpy(buf, prompt, sizeof(buf));
+    strcat(buf, " (y/n)? ");
+    mlwrite(buf);
 
-        /* get the responce */
-        c = tgetc();
+    /* get one command safely (consumes escape/function-key sequences) */
+    c = getcmd();
 
-        if (c == 'y' || c == 'Y')
-            return TRUE;
+    if (c == 'y' || c == 'Y')
+        return TRUE;
 
-        if (c == 'n' || c == 'N')
-            return FALSE;
-    }
+    return FALSE; /* implicit 'n' for all non-'y' input */
 }
 
 /*
