@@ -206,6 +206,8 @@ static void completion_preview_apply_match(const char *match)
     size_t match_len = strlen(match);
     if (match_len < (size_t)completion_preview_state.prefix_len)
         return;
+    if (strncmp(match, completion_active_prefix, (size_t)completion_preview_state.prefix_len) != 0)
+        return;
 
     const char *tail = match + completion_preview_state.prefix_len;
     int tail_len = (int)strlen(tail);
@@ -716,18 +718,35 @@ static void ensure_c_symbols_loaded(void)
 
 static int class_name_from_relative(const char *relative_path, char *out, size_t outsz)
 {
+    const char *path;
+    const char *first_sep;
     size_t len;
     const char *dot;
     if (relative_path == NULL || out == NULL || outsz == 0)
         return FALSE;
-    dot = strrchr(relative_path, '.');
-    if (dot == NULL || dot == relative_path)
+
+    path = relative_path;
+    first_sep = strpbrk(path, "/\\");
+    if (first_sep != NULL && first_sep > path) {
+        int module_like = FALSE;
+        for (const char *p = path; p < first_sep; p++) {
+            if (*p == '.') {
+                module_like = TRUE;
+                break;
+            }
+        }
+        if (module_like && first_sep[1] != '\0')
+            path = first_sep + 1;
+    }
+
+    dot = strrchr(path, '.');
+    if (dot == NULL || dot == path)
         return FALSE;
-    len = (size_t)(dot - relative_path);
+    len = (size_t)(dot - path);
     if (len >= outsz)
         len = outsz - 1;
     for (size_t i = 0; i < len; i++) {
-        char ch = relative_path[i];
+        char ch = path[i];
         if (ch == '/' || ch == '\\')
             ch = '.';
         out[i] = ch;
@@ -2338,12 +2357,16 @@ static void completion_dropdown_deactivate(int commit_preview)
 
 static void completion_dropdown_apply_selection(void)
 {
-    const char *match = completion_get_selected();
+    int had_preview = completion_preview_state.active;
+    int applied = FALSE;
+    const char *match;
+
+    if (had_preview)
+        completion_preview_abort();
+
+    match = completion_get_selected();
     if (match != NULL && curwp && curwp->w_dotp) {
         int original_doto;
-
-        if (completion_preview_state.active)
-            completion_preview_abort();
 
         original_doto = curwp->w_doto;
         if (original_doto < 0) {
@@ -2361,9 +2384,10 @@ static void completion_dropdown_apply_selection(void)
             }
             completion_insert_text(match);
             completion_insert_terminator_if_needed();
+            applied = TRUE;
         }
     }
-    completion_dropdown_deactivate(1);
+    completion_dropdown_deactivate(applied ? 1 : 0);
 }
 
 static void completion_dropdown_refresh_geometry(void)
