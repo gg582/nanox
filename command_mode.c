@@ -18,8 +18,15 @@
 #define CMD_BUF_SIZE 256
 #define REPLACE_PREVIEW 48
 
-static int block_active = 0;
-static int block_replace = 0;
+typedef enum {
+    BLOCK_MODE_NONE = 0,
+    BLOCK_MODE_EDIT,
+    BLOCK_MODE_REPLACE,
+    BLOCK_MODE_SET_NR
+} BlockMode;
+
+static BlockMode block_mode = BLOCK_MODE_NONE;
+static int block_set_nr_reverse = 0;
 static struct line *block_anchor_line = NULL;
 static int block_anchor_offset = 0;
 
@@ -118,12 +125,17 @@ static void command_mode_draw_status(const char *status, const char *input, bool
     mpresf = TRUE;
 }
 
-/* Initialize command mode system */
-void command_mode_init(void) {
-    block_active = 0;
-    block_replace = 0;
+static void block_reset(void)
+{
+    block_mode = BLOCK_MODE_NONE;
+    block_set_nr_reverse = 0;
     block_anchor_line = NULL;
     block_anchor_offset = 0;
+}
+
+/* Initialize command mode system */
+void command_mode_init(void) {
+    block_reset();
 }
 
 /* Activate F1 command mode */
@@ -167,12 +179,12 @@ static void execute_help(void) {
     nanox_help_command(FALSE, 1);
 }
 
-static void start_block_mode(int replace_mode)
+static void start_block_mode(BlockMode mode, int reverse_flag)
 {
-    block_active = 1;
-    block_replace = replace_mode;
+    block_mode = mode;
     block_anchor_line = curwp->w_dotp;
     block_anchor_offset = curwp->w_doto;
+    block_set_nr_reverse = (mode == BLOCK_MODE_SET_NR) ? reverse_flag : 0;
     curwp->w_flag |= WFHARD | WFMODE;
     render_block_status();
 }
@@ -290,10 +302,10 @@ static void execute_command(const char *input) {
         execute_help();
     }
     else if (strcasecmp(buffer, "viblock-edit") == 0 || strcasecmp(buffer, "viblock edit") == 0) {
-        start_block_mode(FALSE);
+        start_block_mode(BLOCK_MODE_EDIT, 0);
     }
     else if (strcasecmp(buffer, "viblock-replace") == 0 || strcasecmp(buffer, "viblock replace") == 0) {
-        start_block_mode(TRUE);
+        start_block_mode(BLOCK_MODE_REPLACE, 0);
     }
     else {
         mlwrite("Unknown command: %s", buffer);
@@ -302,10 +314,7 @@ static void execute_command(const char *input) {
 
 /* Cleanup command mode */
 void command_mode_cleanup(void) {
-    block_active = 0;
-    block_replace = 0;
-    block_anchor_line = NULL;
-    block_anchor_offset = 0;
+    block_reset();
 }
 
 /* Command mode activation wrapper for key binding */
@@ -1147,13 +1156,18 @@ static int command_mode_handle_set_nr_command(const char *input)
     while (*args && isspace((unsigned char)*args))
         args++;
     if (*args == '\0') {
-        mlwrite("[viblock-set-nr syntax: viblock-set-nr start-end [rev]]");
+        start_block_mode(BLOCK_MODE_SET_NR, FALSE);
         return TRUE;
     }
 
     range[0] = '\0';
     opt1[0] = '\0';
     parsed = sscanf(args, "%63s %31s %n", range, opt1, &consumed);
+    if (parsed == 1 && opt1[0] == '\0' &&
+        (strcasecmp(range, "rev") == 0 || strcasecmp(range, "reverse") == 0)) {
+        start_block_mode(BLOCK_MODE_SET_NR, TRUE);
+        return TRUE;
+    }
     if (parsed < 1 || parsed > 2) {
         mlwrite("[viblock-set-nr syntax: viblock-set-nr start-end [rev]]");
         return TRUE;
@@ -1360,20 +1374,30 @@ static void render_block_status(void)
 {
     char status[96];
     int top, bottom, left, right;
+    const char *label;
 
-    if (!block_active)
+    if (block_mode == BLOCK_MODE_NONE)
         return;
 
     block_bounds(&top, &bottom, &left, &right);
-    snprintf(status, sizeof(status), "%s lines %d-%d cols %d-%d",
-        block_replace ? "viblock-replace" : "viblock-edit",
-        top + 1, bottom + 1, left + 1, right + 1);
+    label = "viblock-edit";
+    if (block_mode == BLOCK_MODE_REPLACE)
+        label = "viblock-replace";
+    else if (block_mode == BLOCK_MODE_SET_NR)
+        label = "viblock-set-nr";
+
+    if (block_mode == BLOCK_MODE_SET_NR && block_set_nr_reverse)
+        snprintf(status, sizeof(status), "%s (rev) lines %d-%d cols %d-%d",
+            label, top + 1, bottom + 1, left + 1, right + 1);
+    else
+        snprintf(status, sizeof(status), "%s lines %d-%d cols %d-%d",
+            label, top + 1, bottom + 1, left + 1, right + 1);
     command_mode_draw_status(status, "[move cursor, Enter apply, Esc cancel]", false);
 }
 
 int command_mode_block_is_active(void)
 {
-    return block_active;
+    return block_mode != BLOCK_MODE_NONE;
 }
 
 int command_mode_block_selection_contains(struct line *lp, int col_start, int col_end)
@@ -1381,7 +1405,7 @@ int command_mode_block_selection_contains(struct line *lp, int col_start, int co
     int top, bottom, left, right;
     int line_idx;
 
-    if (!block_active || !lp)
+    if (block_mode == BLOCK_MODE_NONE || !lp)
         return FALSE;
 
     block_bounds(&top, &bottom, &left, &right);
@@ -1467,32 +1491,44 @@ int command_mode_block_handle_key(int c, int f, int n)
     fn_t func;
     int status;
 
-    if (!block_active)
+    if (block_mode == BLOCK_MODE_NONE)
         return FALSE;
 
     switch (c) {
     case 0x0D:
     case 0x0A:
     case CONTROL | 'M':
-        status = minibuf_input(block_replace ? "viblock replace: " : "viblock edit: ", text, sizeof(text));
-        if (status == TRUE) {
-            if (!block_apply_text(text, block_replace))
+        if (block_mode == BLOCK_MODE_SET_NR) {
+            int top = 0;
+            int bottom = 0;
+            block_bounds(&top, &bottom, NULL, NULL);
+            if (!command_mode_apply_numbering_range(top + 1, bottom + 1, block_set_nr_reverse))
                 return FALSE;
-            mlwrite("%s applied", block_replace ? "viblock replace" : "viblock edit");
-        } else {
-            mlwrite("%s cancelled", block_replace ? "viblock replace" : "viblock edit");
+            block_reset();
+            return TRUE;
         }
-        block_active = 0;
-        block_anchor_line = NULL;
-        block_anchor_offset = 0;
+        {
+            const char *label = (block_mode == BLOCK_MODE_REPLACE) ? "viblock replace" : "viblock edit";
+            status = minibuf_input((block_mode == BLOCK_MODE_REPLACE) ? "viblock replace: " : "viblock edit: ",
+                text, sizeof(text));
+            if (status == TRUE) {
+                if (!block_apply_text(text, block_mode == BLOCK_MODE_REPLACE))
+                    return FALSE;
+                mlwrite("%s applied", label);
+            } else {
+                mlwrite("%s cancelled", label);
+            }
+        }
+        block_reset();
         return TRUE;
     case 0x1B:
     case CONTROL | 'G':
-        block_active = 0;
-        block_anchor_line = NULL;
-        block_anchor_offset = 0;
+        if (block_mode == BLOCK_MODE_SET_NR)
+            mlwrite("viblock-set-nr cancelled");
+        else
+            mlwrite("%s cancelled", (block_mode == BLOCK_MODE_REPLACE) ? "viblock replace" : "viblock edit");
+        block_reset();
         curwp->w_flag |= WFHARD | WFMODE;
-        mlwrite("%s cancelled", block_replace ? "viblock replace" : "viblock edit");
         return TRUE;
     default:
         func = getbind(c);
