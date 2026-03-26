@@ -1453,6 +1453,7 @@ static int block_apply_text(const char *text, int replace_mode)
                     return FALSE;
                 actual_col++;
             }
+            start_offset = curwp->w_doto;
 
             if (replace_mode) {
                 int end_actual_col = 0;
