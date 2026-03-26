@@ -2338,26 +2338,29 @@ static void completion_dropdown_deactivate(int commit_preview)
 
 static void completion_dropdown_apply_selection(void)
 {
-    if (!completion_preview_state.active) {
-        const char *match = completion_get_selected();
-        if (match != NULL && curwp && curwp->w_dotp) {
-            int original_doto = curwp->w_doto;
-            if (original_doto < 0) {
-                TTbeep();
-            } else {
-                size_t safe_doto = (size_t)original_doto;
-                size_t delete_len = completion_dropdown_state.prefix_len;
-                if (completion_is_import_include_context(curwp->w_dotp))
-                    delete_len = completion_calculate_dotted_token_delete_len(match, curwp->w_dotp, original_doto, delete_len);
-                if (safe_doto < delete_len)
-                    delete_len = safe_doto;
-                if (delete_len > 0) {
-                    curwp->w_doto = original_doto - (int)delete_len;
-                    ldelete((long)delete_len, FALSE);
-                }
-                completion_insert_text(match);
-                completion_insert_terminator_if_needed();
+    const char *match = completion_get_selected();
+    if (match != NULL && curwp && curwp->w_dotp) {
+        int original_doto;
+
+        if (completion_preview_state.active)
+            completion_preview_abort();
+
+        original_doto = curwp->w_doto;
+        if (original_doto < 0) {
+            TTbeep();
+        } else {
+            size_t safe_doto = (size_t)original_doto;
+            size_t delete_len = completion_dropdown_state.prefix_len;
+            if (completion_is_import_include_context(curwp->w_dotp))
+                delete_len = completion_calculate_dotted_token_delete_len(match, curwp->w_dotp, original_doto, delete_len);
+            if (safe_doto < delete_len)
+                delete_len = safe_doto;
+            if (delete_len > 0) {
+                curwp->w_doto = original_doto - (int)delete_len;
+                ldelete((long)delete_len, FALSE);
             }
+            completion_insert_text(match);
+            completion_insert_terminator_if_needed();
         }
     }
     completion_dropdown_deactivate(1);
