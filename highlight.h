@@ -44,6 +44,7 @@ typedef struct {
     int preproc_keyword_count;
     char return_keywords[MAX_TOKENS][MAX_TOKEN_LEN];
     int return_keyword_count;
+    char completion_end_line_char;
 
     bool enable_triple_quotes;
     bool enable_number_highlight;
