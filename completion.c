@@ -2244,15 +2244,19 @@ static void completion_dropdown_apply_selection(void)
 {
     if (!completion_preview_state.active) {
         const char *match = completion_get_selected();
-        if (match != NULL) {
-            size_t match_len = strlen(match);
-            if (completion_dropdown_state.prefix_len <= match_len) {
-                const char *tail = match + completion_dropdown_state.prefix_len;
-                if (*tail)
-                    completion_insert_text(tail);
-                else
-                    TTbeep();
+        if (match != NULL && curwp && curwp->w_dotp) {
+            size_t prefix_len = completion_dropdown_state.prefix_len;
+            int original_doto = curwp->w_doto;
+            size_t delete_len = prefix_len;
+            if (original_doto < 0)
+                original_doto = 0;
+            if ((size_t)original_doto < delete_len)
+                delete_len = (size_t)original_doto;
+            if (delete_len > 0) {
+                curwp->w_doto = original_doto - (int)delete_len;
+                ldelete((long)delete_len, FALSE);
             }
+            completion_insert_text(match);
         }
     }
     completion_dropdown_deactivate(1);
