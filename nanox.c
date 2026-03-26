@@ -629,6 +629,32 @@ static const char *nanox_help_sheet[] = {
     NULL
 };
 
+static bool help_topic_has_title(const struct nanox_help_topic *topic)
+{
+    if (!topic || !topic->title)
+        return false;
+    return strcmp(topic->title, "Help Information") != 0;
+}
+
+static int help_total_lines(void)
+{
+    int total = 0;
+    if (dynamic_topics && dynamic_topic_count > 0) {
+        for (size_t t = 0; t < dynamic_topic_count; ++t) {
+            struct nanox_help_topic *topic = &dynamic_topics[t];
+            if (!topic)
+                continue;
+            if (help_topic_has_title(topic))
+                ++total;
+            total += (int)topic->line_count;
+        }
+    } else {
+        for (int i = 0; nanox_help_sheet[i] != NULL; ++i)
+            ++total;
+    }
+    return total;
+}
+
 void nanox_help_render(void)
 {
     if (!help_active)
@@ -647,27 +673,65 @@ void nanox_help_render(void)
     movecursor(0, 0);
     help_puts(" [ Nanox Help Sheet ]");
 
+    int content_rows = max_r - 2;
+    if (content_rows < 0)
+        content_rows = 0;
+    int total_lines = help_total_lines();
+    int max_scroll = total_lines - content_rows;
+    if (max_scroll < 0)
+        max_scroll = 0;
+    if (help_scroll < 0)
+        help_scroll = 0;
+    if (help_scroll > max_scroll)
+        help_scroll = max_scroll;
+    int skip = help_scroll;
+    int rendered = 0;
+    int r = 2;
+
     /* Prefer dynamic topics if loaded */
     if (dynamic_topics && dynamic_topic_count > 0) {
-        int r = 2;
         for (size_t t = 0; t < dynamic_topic_count && r < max_r; t++) {
-            if (strcmp(dynamic_topics[t].title, "Help Information") != 0) {
-                movecursor(r++, 2);
-                help_puts("=> ");
-                int avail = term->t_ncol - 2 - 3;
-                if (avail > 0)
-                    help_puts_width(dynamic_topics[t].title, avail);
+            struct nanox_help_topic *topic = &dynamic_topics[t];
+            if (!topic)
+                continue;
+            if (help_topic_has_title(topic)) {
+                if (skip > 0) {
+                    --skip;
+                } else if (rendered < content_rows) {
+                    movecursor(r++, 2);
+                    help_puts("=> ");
+                    int avail = term->t_ncol - 2 - 3;
+                    if (avail > 0)
+                        help_puts_width(topic->title, avail);
+                    ++rendered;
+                }
             }
-            for (size_t l = 0; l < dynamic_topics[t].line_count && r < max_r; l++) {
+            for (size_t l = 0; l < topic->line_count && r < max_r; l++) {
+                if (skip > 0) {
+                    --skip;
+                    continue;
+                }
+                if (rendered >= content_rows)
+                    break;
                 movecursor(r++, 2);
-                help_puts_width(dynamic_topics[t].lines[l], term->t_ncol - 2);
+                help_puts_width(topic->lines[l], term->t_ncol - 2);
+                ++rendered;
             }
+            if (rendered >= content_rows)
+                break;
         }
     } else {
         int avail = term->t_ncol - 2;
-        for (int i = 0; nanox_help_sheet[i] != NULL && i + 2 < max_r; ++i) {
-            movecursor(i + 2, 2);
+        for (int i = 0; nanox_help_sheet[i] != NULL && r < max_r; ++i) {
+            if (skip > 0) {
+                --skip;
+                continue;
+            }
+            if (rendered >= content_rows)
+                break;
+            movecursor(r++, 2);
             help_puts_width(nanox_help_sheet[i], avail);
+            ++rendered;
         }
     }
 
@@ -684,6 +748,7 @@ int nanox_help_command(int f, int n)
 {
     load_help_file();
     help_active = true;
+    help_scroll = 0;
     sgarbf = TRUE;
     nanox_help_render();
     return TRUE;
@@ -715,6 +780,15 @@ int nanox_help_handle_key(int key)
     case 0x7F:       /* Backspace */
     case CONTROL | 'H':
         help_close();
+        return TRUE;
+    case SPEC | 'A': /* Up Arrow */
+        if (help_scroll > 0)
+            --help_scroll;
+        nanox_help_render();
+        return TRUE;
+    case SPEC | 'B': /* Down Arrow */
+        ++help_scroll;
+        nanox_help_render();
         return TRUE;
     default:
         /* Any other key also closes help or just ignore */
