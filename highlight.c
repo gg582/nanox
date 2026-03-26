@@ -105,6 +105,7 @@ static void profile_init(HighlightProfile *p, const char *name)
     p->enable_number_highlight = true;
     p->enable_bracket_highlight = true;
     p->enable_triple_quotes = false;
+    p->completion_end_line_char = '\0';
     /* Defaults could be more extensive, but usually config overrides */
 }
 
@@ -297,6 +298,9 @@ static bool load_config_file(const char *path, bool allow_global)
                 mystrscpy(curr->return_keywords[curr->return_keyword_count++], trim(tok), MAX_TOKEN_LEN);
                 tok = strtok(NULL, ",");
             }
+        } else if (strcmp(key, "completion_end_line_char") == 0) {
+            char *trimmed = trim(val);
+            curr->completion_end_line_char = (trimmed && *trimmed) ? *trimmed : '\0';
         } else if (strcmp(key, "enable_triple_quotes") == 0) {
             curr->enable_triple_quotes = (strcasecmp(val, "true") == 0);
         } else if (strcmp(key, "enable_number_highlight") == 0) {

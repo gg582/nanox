@@ -2168,6 +2168,86 @@ static int extract_path_prefix(struct line *lp, int offset, char *dest, size_t d
     return FALSE;
 }
 
+static size_t completion_expand_delete_len(const char *match, struct line *lp, int offset, size_t delete_len)
+{
+    if (match == NULL || lp == NULL || strchr(match, '.') == NULL || offset <= 0)
+        return delete_len;
+
+    int len = llength(lp);
+    if (offset > len)
+        offset = len;
+
+    int start = offset;
+    while (start > 0) {
+        int candidate = prev_char_start(lp, start);
+        unicode_t uc = 0;
+        int bytes = utf8_to_unicode(lp->l_text, (unsigned)candidate, (unsigned)len, &uc);
+        if (bytes <= 0)
+            bytes = 1;
+        if (!is_identifier_char(uc) && uc != '.' && uc != '$')
+            break;
+        start = candidate;
+    }
+
+    if (start >= offset)
+        return delete_len;
+
+    size_t expanded = (size_t)(offset - start);
+    if (expanded > delete_len)
+        return expanded;
+    return delete_len;
+}
+
+static int completion_is_statement_context(struct line *lp)
+{
+    if (lp == NULL)
+        return FALSE;
+
+    int len = llength(lp);
+    int i = 0;
+    while (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t'))
+        i++;
+
+    if (i >= len)
+        return FALSE;
+
+    if (i + 8 <= len && memcmp(&lp->l_text[i], "#include", 8) == 0) {
+        if (i + 8 == len || isspace((unsigned char)lp->l_text[i + 8]) ||
+            lp->l_text[i + 8] == '<' || lp->l_text[i + 8] == '"')
+            return TRUE;
+    }
+    if (i + 7 <= len && memcmp(&lp->l_text[i], "include", 7) == 0) {
+        if (i + 7 == len || isspace((unsigned char)lp->l_text[i + 7]) ||
+            lp->l_text[i + 7] == '<' || lp->l_text[i + 7] == '"')
+            return TRUE;
+    }
+    if (i + 6 <= len && memcmp(&lp->l_text[i], "import", 6) == 0) {
+        if (i + 6 == len || isspace((unsigned char)lp->l_text[i + 6]))
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static int completion_has_terminator_ahead(struct line *lp, int offset, char terminator)
+{
+    if (lp == NULL || terminator == '\0')
+        return TRUE;
+
+    int len = llength(lp);
+    if (offset < 0)
+        offset = 0;
+    if (offset > len)
+        offset = len;
+
+    for (int i = offset; i < len; i++) {
+        unsigned char c = (unsigned char)lp->l_text[i];
+        if (c == ' ' || c == '\t')
+            continue;
+        return c == (unsigned char)terminator;
+    }
+    return FALSE;
+}
+
 static int determine_completion_prefix(char *out, size_t out_sz,
                                        completion_context_t *ctx,
                                        struct line **line_out,
@@ -2215,6 +2295,22 @@ static void completion_insert_text(const char *text)
     linsert_block((char *)text, (int)strlen(text));
 }
 
+static void completion_insert_end_line_char_if_needed(void)
+{
+    if (curbp == NULL || curwp == NULL || curwp->w_dotp == NULL)
+        return;
+
+    const HighlightProfile *profile = highlight_get_profile(curbp->b_fname);
+    if (profile == NULL || profile->completion_end_line_char == '\0')
+        return;
+    if (!completion_is_statement_context(curwp->w_dotp))
+        return;
+    if (completion_has_terminator_ahead(curwp->w_dotp, curwp->w_doto, profile->completion_end_line_char))
+        return;
+
+    linsert(1, profile->completion_end_line_char);
+}
+
 static void completion_dropdown_activate(size_t prefix_len)
 {
     completion_dropdown_state.active = 1;
@@ -2251,13 +2347,16 @@ static void completion_dropdown_apply_selection(void)
             } else {
                 size_t safe_doto = (size_t)original_doto;
                 size_t delete_len = completion_dropdown_state.prefix_len;
+                if (completion_is_statement_context(curwp->w_dotp))
+                    delete_len = completion_expand_delete_len(match, curwp->w_dotp, original_doto, delete_len);
                 if (safe_doto < delete_len)
                     delete_len = safe_doto;
                 if (delete_len > 0) {
-                curwp->w_doto = original_doto - (int)delete_len;
-                ldelete((long)delete_len, FALSE);
+                    curwp->w_doto = original_doto - (int)delete_len;
+                    ldelete((long)delete_len, FALSE);
                 }
                 completion_insert_text(match);
+                completion_insert_end_line_char_if_needed();
             }
         }
     }
