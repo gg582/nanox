@@ -2168,7 +2168,7 @@ static int extract_path_prefix(struct line *lp, int offset, char *dest, size_t d
     return FALSE;
 }
 
-static size_t completion_expand_delete_len(const char *match, struct line *lp, int offset, size_t delete_len)
+static size_t completion_calculate_dotted_token_delete_len(const char *match, struct line *lp, int offset, size_t delete_len)
 {
     if (match == NULL || lp == NULL || strchr(match, '.') == NULL || offset <= 0)
         return delete_len;
@@ -2198,7 +2198,7 @@ static size_t completion_expand_delete_len(const char *match, struct line *lp, i
     return delete_len;
 }
 
-static int completion_is_statement_context(struct line *lp)
+static int completion_is_import_include_context(struct line *lp)
 {
     if (lp == NULL)
         return FALSE;
@@ -2295,7 +2295,7 @@ static void completion_insert_text(const char *text)
     linsert_block((char *)text, (int)strlen(text));
 }
 
-static void completion_insert_end_line_char_if_needed(void)
+static void completion_insert_terminator_if_needed(void)
 {
     if (curbp == NULL || curwp == NULL || curwp->w_dotp == NULL)
         return;
@@ -2303,7 +2303,7 @@ static void completion_insert_end_line_char_if_needed(void)
     const HighlightProfile *profile = highlight_get_profile(curbp->b_fname);
     if (profile == NULL || profile->completion_end_line_char == '\0')
         return;
-    if (!completion_is_statement_context(curwp->w_dotp))
+    if (!completion_is_import_include_context(curwp->w_dotp))
         return;
     if (completion_has_terminator_ahead(curwp->w_dotp, curwp->w_doto, profile->completion_end_line_char))
         return;
@@ -2347,8 +2347,8 @@ static void completion_dropdown_apply_selection(void)
             } else {
                 size_t safe_doto = (size_t)original_doto;
                 size_t delete_len = completion_dropdown_state.prefix_len;
-                if (completion_is_statement_context(curwp->w_dotp))
-                    delete_len = completion_expand_delete_len(match, curwp->w_dotp, original_doto, delete_len);
+                if (completion_is_import_include_context(curwp->w_dotp))
+                    delete_len = completion_calculate_dotted_token_delete_len(match, curwp->w_dotp, original_doto, delete_len);
                 if (safe_doto < delete_len)
                     delete_len = safe_doto;
                 if (delete_len > 0) {
@@ -2356,7 +2356,7 @@ static void completion_dropdown_apply_selection(void)
                     ldelete((long)delete_len, FALSE);
                 }
                 completion_insert_text(match);
-                completion_insert_end_line_char_if_needed();
+                completion_insert_terminator_if_needed();
             }
         }
     }
