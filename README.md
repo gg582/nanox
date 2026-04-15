@@ -67,7 +67,6 @@ For long lines that extend beyond the terminal width:
 
 * **Auto-scroll:** The view automatically scrolls to keep the cursor visible
 * **Unicode-aware:** Correctly handles CJK characters and emoji widths
-* **Visual indicator:** A `$` marker shows when content extends off-screen
 
 
 ## Key Features
