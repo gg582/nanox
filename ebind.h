@@ -36,7 +36,8 @@ struct key_tab keytab[NBINDS] = {
     /* Indentation/Outdentation */
     { CONTROL | 'H', outdent_start_set },
     { CONTROL | SHIFT | 'H', outdent_end_set },
-    { CONTROL | 'J', indent_start_set },
+    { CONTROL | 'J', joinline },
+    { META | CONTROL | 'J', indent_start_set },
     { CONTROL | SHIFT | 'J', indent_end_set },
     { 'g', g_prefix_handler },
     { CONTROL | 'V', command_mode_activate_command }, /* Ctrl+V: Command Mode */

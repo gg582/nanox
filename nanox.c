@@ -38,6 +38,7 @@ struct nanox_config nanox_cfg = {
     .case_sensitive_default = false,
     .autocomplete = true,
     .use_lsp = false,
+    .use_auto_doc_completion = true,
     .no_function_slot = false,
 };
 
@@ -216,6 +217,7 @@ static void config_defaults(void)
     nanox_cfg.case_sensitive_default = false;
     nanox_cfg.autocomplete = true;
     nanox_cfg.use_lsp = false;
+    nanox_cfg.use_auto_doc_completion = true;
     nanox_cfg.nonr = false;
     nanox_cfg.no_function_slot = false;
 }
@@ -290,6 +292,9 @@ static void parse_edit_option(const char *key, const char *value)
             mark_config_error();
     } else if (strcasecmp(key, "use_lsp") == 0) {
         if (!parse_bool(value, &nanox_cfg.use_lsp))
+            mark_config_error();
+    } else if (strcasecmp(key, "use_auto_doc_completion") == 0) {
+        if (!parse_bool(value, &nanox_cfg.use_auto_doc_completion))
             mark_config_error();
     }
 }

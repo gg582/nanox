@@ -31,6 +31,7 @@ struct nanox_config {
     bool case_sensitive_default;
     bool autocomplete;
     bool use_lsp;
+    bool use_auto_doc_completion;
     bool nonr;
     bool no_function_slot;
 };

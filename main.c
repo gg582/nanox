@@ -572,6 +572,10 @@ int execute(int c, int f, int n)
         else
             status = sanitize_and_insert(n, c);
 
+        /* handle markup auto-completion if applicable */
+        if (status == TRUE && n == 1)
+            handle_markup_char(c);
+
         /* check for CMODE fence matching */
         if ((c == '}' || c == ')' || c == ']') && (curbp->b_mode & MDCMOD) != 0)
             fmatch(c);

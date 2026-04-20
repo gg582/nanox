@@ -22,6 +22,7 @@
 #include "edef.h"
 #include "efunc.h"
 #include "utf8.h"
+#include "nanox.h"
 
 extern struct kill *kbufp;
 
@@ -572,7 +573,73 @@ int putctext(char *iline)
 }
 
 /*
- * Delete a newline. Join the current line with the next line. If the next line
+ * Join the current line with the next one. Vim-style 'J'.
+ * It replaces the newline and any leading whitespace of the next line
+ * with a single space.
+ */
+int joinline(int f, int n)
+{
+    struct line *lp1;
+    struct line *lp2;
+    int i;
+    int status;
+
+    if (curbp->b_mode & MDVIEW)
+        return rdonly();
+
+    if (n < 0)
+        return FALSE;
+    if (n == 0)
+        n = 1;
+
+    while (n--) {
+        lp1 = curwp->w_dotp;
+        lp2 = lp1->l_fp;
+
+        if (lp2 == curbp->b_linep) /* At the end of buffer */
+            break;
+
+        /* Move to the end of the current line */
+        curwp->w_doto = lp1->l_used;
+
+        /* Delete the newline */
+        if ((status = ldelnewline()) != TRUE)
+            return status;
+
+        /* Now curwp->w_dotp is the joined line.
+         * The next line's content is now at curwp->w_doto.
+         * We want to replace leading whitespace there with a single space.
+         */
+
+        /* Remove leading whitespace from what was the next line */
+        while (curwp->w_doto < curwp->w_dotp->l_used &&
+               (curwp->w_dotp->l_text[curwp->w_doto] == ' ' ||
+                curwp->w_dotp->l_text[curwp->w_doto] == '\t')) {
+            ldelchar(1, FALSE);
+        }
+
+        /* Add a single space if the line isn't empty and doesn't already end in a space
+         * and we aren't at the end of the line.
+         */
+        if (curwp->w_doto > 0 && curwp->w_dotp->l_text[curwp->w_doto - 1] != ' ' &&
+            curwp->w_doto < curwp->w_dotp->l_used) {
+            linsert(1, ' ');
+            /* back up so we are at the start of the joined content (Vim behavior) */
+            backchar(FALSE, 1);
+        }
+
+        /* Vim's J typically leaves the cursor at the join point.
+         * ldelnewline already set w_doto to the end of the old lp1.
+         */
+    }
+
+    curwp->w_flag |= WFEDIT | WFMOVE;
+    return TRUE;
+}
+
+/*
+ * Delete a newline. Join the current line with the next line.
+ If the next line
  * is the magic header line always return TRUE; merging the last line with the
  * header line can be thought of as always being a successful operation, even
  * if nothing is done, and this makes the kill buffer work "right". Easy cases

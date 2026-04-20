@@ -1073,6 +1073,62 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
 
     int pos = 0;
 
+    /* Enhanced Syntax Highlighting for include/import statements */
+    if (current_state(&state) == HS_NORMAL) {
+        int first_non_ws = 0;
+        while (first_non_ws < len && isspace((unsigned char)text[first_non_ws]))
+            first_non_ws++;
+
+        if (first_non_ws < len) {
+            char first_word[MAX_TOKEN_LEN];
+            int fw_idx = 0;
+            int p = first_non_ws;
+            /* Support both 'import' and '#import' or '#include' */
+            while (p < len && (isalnum((unsigned char)text[p]) || text[p] == '_' || (p == first_non_ws && text[p] == '#')) && fw_idx < MAX_TOKEN_LEN - 1) {
+                first_word[fw_idx++] = text[p++];
+            }
+            first_word[fw_idx] = '\0';
+
+            bool is_import = (strcasecmp(first_word, "import") == 0 || strcasecmp(first_word, "include") == 0 ||
+                              (first_word[0] == '#' && (strcasecmp(first_word + 1, "import") == 0 || strcasecmp(first_word + 1, "include") == 0)));
+
+            if (is_import) {
+                if (out) {
+                    /* Indentation */
+                    if (first_non_ws > 0)
+                        add_span(out, 0, first_non_ws, HL_NORMAL);
+                    /* Keyword */
+                    add_span(out, first_non_ws, p, HL_KEYWORD);
+                    
+                    /* Scan the rest of the line for comments */
+                    int comment_start = -1;
+                    
+                    for (int i = 0; i < profile->line_comment_count; i++) {
+                        const char *tok = profile->line_comments[i];
+                        int tok_len = (int)strlen(tok);
+                        if (tok_len == 0) continue;
+                        
+                        for (int s = p; s <= len - tok_len; s++) {
+                            if (strncmp(text + s, tok, (size_t)tok_len) == 0) {
+                                if (comment_start == -1 || s < comment_start)
+                                    comment_start = s;
+                            }
+                        }
+                    }
+                    
+                    if (comment_start != -1) {
+                        if (comment_start > p)
+                            add_span(out, p, comment_start, HL_PREPROC);
+                        add_span(out, comment_start, len, HL_COMMENT);
+                    } else {
+                        add_span(out, p, len, HL_PREPROC);
+                    }
+                }
+                pos = len;
+            }
+        }
+    }
+
     while (pos < len) {
         unsigned char c = (unsigned char)text[pos];
 

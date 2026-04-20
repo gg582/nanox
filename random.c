@@ -8,6 +8,7 @@
 
 #include <string.h>
 #include <ctype.h>
+#include <stdio.h>
 
 #include "estruct.h"
 #include "edef.h"
@@ -19,6 +20,23 @@
 #include "completion.h"
 
 int tabsize;                    /* Tab size (0: use real tabs) */
+
+int is_markdown_file(void) {
+    if (!curbp->b_fname[0]) return FALSE;
+    char *ext = strrchr(curbp->b_fname, '.');
+    if (ext && (strcasecmp(ext, ".md") == 0 || strcasecmp(ext, ".markdown") == 0))
+        return TRUE;
+    return FALSE;
+}
+
+int is_markup_file(void) {
+    if (!curbp->b_fname[0]) return FALSE;
+    char *ext = strrchr(curbp->b_fname, '.');
+    if (ext && (strcasecmp(ext, ".html") == 0 || strcasecmp(ext, ".xml") == 0 || 
+                strcasecmp(ext, ".xhtml") == 0 || strcasecmp(ext, ".svg") == 0))
+        return TRUE;
+    return FALSE;
+}
 
 static int get_indent(struct line *lp) {
     int nicol = 0;
@@ -317,6 +335,77 @@ static void check_indent_dedent(void) {
             curwp->w_doto = old_doto;
         }
     }
+}
+
+int handle_markup_char(int c) {
+    if (!nanox_cfg.use_auto_doc_completion || !is_markup_file())
+        return TRUE;
+
+    if (c == '>') {
+        /* Auto-close tag: if we just typed '>', check if it's a start tag */
+        struct line *lp = curwp->w_dotp;
+        int off = curwp->w_doto;
+        if (off <= 1) return TRUE;
+
+        /* Look back for '<' */
+        int scan = off - 2;
+        while (scan >= 0 && lp->l_text[scan] != '<') {
+            if (lp->l_text[scan] == '>') return TRUE; /* Already closed or nested? skip */
+            scan--;
+        }
+
+        if (scan >= 0 && lp->l_text[scan] == '<') {
+            /* Found start of a potential tag */
+            int tag_start = scan + 1;
+            if (tag_start >= off - 1) return TRUE; /* Empty tag? <> */
+            if (lp->l_text[tag_start] == '/' || lp->l_text[tag_start] == '!' || lp->l_text[tag_start] == '?')
+                return TRUE; /* Closing tag, comment, or PI */
+
+            /* Extract tag name */
+            char tag_name[64];
+            int tidx = 0;
+            int p = tag_start;
+            while (p < off - 1 && tidx < 63 && !isspace(lp->l_text[p]) && lp->l_text[p] != '/') {
+                tag_name[tidx++] = lp->l_text[p++];
+            }
+            tag_name[tidx] = '\0';
+
+            /* Check if it's a self-closing tag or void element */
+            if (lp->l_text[off-2] == '/') return TRUE;
+            static const char *void_elements[] = {
+                "area", "base", "br", "col", "embed", "hr", "img", "input",
+                "link", "meta", "param", "source", "track", "wbr", NULL
+            };
+            if (is_markup_file()) { /* More specific check could be done for HTML vs XML */
+                for (int v = 0; void_elements[v]; v++) {
+                    if (strcasecmp(tag_name, void_elements[v]) == 0) return TRUE;
+                }
+            }
+
+            /* Insert closing tag */
+            char close_tag[128];
+            snprintf(close_tag, sizeof(close_tag), "</%s>", tag_name);
+            linstr(close_tag);
+            /* Move cursor back to be between tags */
+            backchar(FALSE, (int)strlen(close_tag));
+        }
+    } else if (c == '/') {
+        /* Auto-complete closing tag on '</' */
+        struct line *lp = curwp->w_dotp;
+        int off = curwp->w_doto;
+        if (off >= 2 && lp->l_text[off-2] == '<') {
+            /* User just typed '</' */
+            /* Scan back for the last unclosed tag */
+            /* (Simplistic scan for now: just find the previous start tag) */
+            /* In a real implementation we might want a proper stack-based scanner */
+            
+            /* Delete the '/' we just typed if we want to replace it, 
+             * but actually standard behavior is to complete after '</'
+             */
+             /* For now let's just do nothing or minimal completion */
+        }
+    }
+    return TRUE;
 }
 
 /*
@@ -835,6 +924,74 @@ int openline(int f, int n)
     return s;
 }
 
+static int handle_markdown_list(void) {
+    struct line *lp = curwp->w_dotp;
+    int len = llength(lp);
+    int i = 0;
+    while (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) i++;
+    
+    int indent_len = i;
+    int marker_start = i;
+    
+    /* Check for unordered list markers: -, *, + */
+    if (i < len && (lp->l_text[i] == '-' || lp->l_text[i] == '*' || lp->l_text[i] == '+')) {
+        i++;
+        if (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) {
+            while (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) i++;
+            int marker_end = i;
+            
+            /* If the rest of the line is empty, "stop" the list */
+            if (i == len) {
+                curwp->w_doto = marker_start;
+                ldelete((long)(len - marker_start), FALSE);
+                return lnewline();
+            }
+            
+            /* Continue the list */
+            if (lnewline() == FALSE) return FALSE;
+            for (int k = 0; k < marker_end; k++) {
+                linsert(1, lp->l_text[k]);
+            }
+            return TRUE;
+        }
+    }
+    
+    /* Check for ordered list markers: 1. , 2) , etc. */
+    i = marker_start;
+    if (i < len && isdigit(lp->l_text[i])) {
+        int num = 0;
+        while (i < len && isdigit(lp->l_text[i])) {
+            num = num * 10 + (lp->l_text[i] - '0');
+            i++;
+        }
+        if (i < len && (lp->l_text[i] == '.' || lp->l_text[i] == ')')) {
+            char separator = lp->l_text[i];
+            i++;
+            if (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) {
+                while (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) i++;
+                int marker_end = i;
+                
+                if (i == len) {
+                    curwp->w_doto = marker_start;
+                    ldelete((long)(len - marker_start), FALSE);
+                    return lnewline();
+                }
+                
+                if (lnewline() == FALSE) return FALSE;
+                /* Insert indentation */
+                for (int k = 0; k < indent_len; k++) linsert(1, lp->l_text[k]);
+                /* Insert incremented number */
+                char num_buf[32];
+                snprintf(num_buf, sizeof(num_buf), "%d%c ", num + 1, separator);
+                linstr(num_buf);
+                return TRUE;
+            }
+        }
+    }
+    
+    return FAILED; /* Not a list item or didn't handle it */
+}
+
 /*
  * Insert a newline. Bound to "C-M". If we are in CMODE, do automatic
  * indentation as specified.
@@ -847,6 +1004,14 @@ int insert_newline(int f, int n)
         return rdonly();        /* we are in read only mode     */
     if (n < 0)
         return FALSE;
+
+    /* Markdown/Markup auto-completion */
+    if (n == 1 && nanox_cfg.use_auto_doc_completion) {
+        if (is_markdown_file()) {
+            s = handle_markdown_list();
+            if (s != FAILED) return s;
+        }
+    }
 
     /* if this is a default <NL> */
     if (n == 1 && curwp->w_dotp != curbp->b_linep)
