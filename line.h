@@ -19,6 +19,7 @@ struct line {
     int l_used;             /* Used size                    */
     HighlightState hl_start_state;
     HighlightState hl_end_state;
+    char l_diag;            /* Diagnostic: 0=none, 1=warn, 2=error */
     unsigned char l_text[1];             /* A bunch of characters.       */
 };
 

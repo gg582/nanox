@@ -17,6 +17,9 @@ typedef enum {
     HL_FUNCTION,
     HL_FLOW,
     HL_PREPROC,
+    HL_PREPROC_INCLUDE,
+    HL_PREPROC_DEFINE,
+    HL_PREPROC_FLOW,
     HL_RETURN,
     HL_ESCAPE,
     HL_CONTROL,
@@ -28,6 +31,9 @@ typedef enum {
     HL_MD_BOLD,        /* Markdown bold **text** */
     HL_MD_ITALIC,      /* Markdown italic *text* */
     HL_MD_UNDERLINE,   /* HTML underline <u>text</u> */
+    HL_GHOST_TEXT,     /* Faint completion hint */
+    HL_LSP_ERROR,      /* LSP error indicator in gutter */
+    HL_LSP_WARN,       /* LSP warning indicator in gutter */
     HL_LINENUM,        /* Line number gutter */
     HL_COUNT
 } HighlightStyleID;

@@ -35,21 +35,30 @@ struct video **vscreen;          /* Virtual screen. */
 
 static int get_gutter_width(void)
 {
-    return !nanox_cfg.nonr ? 6 : 0;
+    return !nanox_cfg.nonr ? 8 : 0;
 }
 
-static void render_gutter(int row, int lnum)
+static void render_gutter(int row, int lnum, struct line *lp)
 {
     if (nanox_cfg.nonr) return;
 
     char buf[10];
+    char indicator[3] = "  ";
+
     if (lnum > 0) {
-        snprintf(buf, sizeof(buf), "%5d", lnum);
+        snprintf(buf, sizeof(buf), "%4d ", lnum);
+        if (lp && lp->l_diag == 1) {
+            indicator[0] = '?'; indicator[1] = '>';
+        } else if (lp && lp->l_diag == 2) {
+            indicator[0] = '!'; indicator[1] = '>';
+        }
     } else {
         snprintf(buf, sizeof(buf), "     ");
     }
 
     HighlightStyle num_style = colorscheme_get(HL_LINENUM);
+    HighlightStyle err_style = colorscheme_get(HL_LSP_ERROR);
+    HighlightStyle warn_style = colorscheme_get(HL_LSP_WARN);
     
     video_cell *vcp = vscreen[row]->v_text;
     for (int i = 0; i < 5; i++) {
@@ -60,12 +69,27 @@ static void render_gutter(int row, int lnum)
         vcp[i].underline = num_style.underline;
         vcp[i].italic = num_style.italic;
     }
-    vcp[5].ch = 0x2502; /* Unicode box-drawing vertical separator */
-    vcp[5].fg = num_style.fg;
-    vcp[5].bg = num_style.bg;
-    vcp[5].bold = num_style.bold;
-    vcp[5].underline = num_style.underline;
-    vcp[5].italic = num_style.italic;
+
+    /* Indicators */
+    for (int i = 0; i < 2; i++) {
+        vcp[5+i].ch = indicator[i];
+        if (indicator[0] == '!') {
+            vcp[5+i].fg = err_style.fg;
+            vcp[5+i].bg = err_style.bg;
+            vcp[5+i].bold = err_style.bold;
+        } else if (indicator[0] == '?') {
+            vcp[5+i].fg = warn_style.fg;
+            vcp[5+i].bg = warn_style.bg;
+            vcp[5+i].bold = warn_style.bold;
+        } else {
+            vcp[5+i].fg = num_style.fg;
+            vcp[5+i].bg = num_style.bg;
+        }
+    }
+
+    vcp[7].ch = 0x2502; /* Unicode box-drawing vertical separator */
+    vcp[7].fg = num_style.fg;
+    vcp[7].bg = num_style.bg;
 }
 
 static int current_color_fg = -1;
@@ -75,6 +99,7 @@ static bool current_color_underline = false;
 static bool current_color_italic = false;
 
 static int vt_margin_left = 0;
+static struct line *current_rendering_lp = NULL;
 
 static int displaying = TRUE;
 #include <signal.h>
@@ -384,7 +409,7 @@ void vtputc(int c)
             vtrow++;
             vtcol = vt_margin_left;
             vscreen[vtrow]->v_flag |= VFCHG;
-            render_gutter(vtrow, 0); // 0 indicates empty gutter for wrapped lines
+            render_gutter(vtrow, 0, current_rendering_lp); // 0 indicates empty gutter for wrapped lines
             for (int i = 0; i < 4; i++)
                 vtputc(' ');
         } else {
@@ -622,6 +647,7 @@ static int reframe(struct window *wp)
 static void show_line(struct window *wp, struct line *lp)
 {
     int len = llength(lp);
+    current_rendering_lp = lp;
 
     /* Highlight logic */
     SpanVec spans;
@@ -727,11 +753,56 @@ static void show_line(struct window *wp, struct line *lp)
         current_color_underline = normal.underline;
         current_color_italic = normal.italic;
     }
+
+    /* 6. Ghost Text (Completion Hint) */
+    if (wp == curwp && lp == curwp->w_dotp && nanox_cfg.autocomplete) {
+        char prefix[MAX_COMPLETION_LEN];
+        int prefix_start = 0;
+        int prefix_end = 0;
+        
+        /* determine_completion_prefix is defined in completion.c but not exported. 
+         * For now, we manually extract the prefix at the cursor. */
+        int offset = curwp->w_doto;
+        int i = offset;
+        while (i > 0 && isalnum((unsigned char)lp->l_text[i-1])) i--;
+        
+        if (i < offset) {
+            int plen = offset - i;
+            if (plen < (int)sizeof(prefix)) {
+                memcpy(prefix, lp->l_text + i, (size_t)plen);
+                prefix[plen] = '\0';
+                
+                extern const char *completion_get_best_hint(const char *prefix);
+                const char *hint = completion_get_best_hint(prefix);
+                if (hint && *hint) {
+                    HighlightStyle ghost = colorscheme_get(HL_GHOST_TEXT);
+                    current_color_fg = ghost.fg;
+                    current_color_bg = ghost.bg;
+                    current_color_bold = ghost.bold;
+                    current_color_italic = ghost.italic;
+                    current_color_underline = ghost.underline;
+                    
+                    while (*hint) {
+                        vtputc(*hint++);
+                    }
+                    
+                    /* Restore normal for trailing EOL */
+                    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+                    current_color_fg = normal.fg;
+                    current_color_bg = normal.bg;
+                    current_color_bold = normal.bold;
+                    current_color_italic = normal.italic;
+                    current_color_underline = normal.underline;
+                }
+            }
+        }
+    }
 }
 
 static void show_line_wrapped(struct window *wp, struct line *lp)
 {
     int len = llength(lp);
+    current_rendering_lp = lp;
     if (len == 0) {
         return;
     }
@@ -846,7 +917,7 @@ render_segment:
             }
             vtcol = vt_margin_left;
             vscreen[vtrow]->v_flag |= VFCHG;
-            render_gutter(vtrow, 0);
+            render_gutter(vtrow, 0, current_rendering_lp);
             for (int i = 0; i < 4; i++) vtputc(' ');
         }
     }
@@ -886,7 +957,7 @@ static void updone(struct window *wp)
         vscreen[sline]->v_flag &= ~VFREQ;
         
         int lnum = get_line_num(wp->w_bufp, lp);
-        render_gutter(sline, lnum);
+        render_gutter(sline, lnum, lp);
         vt_margin_left = get_gutter_width();
         
         vtmove(sline, 0);
@@ -924,7 +995,7 @@ static void updall(struct window *wp)
         vscreen[sline]->v_flag |= VFCHG;
         vscreen[sline]->v_flag &= ~VFREQ;
         
-        render_gutter(sline, (lp != wp->w_bufp->b_linep) ? lnum : -1);
+        render_gutter(sline, (lp != wp->w_bufp->b_linep) ? lnum : -1, (lp != wp->w_bufp->b_linep) ? lp : NULL);
 
         vtmove(sline, 0);
         if (lp != wp->w_bufp->b_linep) {
@@ -1335,8 +1406,8 @@ static void modeline(struct window *wp)
             : "F6/^W Copy(S:End) F7/^X Cut(S:End) F8/^V Paste F9-12 Slot";
     }
 
-    snprintf(status, sizeof(status), "%s L%d C%d %c%s%s",
-         fname, line, col, mark, (*lamp ? " " : ""), (*lamp ? lamp : ""));
+    snprintf(status, sizeof(status), "%s L%d C%d %c",
+         fname, line, col, mark);
 
     if (top >= 0 && top < term->t_nrow) {
         vscreen[top]->v_flag |= VFCHG | VFCOL;

@@ -42,6 +42,12 @@ typedef struct {
     int flow_keyword_count;
     char preproc_keywords[MAX_TOKENS * 4][MAX_TOKEN_LEN];
     int preproc_keyword_count;
+    char preproc_include_keywords[MAX_TOKENS * 4][MAX_TOKEN_LEN];
+    int preproc_include_keyword_count;
+    char preproc_define_keywords[MAX_TOKENS * 4][MAX_TOKEN_LEN];
+    int preproc_define_keyword_count;
+    char preproc_flow_keywords[MAX_TOKENS * 4][MAX_TOKEN_LEN];
+    int preproc_flow_keyword_count;
     char return_keywords[MAX_TOKENS][MAX_TOKEN_LEN];
     int return_keyword_count;
     char completion_end_line_char;

@@ -2083,6 +2083,22 @@ const char* completion_get_selected(void) {
     return NULL;
 }
 
+const char *completion_get_best_hint(const char *prefix)
+{
+    if (completion_state.count == 0 || !prefix || !*prefix)
+        return NULL;
+    
+    /* We only show a hint if the similarity is high (score > threshold) 
+     * and the first match actually starts with the prefix. */
+    const char *best = completion_state.matches[0];
+    if (best && strncasecmp(best, prefix, strlen(prefix)) == 0) {
+        if (strlen(best) > strlen(prefix)) {
+            return best + strlen(prefix);
+        }
+    }
+    return NULL;
+}
+
 void completion_next(void) {
     if (completion_state.count <= 0)
         return;

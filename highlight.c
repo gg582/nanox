@@ -312,6 +312,27 @@ static bool load_config_file(const char *path, bool allow_global)
                 mystrscpy(curr->preproc_keywords[curr->preproc_keyword_count++], trim(tok), MAX_TOKEN_LEN);
                 tok = strtok(NULL, ",");
             }
+        } else if (strcmp(key, "preproc_include") == 0) {
+            char *tok = strtok(val, ",");
+            curr->preproc_include_keyword_count = 0;
+            while (tok && curr->preproc_include_keyword_count < MAX_TOKENS * 4) {
+                mystrscpy(curr->preproc_include_keywords[curr->preproc_include_keyword_count++], trim(tok), MAX_TOKEN_LEN);
+                tok = strtok(NULL, ",");
+            }
+        } else if (strcmp(key, "preproc_define") == 0) {
+            char *tok = strtok(val, ",");
+            curr->preproc_define_keyword_count = 0;
+            while (tok && curr->preproc_define_keyword_count < MAX_TOKENS * 4) {
+                mystrscpy(curr->preproc_define_keywords[curr->preproc_define_keyword_count++], trim(tok), MAX_TOKEN_LEN);
+                tok = strtok(NULL, ",");
+            }
+        } else if (strcmp(key, "preproc_flow") == 0) {
+            char *tok = strtok(val, ",");
+            curr->preproc_flow_keyword_count = 0;
+            while (tok && curr->preproc_flow_keyword_count < MAX_TOKENS * 4) {
+                mystrscpy(curr->preproc_flow_keywords[curr->preproc_flow_keyword_count++], trim(tok), MAX_TOKEN_LEN);
+                tok = strtok(NULL, ",");
+            }
         } else if (strcmp(key, "return_keywords") == 0) {
             char *tok = strtok(val, ",");
             curr->return_keyword_count = 0;
@@ -1089,8 +1110,8 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             }
             first_word[fw_idx] = '\0';
 
-            bool is_import = (strcasecmp(first_word, "import") == 0 || strcasecmp(first_word, "include") == 0 ||
-                              (first_word[0] == '#' && (strcasecmp(first_word + 1, "import") == 0 || strcasecmp(first_word + 1, "include") == 0)));
+            bool is_include_style = (first_word[0] == '#' && (strcasecmp(first_word + 1, "import") == 0 || strcasecmp(first_word + 1, "include") == 0));
+            bool is_import = (strcasecmp(first_word, "import") == 0 || strcasecmp(first_word, "include") == 0 || is_include_style);
 
             if (is_import) {
                 if (out) {
@@ -1098,7 +1119,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     if (first_non_ws > 0)
                         add_span(out, 0, first_non_ws, HL_NORMAL);
                     /* Keyword */
-                    add_span(out, first_non_ws, p, HL_KEYWORD);
+                    add_span(out, first_non_ws, p, is_include_style ? HL_PREPROC_INCLUDE : HL_KEYWORD);
                     
                     /* Scan the rest of the line for comments */
                     int comment_start = -1;
@@ -1118,10 +1139,10 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                     
                     if (comment_start != -1) {
                         if (comment_start > p)
-                            add_span(out, p, comment_start, HL_PREPROC);
+                            add_span(out, p, comment_start, is_include_style ? HL_PREPROC_INCLUDE : HL_PREPROC);
                         add_span(out, comment_start, len, HL_COMMENT);
                     } else {
-                        add_span(out, p, len, HL_PREPROC);
+                        add_span(out, p, len, is_include_style ? HL_PREPROC_INCLUDE : HL_PREPROC);
                     }
                 }
                 pos = len;
@@ -1331,13 +1352,84 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             }
             if (matched_line) continue;
 
-            /* 3. Preprocessor (C-style starting with #) */
-            if (c == '#' && (pos == 0 || isspace((unsigned char)text[pos-1]))) {
+            /* 3. Preprocessor (C-style #, ASM-style %) */
+            if ((c == '#' || c == '%') && (pos == 0 || isspace((unsigned char)text[pos-1]))) {
                 int search = pos + 1;
-                while (search < len && (isalnum((unsigned char)text[search]) || text[search] == '_')) {
+                while (search < len && (isalnum((unsigned char)text[search]) || text[search] == '_' || text[search] == '%')) {
                     search++;
                 }
-                if (out) add_span(out, pos, search, HL_PREPROC);
+                
+                HighlightStyleID preproc_style = HL_PREPROC;
+                if (search > pos + 1) {
+                    char word[MAX_TOKEN_LEN];
+                    int word_len = search - (pos + 1);
+                    if (word_len < MAX_TOKEN_LEN) {
+                        memcpy(word, text + pos + 1, word_len);
+                        word[word_len] = 0;
+                        
+                        /* Check for specific preprocessor types (with prefix if present in word) */
+                        bool found_spec = false;
+                        for (int i = 0; i < profile->preproc_include_keyword_count; i++) {
+                            if (strcmp(word, profile->preproc_include_keywords[i]) == 0) {
+                                preproc_style = HL_PREPROC_INCLUDE; found_spec = true; break;
+                            }
+                        }
+                        if (!found_spec) {
+                            for (int i = 0; i < profile->preproc_define_keyword_count; i++) {
+                                if (strcmp(word, profile->preproc_define_keywords[i]) == 0) {
+                                    preproc_style = HL_PREPROC_DEFINE; found_spec = true; break;
+                                }
+                            }
+                        }
+                        if (!found_spec) {
+                            for (int i = 0; i < profile->preproc_flow_keyword_count; i++) {
+                                if (strcmp(word, profile->preproc_flow_keywords[i]) == 0) {
+                                    preproc_style = HL_PREPROC_FLOW; found_spec = true; break;
+                                }
+                            }
+                        }
+                        
+                        /* If not found, try matching with prefix included */
+                        if (!found_spec) {
+                            char word_with_prefix[MAX_TOKEN_LEN + 1];
+                            word_with_prefix[0] = (char)c;
+                            memcpy(word_with_prefix + 1, word, (size_t)word_len);
+                            word_with_prefix[word_len + 1] = 0;
+                            
+                            for (int i = 0; i < profile->preproc_include_keyword_count; i++) {
+                                if (strcmp(word_with_prefix, profile->preproc_include_keywords[i]) == 0) {
+                                    preproc_style = HL_PREPROC_INCLUDE; found_spec = true; break;
+                                }
+                            }
+                            /* ... (other categories) ... */
+                            if (!found_spec) {
+                                for (int i = 0; i < profile->preproc_define_keyword_count; i++) {
+                                    if (strcmp(word_with_prefix, profile->preproc_define_keywords[i]) == 0) {
+                                        preproc_style = HL_PREPROC_DEFINE; found_spec = true; break;
+                                    }
+                                }
+                            }
+                            if (!found_spec) {
+                                for (int i = 0; i < profile->preproc_flow_keyword_count; i++) {
+                                    if (strcmp(word_with_prefix, profile->preproc_flow_keywords[i]) == 0) {
+                                        preproc_style = HL_PREPROC_FLOW; found_spec = true; break;
+                                    }
+                                }
+                            }
+                        }
+
+                        /* Backward compatibility: check general preproc_keywords */
+                        if (preproc_style == HL_PREPROC) {
+                            for (int i = 0; i < profile->preproc_keyword_count; i++) {
+                                if (strcmp(word, profile->preproc_keywords[i]) == 0) {
+                                    preproc_style = HL_PREPROC; break;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (out) add_span(out, pos, search, preproc_style);
                 pos = search;
                 continue;
             }
@@ -1499,8 +1591,9 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             /* Fallback for other characters */
             if (out) add_span(out, pos, pos + 1, HL_NORMAL);
             pos++;
-
-        } else if (active == HS_BLOCK_COMMENT) {
+        }
+        
+        else if (active == HS_BLOCK_COMMENT) {
             HighlightStackEntry *frame = state_top(&state);
             if (!frame) {
                 pop_state(&state);

@@ -24,6 +24,7 @@
 
 /* Internal constants. */
 
+#define MAX_COMPLETION_LEN 512      /* max completion length of a word */
 #define NBINDS  2048                /* max # of bound keys          */
 #define NFILEN  2048                /* # of bytes, file name        */
 #define NBUFN   16              /* # of bytes, buffer name      */

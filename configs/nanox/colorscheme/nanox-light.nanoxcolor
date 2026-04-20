@@ -10,6 +10,9 @@ function  = fg=#7a3eb1 bold=true
 type      = fg=#005089
 bracket   = fg=#5b6574
 operator  = fg=#0c7da8
+preproc_include = fg=#00836d
+preproc_define  = fg=#7a3eb1
+preproc_flow    = fg=#b73a2f
 notice    = fg=#005f73 bold=true
 selection = fg=#0a0d11 bg=#ffe59a
 linenum   = fg=#7f8c99 bg=#f4f0e4

@@ -50,6 +50,7 @@ struct line *lalloc(int used)
     lp->l_used = used;
     lp->hl_start_state = (HighlightState){0};
     lp->hl_end_state = (HighlightState){0};
+    lp->l_diag = 0;
     return lp;
 }
 

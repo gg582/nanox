@@ -36,6 +36,12 @@ static void set_default_scheme(void) {
     styles[HL_FLOW] = (HighlightStyle){3, -1, true, false, false};
     /* Preproc: Red */
     styles[HL_PREPROC] = (HighlightStyle){1, -1, false, false, false};
+    /* Preproc Include: Cyan */
+    styles[HL_PREPROC_INCLUDE] = (HighlightStyle){6, -1, false, false, false};
+    /* Preproc Define: Bright Red */
+    styles[HL_PREPROC_DEFINE] = (HighlightStyle){9, -1, false, false, false};
+    /* Preproc Flow: Yellow */
+    styles[HL_PREPROC_FLOW] = (HighlightStyle){3, -1, true, false, false};
     /* Return: Bright Red */
     styles[HL_RETURN] = (HighlightStyle){9, -1, true, false, false};
     /* Escape: Bright Cyan */
@@ -58,6 +64,11 @@ static void set_default_scheme(void) {
     styles[HL_MD_ITALIC] = (HighlightStyle){6, -1, false, false, true};
     /* HTML Underline: Underlined text */
     styles[HL_MD_UNDERLINE] = (HighlightStyle){-1, -1, false, true, false};
+    /* Ghost Text: Faint gray */
+    styles[HL_GHOST_TEXT] = (HighlightStyle){8, -1, false, false, true};
+    /* LSP Indicators */
+    styles[HL_LSP_ERROR] = (HighlightStyle){9, -1, true, false, false};
+    styles[HL_LSP_WARN] = (HighlightStyle){11, -1, true, false, false};
     /* Line Number Gutter: Bright Black (Gray) on Default */
     styles[HL_LINENUM] = (HighlightStyle){8, -1, false, false, false};
 }
@@ -160,6 +171,9 @@ static void load_scheme_file(const char *path) {
             else if (strcmp(key, "function") == 0) id = HL_FUNCTION;
             else if (strcmp(key, "flow") == 0) id = HL_FLOW;
             else if (strcmp(key, "preproc") == 0) id = HL_PREPROC;
+            else if (strcmp(key, "preproc_include") == 0) id = HL_PREPROC_INCLUDE;
+            else if (strcmp(key, "preproc_define") == 0) id = HL_PREPROC_DEFINE;
+            else if (strcmp(key, "preproc_flow") == 0) id = HL_PREPROC_FLOW;
             else if (strcmp(key, "return") == 0) id = HL_RETURN;
             else if (strcmp(key, "escape") == 0) id = HL_ESCAPE;
             else if (strcmp(key, "control") == 0) id = HL_CONTROL;
@@ -171,6 +185,9 @@ static void load_scheme_file(const char *path) {
             else if (strcmp(key, "md_bold") == 0) id = HL_MD_BOLD;
             else if (strcmp(key, "md_italic") == 0) id = HL_MD_ITALIC;
             else if (strcmp(key, "md_underline") == 0) id = HL_MD_UNDERLINE;
+            else if (strcmp(key, "ghost_text") == 0) id = HL_GHOST_TEXT;
+            else if (strcmp(key, "lsp_error") == 0) id = HL_LSP_ERROR;
+            else if (strcmp(key, "lsp_warn") == 0) id = HL_LSP_WARN;
             else if (strcmp(key, "linenum") == 0) id = HL_LINENUM;
             
                     if (id != HL_COUNT) {                parse_attributes(val, &styles[id]);
