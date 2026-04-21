@@ -106,6 +106,7 @@ extern int spellcheck(const char *word);
 extern void edinit(char *bname);
 extern int execute(int c, int f, int n);
 extern int quickexit(int f, int n);
+extern int swap_quit(int f, int n);
 extern int quit(int f, int n);
 extern int ctlxlp(int f, int n);
 extern int ctlxrp(int f, int n);

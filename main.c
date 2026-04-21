@@ -640,6 +640,47 @@ static void emergencyexit(int signr)
     quit(TRUE, 0);
 }
 
+int swap_quit(int f, int n)
+{
+    struct buffer *bp;
+    char swapname[NFILEN];
+
+    bp = bheadp;
+    while (bp != NULL) {
+        if ((bp->b_flag & BFCHG) != 0 && (bp->b_flag & BFINVS) == 0 && bp->b_fname[0] != '\0') {
+            char *slash = strrchr(bp->b_fname, '/');
+            if (slash) {
+                strncpy(swapname, bp->b_fname, slash - bp->b_fname + 1);
+                swapname[slash - bp->b_fname + 1] = '\0';
+                strcat(swapname, ".");
+                strcat(swapname, slash + 1);
+                strcat(swapname, ".swp");
+            } else {
+                strcpy(swapname, ".");
+                strcat(swapname, bp->b_fname);
+                strcat(swapname, ".swp");
+            }
+
+            FILE *fp = fopen(swapname, "w");
+            if (fp) {
+                struct line *lp = lforw(bp->b_linep);
+                while (lp != bp->b_linep) {
+                    for (int i = 0; i < llength(lp); ++i) {
+                        fputc(lgetc(lp, i), fp);
+                    }
+                    fputc('\n', fp);
+                    lp = lforw(lp);
+                }
+                fclose(fp);
+            }
+        }
+        bp = bp->b_bufp;
+    }
+    
+    quit(TRUE, 0);
+    return TRUE;
+}
+
 /*
  * Quit command. If an argument, always quit. Otherwise confirm if a buffer
  * has been changed and not written out. Normally bound to "C-X C-C".

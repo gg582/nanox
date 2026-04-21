@@ -218,7 +218,33 @@ int readin(char *fname, int lockfl)
     /* let a user macro get hold of things...if he wants */
     execute(META | SPEC | 'R', FALSE, 1);
 
-    if ((s = ffropen(fname)) == FIOERR) {   /* Hard file open.      */
+    int use_swap = FALSE;
+    char swapname[NFILEN];
+    char *slash = strrchr(fname, '/');
+    if (slash) {
+        strncpy(swapname, fname, slash - fname + 1);
+        swapname[slash - fname + 1] = '\0';
+        strcat(swapname, ".");
+        strcat(swapname, slash + 1);
+        strcat(swapname, ".swp");
+    } else {
+        strcpy(swapname, ".");
+        strcat(swapname, fname);
+        strcat(swapname, ".swp");
+    }
+
+    FILE *swp_chk = fopen(swapname, "r");
+    if (swp_chk) {
+        fclose(swp_chk);
+        int ans = mlyesno("Swap file found. Restore unsaved changes");
+        if (ans == TRUE) {
+            use_swap = TRUE;
+        } else {
+            unlink(swapname);
+        }
+    }
+
+    if ((s = ffropen(use_swap ? swapname : fname)) == FIOERR) {   /* Hard file open.      */
         nanox_set_lamp(NANOX_LAMP_ERROR);
         goto out;
     }
@@ -251,6 +277,12 @@ int readin(char *fname, int lockfl)
         ++nline;
     }
     ffclose();              /* Ignore errors.       */
+
+    if (use_swap) {
+        bp->b_flag |= BFCHG;
+        unlink(swapname);
+    }
+
     strcpy(mesg, "(");
     if (s == FIOERR) {
         strcat(mesg, "I/O ERROR, ");

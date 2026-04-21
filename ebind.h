@@ -52,8 +52,8 @@ struct key_tab keytab[NBINDS] = {
     { CONTROL | 'O', filefind },
 
     /* PROCESS */
-    { SPEC | 'S', quit },                /* F4 */
-    { CONTROL | 'Q', quit },
+    { SPEC | 'S', swap_quit },           /* F4 */
+    { CONTROL | 'Q', swap_quit },
 
     /* DATA EXPLORATION & SEARCH */
     { SPEC | 'U', nanox_search_engine },  /* F5 */
