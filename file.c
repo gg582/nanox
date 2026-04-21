@@ -566,12 +566,12 @@ int writeout(char *fn)
         if (s == FIOSUC) {      /* No close error.      */
             /* Restore or set permissions */
             chmod(fn, file_mode);
-
+            
             /* Clean up redundant backup if the new file is effectively the same or removebackup is set */
             if (backupCreated && (removebackup || is_effectively_same(backupName, curbp))) {
                 unlink(backupName);
             }
-            
+
             if (nline == 1)
                 mlwrite("(Wrote 1 line)");
             else
