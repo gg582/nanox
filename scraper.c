@@ -276,7 +276,8 @@ static int run_child_process(const char *prog, char *const argv[],
         if (child_done && stream_eof)
             break;
 
-        if (time(NULL) - start_time >= SCRAPER_CHILD_TIMEOUT_SEC) {
+        time_t now = time(NULL);
+        if (now == (time_t)-1 || now - start_time >= SCRAPER_CHILD_TIMEOUT_SEC) {
             timed_out = 1;
             break;
         }
