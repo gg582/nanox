@@ -622,24 +622,24 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
         } else { // Normal character input
             quotef = FALSE;
             if (cpos < nbuf - 1) {
-                if (c_int >= 0x80) {
+                if ((unsigned)c >= 0x80 && (unsigned)c <= 0x10FFFF) {
                     /* Handle multi-byte Unicode characters */
                     char utf8_buf[6];
-                    int len = unicode_to_utf8(c_int, utf8_buf);
+                    int len = unicode_to_utf8((unsigned)c, (unsigned char *)utf8_buf);
                     if (cpos + len < nbuf) {
                         for (int i = 0; i < len; i++) {
                             buf[cpos++] = utf8_buf[i];
                         }
                         if (disinp) {
-                            TTputc(c_int);
-                            ttcol += unicode_width(c_int);
+                            TTputc(c);
+                            ttcol += mystrnlen_raw_w(c);
                         }
                     } else {
                         TTbeep();
                     }
                 } else {
                     /* Handle ASCII character */
-                    unsigned char c_byte = (unsigned char)c_int;
+                    unsigned char c_byte = (unsigned char)c;
                     buf[cpos++] = c_byte;
                     if (disinp) {
                         if (c_byte < 0x20 && c_byte != '\n') {

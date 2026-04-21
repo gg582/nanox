@@ -1609,7 +1609,7 @@ void mlwrite(const char *fmt, ...)
         unicode_t uc;
         int bytes = utf8_to_unicode(p, i, len, &uc);
         TTputc(uc);
-        ttcol += unicode_width(uc);
+        ttcol += mystrnlen_raw_w(uc);
         i += bytes;
     }
 
@@ -1653,7 +1653,7 @@ void mlputs(char *s)
         unicode_t uc;
         int bytes = utf8_to_unicode(p, i, len, &uc);
         TTputc(uc);
-        ttcol += unicode_width(uc);
+        ttcol += mystrnlen_raw_w(uc);
         i += bytes;
     }
 }
