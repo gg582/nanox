@@ -46,6 +46,13 @@ static pthread_mutex_t scraper_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t job_cond = PTHREAD_COND_INITIALIZER;
 static pthread_t worker_thread;
 static int worker_started = 0;
+static volatile int worker_stop = 0; /* set to 1 to request clean shutdown */
+
+/* Maximum seconds a single scraper job is allowed to run before the
+ * worker thread forces cancellation and marks the entry as failed.
+ * This is longer than SCRAPER_CHILD_TIMEOUT_SEC to give run_child_process
+ * time to kill the child and reap it before we cancel the whole thread. */
+#define SCRAPER_JOB_WATCHDOG_SEC 8
 
 static const char python_script[] =
     "import importlib,sys\n"
@@ -402,8 +409,26 @@ static void *scraper_worker(void *arg)
     for (;;) {
         scraper_job_t job;
         pthread_mutex_lock(&scraper_mutex);
-        while (job_count == 0)
-            pthread_cond_wait(&job_cond, &scraper_mutex);
+        while (job_count == 0 && !worker_stop) {
+            /* Use a timed wait so we can re-check the stop flag periodically */
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += 2;
+            pthread_cond_timedwait(&job_cond, &scraper_mutex, &ts);
+        }
+        if (worker_stop) {
+            /* Mark all pending jobs as failed before exiting */
+            for (int i = 0; i < job_count; i++) {
+                if (job_queue[i].entry) {
+                    job_queue[i].entry->in_progress = 0;
+                    job_queue[i].entry->failed = 1;
+                    job_queue[i].entry->ready = 1;
+                }
+            }
+            job_count = 0;
+            pthread_mutex_unlock(&scraper_mutex);
+            break;
+        }
         if (!dequeue_job(&job)) {
             pthread_mutex_unlock(&scraper_mutex);
             continue;
@@ -470,4 +495,40 @@ int scraper_iterate_symbols(scraper_lang_t lang, const char *module,
             cb(items[i], userdata);
     }
     return ready;
+}
+
+/*
+ * scraper_shutdown:
+ *
+ * Signal the worker thread to exit cleanly and join it within
+ * SCRAPER_JOB_WATCHDOG_SEC seconds.  If the join times out (thread is
+ * stuck in run_child_process despite its own timeout), the thread is
+ * forcefully cancelled so the process can exit without hanging.
+ */
+void scraper_shutdown(void)
+{
+    pthread_mutex_lock(&scraper_mutex);
+    if (!worker_started) {
+        pthread_mutex_unlock(&scraper_mutex);
+        return;
+    }
+    worker_stop = 1;
+    pthread_cond_signal(&job_cond);
+    pthread_mutex_unlock(&scraper_mutex);
+
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += SCRAPER_JOB_WATCHDOG_SEC;
+
+    int rc = pthread_timedjoin_np(worker_thread, NULL, &deadline);
+    if (rc != 0) {
+        /* Thread did not exit in time; cancel it forcefully */
+        pthread_cancel(worker_thread);
+        pthread_join(worker_thread, NULL);
+    }
+
+    pthread_mutex_lock(&scraper_mutex);
+    worker_started = 0;
+    worker_stop = 0;
+    pthread_mutex_unlock(&scraper_mutex);
 }

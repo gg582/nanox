@@ -396,8 +396,8 @@ int lover(char *ostr)
  */
 int lnewline(void)
 {
-	char *cp1;
-	char *cp2;
+	unsigned char *cp1;
+	unsigned char *cp2;
 	struct line *lp1;
 	struct line *lp2;
 	struct line *lp3;
@@ -512,8 +512,8 @@ int ldelchar(long n, int kflag)
  */
 int ldelete(long n, int kflag)
 {
-	char *cp1;
-	char *cp2;
+	unsigned char *cp1;
+	unsigned char *cp2;
 	struct line *dotp;
 	int doto;
 	int chunk;
@@ -696,8 +696,8 @@ int joinline(int f, int n)
  */
 int ldelnewline(void)
 {
-    char *cp1;
-    char *cp2;
+    unsigned char *cp1;
+    unsigned char *cp2;
     struct line *lp1;
     struct line *lp2;
     struct line *lp3;

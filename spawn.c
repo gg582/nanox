@@ -13,6 +13,7 @@
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
+#include "util.h"
 
 #include        <signal.h>
 extern int chg_width, chg_height;
@@ -212,13 +213,13 @@ int filter_buffer(int f, int n)
 
     /* setup the proper file names */
     bp = curbp;
-    strcpy(tmpnam, bp->b_fname);        /* save the original name */
-    strcpy(bp->b_fname, filnam1);        /* set it to our new one */
+    mystrscpy(tmpnam, bp->b_fname, sizeof(tmpnam));  /* save the original name */
+    mystrscpy(bp->b_fname, filnam1, NFILEN);         /* set it to our new one */
 
     /* write it out, checking for errors */
     if (writeout(filnam1) != TRUE) {
         mlwrite("(Cannot write filter file)");
-        strcpy(bp->b_fname, tmpnam);
+        mystrscpy(bp->b_fname, tmpnam, NFILEN);
         unlink(filnam1);
         unlink(filnam2);
         return FALSE;
@@ -229,15 +230,12 @@ int filter_buffer(int f, int n)
     TTkclose();
     
     /* Construct command: line < filnam1 > filnam2 */
-    /* Ensure no buffer overflow - simplified check */
-    if (strlen(line) + strlen(filnam1) + strlen(filnam2) + 10 < NLINE) {
-        strcat(line, " <");
-        strcat(line, filnam1);
-        strcat(line, " >");
-        strcat(line, filnam2);
-        system(line);
-    } else {
-        printf("Command too long\n");
+    {
+        char cmd[NLINE];
+        if (snprintf(cmd, sizeof(cmd), "%s <%s >%s", line, filnam1, filnam2) < (int)sizeof(cmd))
+            system(cmd);
+        else
+            mlwrite("(Command too long)");
     }
 
     TTopen();
@@ -249,14 +247,14 @@ int filter_buffer(int f, int n)
     /* on failure, escape gracefully */
     if (s != TRUE || (readin(filnam2, FALSE) == FALSE)) {
         mlwrite("(Execution failed)");
-        strcpy(bp->b_fname, tmpnam);
+        mystrscpy(bp->b_fname, tmpnam, NFILEN);
         unlink(filnam1);
         unlink(filnam2);
         return s;
     }
 
     /* reset file name */
-    strcpy(bp->b_fname, tmpnam);        /* restore name */
+    mystrscpy(bp->b_fname, tmpnam, NFILEN);  /* restore name */
     bp->b_flag |= BFCHG;            /* flag it as changed */
 
     /* and get rid of the temporary file */

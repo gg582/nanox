@@ -183,7 +183,7 @@ int readin(char *fname, int lockfl)
     if (lockfl && lockchk(fname) == ABORT) {
         s = FIOFNF;
         bp = curbp;
-        strcpy(bp->b_fname, "");
+        bp->b_fname[0] = '\0';
         goto out;
     }
     bp = curbp;             /* Cheap.               */
@@ -222,18 +222,21 @@ int readin(char *fname, int lockfl)
     char swapname[NFILEN];
     char *slash = strrchr(fname, '/');
     if (slash) {
-        strncpy(swapname, fname, slash - fname + 1);
-        swapname[slash - fname + 1] = '\0';
-        strcat(swapname, ".");
-        strcat(swapname, slash + 1);
-        strcat(swapname, ".swp");
+        size_t dir_len = (size_t)(slash - fname + 1);
+        if (dir_len + 1 + strlen(slash + 1) + 4 < NFILEN) {
+            snprintf(swapname, sizeof(swapname), "%.*s.%s.swp",
+                     (int)dir_len, fname, slash + 1);
+        } else {
+            swapname[0] = '\0';
+        }
     } else {
-        strcpy(swapname, ".");
-        strcat(swapname, fname);
-        strcat(swapname, ".swp");
+        if (1 + strlen(fname) + 4 < NFILEN)
+            snprintf(swapname, sizeof(swapname), ".%s.swp", fname);
+        else
+            swapname[0] = '\0';
     }
 
-    FILE *swp_chk = fopen(swapname, "r");
+    FILE *swp_chk = swapname[0] ? fopen(swapname, "r") : NULL;
     if (swp_chk) {
         fclose(swp_chk);
         int ans = mlyesno("Swap file found. Restore unsaved changes");
@@ -283,19 +286,14 @@ int readin(char *fname, int lockfl)
         unlink(swapname);
     }
 
-    strcpy(mesg, "(");
-    if (s == FIOERR) {
-        strcat(mesg, "I/O ERROR, ");
-        curbp->b_flag |= BFTRUNC;
+    {
+        const char *errpfx = (s == FIOERR) ? "I/O ERROR, " :
+                             (s == FIOMEM) ? "OUT OF MEMORY, " : "";
+        if (s == FIOERR || s == FIOMEM)
+            curbp->b_flag |= BFTRUNC;
+        snprintf(mesg, sizeof(mesg), "(%sRead %d line%s)",
+                 errpfx, nline, nline != 1 ? "s" : "");
     }
-    if (s == FIOMEM) {
-        strcat(mesg, "OUT OF MEMORY, ");
-        curbp->b_flag |= BFTRUNC;
-    }
-    sprintf(&mesg[strlen(mesg)], "Read %d line", nline);
-    if (nline != 1)
-        strcat(mesg, "s");
-    strcat(mesg, ")");
     mlwrite(mesg);
     if (s == FIOERR || s == FIOMEM)
         nanox_set_lamp(NANOX_LAMP_ERROR);
@@ -385,7 +383,7 @@ int filewrite(int f, int n)
     if ((s = minibuf_input("Write file: ", fname, NFILEN)) != TRUE)
         return s;
     if ((s = writeout(fname)) == TRUE) {
-        strcpy(curbp->b_fname, fname);
+        mystrscpy(curbp->b_fname, fname, NFILEN);
         curbp->b_flag &= ~BFCHG;
         wp = curwp;         /* Update mode line.    */
         if (wp->w_bufp == curbp)
@@ -548,8 +546,7 @@ int writeout(char *fn)
         /* Secure backup feature */
         if (makebackup) {
             if (strlen(fn) + 2 < NFILEN) {
-                 strcpy(backupName, fn);
-                 strcat(backupName, "~");
+                 snprintf(backupName, sizeof(backupName), "%s~", fn);
                  unlink(backupName); /* Remove old backup if it exists */
                  if (rename(fn, backupName) != 0) {
                      mlwrite("(Cannot create backup)");
@@ -637,9 +634,9 @@ int filename(int f, int n)
     if ((s = minibuf_input("Name: ", fname, NFILEN)) == ABORT)
         return s;
     if (s == FALSE)
-        strcpy(curbp->b_fname, "");
+        curbp->b_fname[0] = '\0';
     else
-        strcpy(curbp->b_fname, fname);
+        mystrscpy(curbp->b_fname, fname, NFILEN);
     curwp->w_flag |= WFMODE;        /* Update mode lines.   */
     curbp->b_mode &= ~MDVIEW;       /* no longer read only mode */
     return TRUE;
@@ -704,19 +701,14 @@ int ifile(char *fname)
     }
     ffclose();              /* Ignore errors.       */
     curwp->w_markp = lforw(curwp->w_markp);
-    strcpy(mesg, "(");
-    if (s == FIOERR) {
-        strcat(mesg, "I/O ERROR, ");
-        curbp->b_flag |= BFTRUNC;
+    {
+        const char *errpfx = (s == FIOERR) ? "I/O ERROR, " :
+                             (s == FIOMEM) ? "OUT OF MEMORY, " : "";
+        if (s == FIOERR || s == FIOMEM)
+            curbp->b_flag |= BFTRUNC;
+        snprintf(mesg, sizeof(mesg), "(%sInserted %d line%s)",
+                 errpfx, nline, nline != 1 ? "s" : "");
     }
-    if (s == FIOMEM) {
-        strcat(mesg, "OUT OF MEMORY, ");
-        curbp->b_flag |= BFTRUNC;
-    }
-    sprintf(&mesg[strlen(mesg)], "Inserted %d line", nline);
-    if (nline > 1)
-        strcat(mesg, "s");
-    strcat(mesg, ")");
     mlwrite(mesg);
     nanox_set_lamp(NANOX_LAMP_OFF);
 

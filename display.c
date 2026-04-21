@@ -61,7 +61,7 @@ static void render_gutter(int row, int lnum, struct line *lp)
     HighlightStyle warn_style = colorscheme_get(HL_LSP_WARN);
     
     video_cell *vcp = vscreen[row]->v_text;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 5 && i < term->t_ncol; i++) {
         vcp[i].ch = buf[i];
         vcp[i].fg = num_style.fg;
         vcp[i].bg = num_style.bg;
@@ -71,7 +71,7 @@ static void render_gutter(int row, int lnum, struct line *lp)
     }
 
     /* Indicators */
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 2 && (5 + i) < term->t_ncol; i++) {
         vcp[5+i].ch = indicator[i];
         if (indicator[0] == '!') {
             vcp[5+i].fg = err_style.fg;
@@ -87,9 +87,11 @@ static void render_gutter(int row, int lnum, struct line *lp)
         }
     }
 
-    vcp[7].ch = 0x2502; /* Unicode box-drawing vertical separator */
-    vcp[7].fg = num_style.fg;
-    vcp[7].bg = num_style.bg;
+    if (7 < term->t_ncol) {
+        vcp[7].ch = 0x2502; /* Unicode box-drawing vertical separator */
+        vcp[7].fg = num_style.fg;
+        vcp[7].bg = num_style.bg;
+    }
 }
 
 static int current_color_fg = -1;
@@ -409,11 +411,15 @@ void vtputc(int c)
             vtrow++;
             vtcol = vt_margin_left;
             vscreen[vtrow]->v_flag |= VFCHG;
-            render_gutter(vtrow, 0, current_rendering_lp); // 0 indicates empty gutter for wrapped lines
-            for (int i = 0; i < 4; i++)
-                vtputc(' ');
+            render_gutter(vtrow, 0, current_rendering_lp); /* 0 = empty gutter for wrapped lines */
+            /* Only add continuation-line indent if the text area is wide enough */
+            if (term->t_ncol > vt_margin_left + 4) {
+                for (int i = 0; i < 4; i++)
+                    vtputc(' ');
+            }
         } else {
-            vscreen[vtrow]->v_text[term->t_ncol - 1].ch = '$';
+            if (term->t_ncol > 0)
+                vscreen[vtrow]->v_text[term->t_ncol - 1].ch = '$';
             vtcol += char_width;
             return;
         }
@@ -977,7 +983,9 @@ render_segment:
             vtcol = vt_margin_left;
             vscreen[vtrow]->v_flag |= VFCHG;
             render_gutter(vtrow, 0, current_rendering_lp);
-            for (int i = 0; i < 4; i++) vtputc(' ');
+            if (term->t_ncol > vt_margin_left + 4) {
+                for (int i = 0; i < 4; i++) vtputc(' ');
+            }
         }
     }
 
