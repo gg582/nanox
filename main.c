@@ -376,6 +376,11 @@ int main(int argc, char **argv)
                 } while (typahead());
                 c = newc;
             } else {
+                while (!typahead() && buffer_needs_hl_update(curbp)) {
+                    highlight_incremental_step(curbp);
+                    /* Optional: refresh UI every few steps to show progress */
+                    /* But for now, let's just do it and then refresh once at the end */
+                }
                 nanox_refresh_ui();
                 while ((c = getcmd()) == 0);
             }    /* if there is something on the command line, clear it */

@@ -472,41 +472,98 @@ int upscreen(int f, int n)
 static void update_syntax_highlighting(struct buffer *bp) {
     if (!highlight_is_enabled()) return;
     
+    struct line *lp = bp->b_hl_dirty_line;
+    if (lp == NULL) lp = lforw(bp->b_linep);
+    
     const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
     const HighlightProfile *profile = highlight_get_profile(fname);
     if (!profile) return;
 
-    struct line *lp = lforw(bp->b_linep);
-    HighlightState current_state = {0};
+    HighlightState current_state = lp->hl_start_state;
     
     while (lp != bp->b_linep) {
-        // Check if we can skip
-        if (memcmp(&lp->hl_start_state, &current_state, sizeof(HighlightState)) == 0) {
-            // Start state matches. Now check if end state is consistent.
-            HighlightState computed_end;
-            highlight_line((const char *)lp->l_text, lp->l_used, current_state, profile, NULL, &computed_end);
-            
-            if (memcmp(&lp->hl_end_state, &computed_end, sizeof(HighlightState)) == 0) {
-                // Stable. We can stop propagation!
+        bool changed = false;
+        if (memcmp(&lp->hl_start_state, &current_state, sizeof(HighlightState)) != 0) {
+            lp->hl_start_state = current_state;
+            changed = true;
+        }
+
+        HighlightState computed_end;
+        highlight_line((const char *)lp->l_text, lp->l_used, current_state, profile, NULL, &computed_end);
+        
+        if (memcmp(&lp->hl_end_state, &computed_end, sizeof(HighlightState)) != 0) {
+            lp->hl_end_state = computed_end;
+            changed = true;
+        }
+        
+        current_state = computed_end;
+        if (!changed) {
+            /* If state didn't change and matched previous end state, we might be able to stop.
+             * But we need to check if the NEXT line's hl_start_state also matches.
+             */
+            struct line *next = lforw(lp);
+            if (next == bp->b_linep || memcmp(&next->hl_start_state, &current_state, sizeof(HighlightState)) == 0) {
                 break;
             }
-            
-            // Output changed. Update and continue.
-            lp->hl_end_state = computed_end;
-            current_state = computed_end;
-        } else {
-            // Start state mismatch. Update and continue.
-            lp->hl_start_state = current_state;
-            
-            HighlightState computed_end;
-            highlight_line((const char *)lp->l_text, lp->l_used, current_state, profile, NULL, &computed_end);
-            
-            lp->hl_end_state = computed_end;
-            current_state = computed_end;
         }
         
         lp = lforw(lp);
     }
+    bp->b_hl_dirty_line = NULL;
+}
+
+bool buffer_needs_hl_update(struct buffer *bp)
+{
+    return highlight_is_enabled() && bp->b_hl_dirty_line != NULL;
+}
+
+void highlight_incremental_step(struct buffer *bp)
+{
+    if (!highlight_is_enabled() || bp->b_hl_dirty_line == NULL) return;
+
+    const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
+    const HighlightProfile *profile = highlight_get_profile(fname);
+    if (!profile) {
+        bp->b_hl_dirty_line = NULL;
+        return;
+    }
+
+    struct line *lp = bp->b_hl_dirty_line;
+    HighlightState current_state = lp->hl_start_state;
+    int count = 0;
+    const int MAX_INCREMENTAL_LINES = 100;
+
+    while (lp != bp->b_linep && count < MAX_INCREMENTAL_LINES) {
+        bool changed = false;
+        if (memcmp(&lp->hl_start_state, &current_state, sizeof(HighlightState)) != 0) {
+            lp->hl_start_state = current_state;
+            changed = true;
+        }
+
+        HighlightState computed_end;
+        highlight_line((const char *)lp->l_text, lp->l_used, current_state, profile, NULL, &computed_end);
+        
+        if (memcmp(&lp->hl_end_state, &computed_end, sizeof(HighlightState)) != 0) {
+            lp->hl_end_state = computed_end;
+            changed = true;
+        }
+        
+        current_state = computed_end;
+        lp = lforw(lp);
+        count++;
+
+        if (!changed) {
+            if (lp == bp->b_linep || memcmp(&lp->hl_start_state, &current_state, sizeof(HighlightState)) == 0) {
+                bp->b_hl_dirty_line = NULL;
+                return;
+            }
+        }
+    }
+
+    if (lp == bp->b_linep)
+        bp->b_hl_dirty_line = NULL;
+    else
+        bp->b_hl_dirty_line = lp;
 }
 
 /*
@@ -665,6 +722,7 @@ static void show_line(struct window *wp, struct line *lp)
         struct line *next = lforw(lp);
         if (next != curbp->b_linep) {
             next->hl_start_state = end_state;
+            lmark_dirty(next);
             lchange(WFHARD);
         }
     }
@@ -821,6 +879,7 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
         struct line *next = lforw(lp);
         if (next != curbp->b_linep) {
             next->hl_start_state = end_state;
+            lmark_dirty(next);
             lchange(WFHARD);
         }
     }

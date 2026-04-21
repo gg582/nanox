@@ -341,6 +341,7 @@ struct buffer *bfind(char *bname, int cflag, int bflag)
         bp->b_nwnd = 0;
         bp->b_linep = lp;
         bp->b_tabsize = tabsize;
+        bp->b_hl_dirty_line = NULL;
         strcpy(bp->b_fname, "");
         strcpy(bp->b_bname, bname);
         lp->l_fp = lp;

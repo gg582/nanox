@@ -126,6 +126,8 @@ extern void vttidy(void);
 extern void vtmove(int row, int col);
 extern int upscreen(int f, int n);
 extern int update(int force);
+extern bool buffer_needs_hl_update(struct buffer *bp);
+extern void highlight_incremental_step(struct buffer *bp);
 extern void updpos(void);
 extern void upddex(void);
 extern void updgar(void);

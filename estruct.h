@@ -209,6 +209,7 @@ struct buffer {
     char b_fname[NFILEN];           /* File name                    */
     char b_bname[NBUFN];            /* Buffer name                  */
     int b_tabsize;                  /* Tab size (0: use real tabs)  */
+    struct line *b_hl_dirty_line;   /* First line needing HL propagation */
 };
 
 #define BFINVS  0x01                /* Internal invisable buffer    */

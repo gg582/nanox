@@ -103,6 +103,41 @@ void lfree(struct line *lp)
  * displayed in more than 1 window we change EDIT t HARD. Set MODE if the
  * mode line needs to be updated (the "*" has to be set).
  */
+void lmark_dirty(struct line *lp)
+{
+    if (lp == NULL || lp == curbp->b_linep) return;
+    if (curbp->b_hl_dirty_line == NULL) {
+        curbp->b_hl_dirty_line = lp;
+        return;
+    }
+    if (curbp->b_hl_dirty_line == lp) return;
+
+    /* Scan forward and backward to see which is first */
+    struct line *fw = lp;
+    struct line *bw = lp;
+    const int MAX_SCAN = 500;
+
+    for (int i = 0; i < MAX_SCAN; i++) {
+        fw = lforw(fw);
+        if (fw == curbp->b_hl_dirty_line) {
+            curbp->b_hl_dirty_line = lp;
+            return;
+        }
+        if (fw == curbp->b_linep) break;
+    }
+    for (int i = 0; i < MAX_SCAN; i++) {
+        bw = lback(bw);
+        if (bw == curbp->b_hl_dirty_line) {
+            /* curbp->b_hl_dirty_line is already before lp */
+            return;
+        }
+        if (bw == curbp->b_linep) break;
+    }
+    
+    /* If still not found (jumped > 500 lines), be safe and set to beginning */
+    curbp->b_hl_dirty_line = lforw(curbp->b_linep);
+}
+
 void lchange(int flag)
 {
     struct window *wp;
@@ -114,8 +149,10 @@ void lchange(int flag)
         curbp->b_flag |= BFCHG;
     }
     wp = curwp;
-    if (wp->w_bufp == curbp)
+    if (wp->w_bufp == curbp) {
         wp->w_flag |= flag;
+        lmark_dirty(wp->w_dotp);
+    }
 }
 
 /*

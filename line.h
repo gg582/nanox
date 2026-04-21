@@ -30,6 +30,7 @@ struct line {
 #define llength(lp)     ((lp)->l_used)
 
 extern void lfree(struct line *lp);
+extern void lmark_dirty(struct line *lp);
 extern void lchange(int flag);
 extern int insspace(int f, int n);
 extern int linstr(char *instr);
