@@ -984,8 +984,13 @@ static void start_async_java_class_symbols_load(void)
     if (!should_start)
         return;
 
-    if (pthread_attr_init(&attr) != 0 ||
-        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
+    if (pthread_attr_init(&attr) != 0) {
+        pthread_mutex_lock(&java_async_mutex);
+        java_symbols_loading = 0;
+        pthread_mutex_unlock(&java_async_mutex);
+        return;
+    }
+    if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
         pthread_create(&tid, &attr, java_class_symbols_loader, NULL) != 0) {
         pthread_attr_destroy(&attr);
         pthread_mutex_lock(&java_async_mutex);

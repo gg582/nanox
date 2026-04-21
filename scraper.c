@@ -223,13 +223,25 @@ static int run_child_process(const char *prog, char *const argv[],
     }
 
     start_time = time(NULL);
+    if (start_time == (time_t)-1) {
+        close(pipefd[0]);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        return -1;
+    }
     size_t total = 0;
     while (!timed_out) {
         wait_rc = waitpid(pid, &status, WNOHANG);
         if (wait_rc == pid)
             child_done = 1;
-        else if (wait_rc < 0)
-            child_done = 1;
+        else if (wait_rc < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == ECHILD)
+                child_done = 1;
+            else
+                break;
+        }
 
         fd_set rfds;
         struct timeval tv;
