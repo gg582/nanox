@@ -22,65 +22,39 @@ Nanox(/na.noks/) is a modern, minimalistic, feature-rich fork of **uEmacs/PK** t
 
 ---
 
-## Key Strengths: Heart of Efficiency
+## Experience the Advantages
 
-### 1. Deterministic 1:1 Syntax Matching
+Nanox isn't just another text editor. It is built to optimize your workflow by turning raw performance and smart conventions into tangible editing advantages.
 
-Unlike heavy modern editors that rely on resource-intensive Tree-sitter or LSP, this editor utilizes a **high-performance 1:1 state-machine matching**.
+### ⚡ Blazing Fast, Zero-Latency Editing
+Forget the sluggishness of Electron apps or the heavy startup times of LSP-bloated editors. Nanox is written in pure C.
+* **Deterministic 1:1 Syntax Matching:** We use a high-performance state-machine matching engine instead of resource-intensive Tree-sitter. Highlighting is calculated at the speed of raw text processing—no flickering, no context-guessing errors.
+* **Instant Startup:** Nanox opens instantly, ready for your keystrokes before your finger leaves the Enter key.
 
-* **Zero Latency:** Highlighting is calculated at the speed of raw text processing.
-* **Predictable:** No more flickering colors or context-guessing errors. What you see is exactly what the state machine sees.
+### 🧠 Smart, Predictable, and Out of Your Way
+We’ve ditched complex semantic analysis for lean, convention-driven logic.
+* **Rule-Based Indentation:** Indentation is consistent, fast, and follows established coding conventions without generating massive ASTs, maintaining a microscopic memory footprint.
+* **Fuzzy Autocompletion & LSP Support:** Enjoy blazing-fast built-in fuzzy matching for buffer words, and seamlessly tap into LSP (Language Server Protocol) when you need deep language intelligence.
+* **Cscope Integration:** Navigate massive codebases instantly with native Cscope support.
+* **Integrated Spell Checker:** Built-in Hunspell integration catches typos seamlessly without breaking your flow.
 
-### 2. Convention-Driven Rule-Based Indentation
-
-We’ve ditched complex semantic analysis for **lean, rule-based logic** that follows established coding conventions (e.g., immediate indent-step after a brace).
-
-* **Logic over Heuristics:** Indentation is consistent, fast, and follows a strict set of predictable rules.
-* **Minimal Overhead:** By avoiding AST generation, the editor maintains a microscopic memory footprint while providing the essential "smart" feel of a modern IDE.
-
-### 3. [NEW] Atomic UTF-8 Minibuffer Window
-Unlike other `uEmacs` forks that suffer from broken CJK input in the message line, Nanox features a robust **Minibuffer Window System**:
-* **No More Latin-1 Ghosts:** Uses a dedicated 8-bit masked output pipeline (`TTputc & 0xFF`) to stop sign-extension artifacts.
-* **Perfect CJK Sync:** Integrated with `mystrnlen_raw_w` for precise cursor positioning on double-width Korean/Chinese/Japanese characters.
+### 🌐 Flawless Internationalization (Hangeul Ready)
+Unlike older Emacs forks that mangle CJK (Chinese, Japanese, Korean) input, Nanox treats global text as a first-class citizen.
+* **Atomic UTF-8 Minibuffer:** A robust Minibuffer Window System with an 8-bit masked output pipeline ensures no "Latin-1 Ghosts."
+* **Perfect CJK Sync:** Integrated cursor positioning correctly calculates double-width characters, so your cursor is always exactly where you expect it to be.
 * **Race-Condition Free:** Implements an atomic "Gate Buffer" logic for ISearch and Replace, ensuring your terminal never "beeps" due to incomplete UTF-8 fragments.
 
-### 4. [NEW] Markdown & HTML Rich Text Rendering
-Nanox brings **visual formatting** to Markdown and HTML files directly in the terminal:
+### 🎨 A Visually Rich Terminal
+Terminal editors don't have to be plain text only.
+* **Live Color Code Preview:** Working with CSS or UI code? Nanox automatically detects `#RGB`, `rgb()`, `rgba()`, and `hsl()` strings, rendering a live color preview box right at the end of the line.
+* **Markdown & HTML Rich Text Rendering:** Nanox parses `**bold**`, `*italic*`, and `<u>underline</u>` tags and renders them with actual terminal styling, bringing your documentation to life without altering the raw markup.
+* **Accessibility-First Themes:** Features a colorblind-friendly default theme, with a built-in Python script (`cognitive_themegen.py`) to generate accessible custom color palettes.
 
-* **Bold Text:** `**text**` or `__text__` is rendered with bold styling
-* **Italic Text:** `*text*` or `_text_` is rendered with distinctive highlighting
-* **Underline:** `<u>text</u>` in HTML and Markdown files shows underlined text
-* **Automatic Hard Tabs:** Uses real tabs for indentation in Markdown for cross-tool consistency.
-* All formatting is purely visual and preserves the raw markup in the file
-
-### 5. [NEW] Live Color Code Preview
-For developers working with colors, Nanox provides **inline color preview boxes**:
-
-* **Hex Colors:** `#RGB` and `#RRGGBB` formats are detected and previewed
-* **RGB/RGBA:** `rgb(r, g, b)` and `rgba(r, g, b, a)` show color boxes
-* **HSL/HSLA:** `hsl()` and `hsla()` color formats are also supported
-* Preview boxes appear at the end of lines containing color codes
-* Works in **any file type** - CSS, JavaScript, HTML, Python, and more!
-
-### 6. [NEW] Smart Horizontal Scrolling
-For long lines that extend beyond the terminal width:
-
-* **Auto-scroll:** The view automatically scrolls to keep the cursor visible
-* **Unicode-aware:** Correctly handles CJK characters and emoji widths
-
-
-## Key Features
-
-- **Ultra-Fast Performance**: Built on the highly optimized MicroEmacs/PK core.
-- **Syntax Highlighting**: 32 built-in language profiles plus pluggable `.ini` files for anything else.
-- **Nano-Style UI**: Familiar hint bars and function key shortcuts (F1-F12).
-- **File Reservation Slots**: "Bookmark" up to 4 files and jump between them instantly with `F9`-`F12`.
-- **Powerful Search/Replace**: Support for regular expressions.
-- **Integrated Spell Check**: Built-in support for Hunspell.
-- **Colorschemes**: Default theme is colorblind-friendly. Waiting for PRs to enhance.
-- **Automatic Backup Cleanup**: Backup files (`~`) are automatically deleted upon normal exit (**F4**), keeping your workspace clean.
-- **Smart Whitespace Normalization**: Automatically strips trailing whitespace and converts whitespace-only lines to empty lines before saving.
-- **Hard Tab Mode for Markdown**: Markdown files (`.md`, `.markdown`) automatically use hard tabs for indentation to ensure consistent formatting.
+### 🚀 Frictionless Workflow
+Designed for human hands and explicit intent.
+* **File Reservation Slots:** Jump seamlessly between 4 distinct workspaces. Bookmark files and instantly switch context using `F9` through `F12`. No more losing your place in a labyrinth of hidden buffers.
+* **Nano-Style UI:** Familiar hint bars at the bottom mean you never have to memorize obscure chord combinations to get started.
+* **Smart Horizontal Scrolling:** The view automatically and intelligently scrolls to keep the cursor visible on long lines, correctly handling CJK characters and emoji widths.
 
 ---
 
