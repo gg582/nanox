@@ -1736,6 +1736,12 @@ int backdel(int f, int n)
             kdelete();
         thisflag |= CFKILL;
     }
+    /* If cursor is on an empty line at column 0, prefer removing that line
+     * itself (join with next line) to avoid being stuck at BOB.
+     */
+    if (n == 1 && curwp->w_doto == 0 && curwp->w_dotp->l_used == 0 &&
+        lforw(curwp->w_dotp) != curbp->b_linep)
+        return ldelchar(1, f);
     if ((s = backchar(f, n)) == TRUE)
         s = ldelchar(n, f);
     return s;
