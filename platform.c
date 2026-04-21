@@ -81,29 +81,55 @@ void nanox_get_user_config_dir(char *out, size_t cap) {
 }
 
 void nanox_path_join(char *out, size_t cap, const char *a, const char *b) {
-    size_t len_a = strlen(a);
-    size_t len_b = strlen(b);
-    
-    if (len_a + len_b + 2 > cap) {
-        // Truncate or handle error - for now, just safe copy what fits
-        if (cap > 0) out[0] = '\0';
+    if (cap == 0) return; // Cannot write to a zero-sized buffer
+    out[0] = '\0'; // Initialize out to an empty string
+
+    // Safely copy 'a'
+    size_t written = snprintf(out, cap, "%s", a);
+
+    // Check for truncation during copy of 'a'
+    if (written >= cap) {
+        // Buffer too small, out is already null-terminated by snprintf
         return;
     }
 
-    if (out != a) {
-        strcpy(out, a);
-    }
-    
-    bool a_ends_sep = (len_a > 0 && out[len_a - 1] == PATH_SEP);
-    bool b_starts_sep = (len_b > 0 && b[0] == PATH_SEP);
+    // Determine if a separator is needed
+    // Check the actual last character written to 'out'
+    bool a_ends_sep = (written > 0 && out[written - 1] == PATH_SEP);
+    bool b_starts_sep = (b != NULL && *b != '\0' && b[0] == PATH_SEP); // Check b is not null and has content
 
-    if (a_ends_sep && b_starts_sep) {
-        strcat(out, b + 1);
-    } else if (!a_ends_sep && !b_starts_sep) {
-        strcat(out, PATH_SEP_STR);
-        strcat(out, b);
-    } else {
-        strcat(out, b);
+    // Append separator if needed and there's space
+    if (!a_ends_sep && !b_starts_sep) {
+        if (cap - written > 1) { // Ensure space for separator + null terminator
+            written += snprintf(out + written, cap - written, "%c", PATH_SEP);
+            if (written >= cap) {
+                // Buffer too small after adding separator
+                return;
+            }
+        } else {
+            // Not enough space for separator and null terminator
+            return;
+        }
+    } else if (a_ends_sep && b_starts_sep) {
+        // If 'a' ends with separator and 'b' starts with one, skip 'b's separator
+        // This condition might need refinement depending on exact requirements
+        // For now, assume we skip the first char of 'b' if it's a separator
+        b++; // Move pointer to skip the leading separator in b
+    }
+    // else if (!a_ends_sep && b_starts_sep) or (a_ends_sep && !b_starts_sep), no extra separator needed
+
+    // Append 'b'
+    if (b != NULL && *b != '\0') { // Ensure b is not NULL and not empty after potential skip
+        if (cap - written > strlen(b)) { // Check if there's enough space for 'b' + null terminator
+            written += snprintf(out + written, cap - written, "%s", b);
+            if (written >= cap) {
+                // Buffer too small after adding b
+                return;
+            }
+        } else {
+            // Not enough space for b and null terminator
+            return;
+        }
     }
 }
 

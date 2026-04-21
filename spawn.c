@@ -228,16 +228,22 @@ int filter_buffer(int f, int n)
     TTclose();              /* stty to old modes    */
     TTkclose();
     
-    /* Construct command: line < filnam1 > filnam2 */
-    /* Ensure no buffer overflow - simplified check */
-    if (strlen(line) + strlen(filnam1) + strlen(filnam2) + 10 < NLINE) {
-        strcat(line, " <");
-        strcat(line, filnam1);
-        strcat(line, " >");
-        strcat(line, filnam2);
-        system(line);
+    /* Construct command: line < filnam1 > filnam2 safely */
+    char cmd_line[NLINE]; /* Use a temporary buffer for the constructed command */
+    /* Copy initial command */
+    int written = snprintf(cmd_line, sizeof(cmd_line), "%s", line);
+
+    /* Append arguments safely if space is available */
+    if (written < sizeof(cmd_line)) {
+        written += snprintf(cmd_line + written, sizeof(cmd_line) - written, " <%s >%s", filnam1, filnam2);
+    }
+
+    /* Check for truncation and execute */
+    if (written < sizeof(cmd_line)) {
+        system(cmd_line);
     } else {
-        printf("Command too long\n");
+        printf("Command too long or buffer overflow potential detected\n");
+        /* Optionally log this or handle more gracefully */
     }
 
     TTopen();

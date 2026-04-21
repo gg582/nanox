@@ -274,16 +274,18 @@ int storemac(int f, int n)
     }
 
     /* construct the macro buffer name */
-    strcpy(bname, "*Macro xx*");
+    strncpy(bname, "*Macro xx*", sizeof(bname) - 1);
+    strncpy(bname, "*Macro xx*", sizeof(bname) - 1);
+    bname[sizeof(bname) - 1] = '\0';
     bname[7] = '0' + (n / 10);
-    bname[8] = '0' + (n % 10);
+    bname[0] = '*';
+    snprintf(bname + strlen(bname), sizeof(bname) - strlen(bname), "*");
 
     /* set up the new macro buffer */
     if ((bp = bfind(bname, TRUE, BFINVS)) == NULL) {
         mlwrite("Can not create macro");
         return FALSE;
     }
-
     /* and make sure it is empty */
     bclear(bp);
 
@@ -291,7 +293,7 @@ int storemac(int f, int n)
     mstore = TRUE;
     bstore = bp;
     return TRUE;
-}
+    }
 
 /*
  * storeproc:
@@ -317,7 +319,7 @@ int storeproc(int f, int n)
 
     /* construct the macro buffer name */
     bname[0] = '*';
-    strcat(bname, "*");
+    snprintf(bname + strlen(bname), sizeof(bname) - strlen(bname), "*");
 
     /* set up the new macro buffer */
     if ((bp = bfind(bname, TRUE, BFINVS)) == NULL) {
@@ -352,7 +354,7 @@ int execproc(int f, int n)
 
     /* construct the buffer name */
     bufn[0] = '*';
-    strcat(bufn, "*");
+    snprintf(bufn + strlen(bufn), sizeof(bufn) - strlen(bufn), "*");
 
     /* find the pointer to that buffer */
     if ((bp = bfind(bufn, FALSE, 0)) == NULL) {

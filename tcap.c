@@ -134,7 +134,8 @@ char *tgetstr(const char *id, char **area) {
 char *tgoto(const char *cap, int col, int row) {
     static char buf[64];
     /* Simplified for ANSI standard: row and col are 1-based in ANSI */
-    sprintf(buf, "\033[%d;%dH", row + 1, col + 1);
+    /* Use snprintf to prevent buffer overflow */
+    snprintf(buf, sizeof(buf), "\033[%d;%dH", row + 1, col + 1);
     return buf;
 }
 
@@ -233,7 +234,8 @@ void tcapkopen(void) {
     ttrow = 999;
     ttcol = 999;
     sgarbf = TRUE;
-    strcpy(sres, "NORMAL");
+    strncpy(sres, "NORMAL", sizeof(sres) - 1);
+    sres[sizeof(sres) - 1] = '\0';
 }
 
 void tcapkclose(void) {

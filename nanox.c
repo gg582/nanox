@@ -168,7 +168,7 @@ static void load_help_file(void)
             char *title = line + 2;
             while (*title == ' ') title++;
             curr->title = malloc(strlen(title) + 1);
-            if (curr->title) strcpy(curr->title, title);
+            if (curr->title) mystrscpy(curr->title, title, strlen(title) + 1);
             curr->lines = NULL;
             curr->line_count = 0;
             curr->line_cap = 0;
@@ -180,7 +180,7 @@ static void load_help_file(void)
                 dynamic_topics = new_topics;
                 curr = &dynamic_topics[dynamic_topic_count++];
                 curr->title = malloc(strlen("Help Information") + 1);
-                if (curr->title) strcpy(curr->title, "Help Information");
+                if (curr->title) mystrscpy(curr->title, "Help Information", strlen("Help Information") + 1);
                 curr->lines = NULL;
                 curr->line_count = 0;
                 curr->line_cap = 0;
@@ -195,7 +195,7 @@ static void load_help_file(void)
                 }
                 curr->lines[curr->line_count] = malloc(strlen(line) + 1);
                 if (curr->lines[curr->line_count]) {
-                    strcpy(curr->lines[curr->line_count], line);
+                    mystrscpy(curr->lines[curr->line_count], line, strlen(line) + 1);
                     curr->line_count++;
                 }
             }

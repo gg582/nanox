@@ -3,16 +3,26 @@
 
 void get_swapname(const char *b_fname, char *swapname) {
     char *slash = strrchr(b_fname, '/');
+    size_t written = 0;
+
     if (slash) {
-        strncpy(swapname, b_fname, slash - b_fname + 1);
-        swapname[slash - b_fname + 1] = '\0';
-        strcat(swapname, ".");
-        strcat(swapname, slash + 1);
-        strcat(swapname, ".swp");
+        /* Copy path up to and including the separator */
+        written = snprintf(swapname, 256, "%.*s", (int)(slash - b_fname + 1), b_fname);
+        if (written < 256) {
+            /* Append the rest of the filename + ".swp" */
+            written += snprintf(swapname + written, 256 - written, ".%s.swp", slash + 1);
+        }
     } else {
-        strcpy(swapname, ".");
-        strcat(swapname, b_fname);
-        strcat(swapname, ".swp");
+        /* Append "." + filename + ".swp" */
+        written = snprintf(swapname, 256, ".%s.swp", b_fname);
+    }
+
+    /* Check for truncation */
+    if (written >= 256) {
+        /* Handle error or warning if swapname construction truncated */
+        /* For now, just ensure it's null-terminated if truncated */
+        swapname[255] = '\0';
+        /* Optionally, mlwrite("(Warning: Swap file name truncated)"); */
     }
 }
 

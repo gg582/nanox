@@ -288,7 +288,8 @@ int main(int argc, char **argv)
 
             /* set this to inactive */
             bp = bfind(bname, TRUE, 0);
-            strcpy(bp->b_fname, argv[carg]);
+            strncpy(bp->b_fname, argv[carg], sizeof(bp->b_fname) - 1);
+            bp->b_fname[sizeof(bp->b_fname) - 1] = '\0';
             bp->b_active = FALSE;
             if (firstfile) {
                 firstbp = bp;

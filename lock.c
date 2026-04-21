@@ -11,6 +11,7 @@
 #include "estruct.h"
 #include "edef.h"
 #include "efunc.h"
+#include "util.h"
 
 #include <sys/errno.h>
 
@@ -48,7 +49,7 @@ int lockchk(char *fname)
         return TRUE;
 
     /* we have now locked it, add it to our table */
-    lname[++numlocks - 1] = (char *)malloc(strlen(fname) + 1);
+    lname[numlocks - 1] = (char *)malloc(strlen(fname) + 1);
     if (lname[numlocks - 1] == NULL) {  /* malloc failure */
         undolock(fname);        /* free the lock */
         mlwrite("Cannot lock, out of memory");
@@ -57,7 +58,7 @@ int lockchk(char *fname)
     }
 
     /* everthing is cool, add it to the table */
-    strcpy(lname[numlocks - 1], fname);
+    mystrscpy(lname[numlocks - 1], fname, strlen(fname) + 1);
     return TRUE;
 }
 
@@ -109,9 +110,7 @@ int lock(char *fname)
     }
 
     /* someone else has it....override? */
-    strcpy(msg, "File in use by ");
-    strcat(msg, locker);
-    strcat(msg, ", override?");
+    snprintf(msg, sizeof(msg), "File in use by %s, override?", locker);
     status = mlyesno(msg);          /* ask them */
     if (status == TRUE)
         return FALSE;
@@ -149,8 +148,6 @@ void lckerror(char *errstr)
 {
     char obuf[NSTRING];         /* output buffer for error message */
 
-    strcpy(obuf, errstr);
-    strcat(obuf, " - ");
-    strcat(obuf, strerror(errno));
+    snprintf(obuf, sizeof(obuf), "%s - %s", errstr, strerror(errno));
     mlwrite(obuf);
 }

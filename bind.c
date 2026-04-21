@@ -358,8 +358,10 @@ char *flook(char *fname, int hflag)
 
     /* look it up via the old table method */
     for (i = 2; i < ARRAY_SIZE(pathname); i++) {
-        strcpy(fspec, pathname[i]);
-        strcat(fspec, fname);
+        strncpy(fspec, pathname[i], sizeof(fspec) - 1);
+        fspec[sizeof(fspec) - 1] = '\0';
+        strncat(fspec, fname, sizeof(fspec) - strlen(fspec) - 1);
+        fspec[sizeof(fspec) - 1] = '\0';
 
         /* and try it out */
         if (ffropen(fspec) == FIOSUC) {

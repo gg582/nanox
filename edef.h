@@ -224,7 +224,7 @@ extern char falsem[];            /* False literal changed to array */
 extern struct kill *kbufp;        /* Kill buffer pointer */
 extern struct kill *kbufh;        /* Kill buffer head */
 extern int kused;                /* Kill buffer used (long -> int) */
-extern char sres[];            /* Screen resolution */
+extern char sres[NSTRING];            /* Screen resolution */
 extern char palstr[];            /* Palette string */
 extern int saveflag;            /* Temp store for lastflag */
 extern int mstore;            /* storing macro */
