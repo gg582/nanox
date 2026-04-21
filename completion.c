@@ -920,8 +920,17 @@ static void ensure_java_class_symbols(void)
 {
     struct stat st;
 
+#ifdef USE_WINDOWS
     if (java_symbols_loaded)
         return;
+#else
+    pthread_mutex_lock(&java_async_mutex);
+    if (java_symbols_loaded) {
+        pthread_mutex_unlock(&java_async_mutex);
+        return;
+    }
+    pthread_mutex_unlock(&java_async_mutex);
+#endif
 
     ensure_java_classpath_entries();
     for (int i = 0; i < java_classpath_entries.count; i++) {
@@ -975,11 +984,7 @@ static void start_async_java_class_symbols_load(void)
         return;
 
     if (pthread_create(&tid, NULL, java_class_symbols_loader, NULL) == 0) {
-        if (pthread_detach(tid) != 0) {
-            pthread_mutex_lock(&java_async_mutex);
-            java_symbols_loading = 0;
-            pthread_mutex_unlock(&java_async_mutex);
-        }
+        (void)pthread_detach(tid);
     } else {
         pthread_mutex_lock(&java_async_mutex);
         java_symbols_loading = 0;
@@ -1066,11 +1071,6 @@ static void add_language_specific_matches(const char *prefix, completion_context
             add_matches_from_pool(&java_class_cache, prefix);
         } else {
             start_async_java_class_symbols_load();
-            pthread_mutex_lock(&java_async_mutex);
-            ready = java_symbols_loaded;
-            pthread_mutex_unlock(&java_async_mutex);
-            if (ready)
-                add_matches_from_pool(&java_class_cache, prefix);
         }
 #endif
     }
