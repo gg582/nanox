@@ -975,7 +975,11 @@ static void start_async_java_class_symbols_load(void)
         return;
 
     if (pthread_create(&tid, NULL, java_class_symbols_loader, NULL) == 0) {
-        pthread_detach(tid);
+        if (pthread_detach(tid) != 0) {
+            pthread_mutex_lock(&java_async_mutex);
+            java_symbols_loading = 0;
+            pthread_mutex_unlock(&java_async_mutex);
+        }
     } else {
         pthread_mutex_lock(&java_async_mutex);
         java_symbols_loading = 0;
@@ -1062,6 +1066,11 @@ static void add_language_specific_matches(const char *prefix, completion_context
             add_matches_from_pool(&java_class_cache, prefix);
         } else {
             start_async_java_class_symbols_load();
+            pthread_mutex_lock(&java_async_mutex);
+            ready = java_symbols_loaded;
+            pthread_mutex_unlock(&java_async_mutex);
+            if (ready)
+                add_matches_from_pool(&java_class_cache, prefix);
         }
 #endif
     }
