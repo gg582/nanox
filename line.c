@@ -79,6 +79,11 @@ void lfree(struct line *lp)
 
     bp = bheadp;
     while (bp != NULL) {
+        if (bp->b_hl_dirty_line == lp) {
+            bp->b_hl_dirty_line = lp->l_fp;
+            if (bp->b_hl_dirty_line == bp->b_linep)
+                bp->b_hl_dirty_line = NULL;
+        }
         if (bp->b_nwnd == 0) {
             if (bp->b_dotp == lp) {
                 bp->b_dotp = lp->l_fp;
@@ -256,7 +261,6 @@ int linsert_byte(int n, int c)
         lp2->l_fp = lp1->l_fp;
         lp1->l_fp->l_bp = lp2;
         lp2->l_bp = lp1->l_bp;
-        free((char *)lp1);
     } else {                /* Easy: in place       */
         lp2 = lp1;          /* Pretend new line     */
         lp2->l_used += n;
@@ -278,6 +282,11 @@ int linsert_byte(int n, int c)
         wp->w_markp = lp2;
         if (wp->w_marko > doto)
             wp->w_marko += n;
+    }
+    if (lp1 != lp2) {
+        if (curbp->b_hl_dirty_line == lp1)
+            curbp->b_hl_dirty_line = lp2;
+        free((char *)lp1);
     }
     return TRUE;
 }
@@ -722,6 +731,8 @@ int ldelnewline(void)
         lp1->l_used += lp2->l_used;
         lp1->l_fp = lp2->l_fp;
         lp2->l_fp->l_bp = lp1;
+        if (curbp->b_hl_dirty_line == lp2)
+            curbp->b_hl_dirty_line = lp1;
         free((char *)lp2);
         return TRUE;
     }
@@ -753,6 +764,8 @@ int ldelnewline(void)
         wp->w_markp = lp3;
         wp->w_marko += lp1->l_used;
     }
+    if (curbp->b_hl_dirty_line == lp1 || curbp->b_hl_dirty_line == lp2)
+        curbp->b_hl_dirty_line = lp3;
     free((char *)lp1);
     free((char *)lp2);
     return TRUE;
@@ -913,8 +926,15 @@ int linsert_block(const char *block, int len)
                         lp2->l_fp = lp1->l_fp;
                         lp1->l_fp->l_bp = lp2;
                         lp2->l_bp = lp1->l_bp;
+
+                        /* Update windows before freeing lp1 */
+                        if (curwp->w_linep == lp1) curwp->w_linep = lp2;
+                        if (curwp->w_dotp == lp1) curwp->w_dotp = lp2;
+                        if (curwp->w_markp == lp1) curwp->w_markp = lp2;
+
+                        if (curbp->b_hl_dirty_line == lp1)
+                            curbp->b_hl_dirty_line = lp2;
                         free((char *)lp1);
-                        curwp->w_dotp = lp2;
                     } else {
                         /* In place */
                         lp2 = lp1;
@@ -928,7 +948,7 @@ int linsert_block(const char *block, int len)
                         lp2->l_text[doto + j] = block[start + j];
                     curwp->w_doto += segment_len;
                     
-                    /* Update windows */
+                    /* Final window updates for in-place case (lp1 == lp2) or segment finishing */
                     if (curwp->w_linep == lp1) curwp->w_linep = lp2;
                     if (curwp->w_dotp == lp1) curwp->w_dotp = lp2;
                     if (curwp->w_markp == lp1) curwp->w_markp = lp2;

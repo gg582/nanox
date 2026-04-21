@@ -711,9 +711,11 @@ static bool is_keyword_boundary_char(char c)
     return false;
 }
 
-static bool starts_with(const char *text, const char *prefix)
+static bool starts_with(const char *text, int len, const char *prefix)
 {
-    return strncmp(text, prefix, strlen(prefix)) == 0;
+    int plen = (int)strlen(prefix);
+    if (plen > len) return false;
+    return strncmp(text, prefix, (size_t)plen) == 0;
 }
 
 static bool is_control(unsigned char c)
@@ -1066,30 +1068,36 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
     HighlightState state = start;
     normalize_state(&state);
 
-    if (is_md && current_state(&state) == HS_MD_FENCE) {
-        int first_non_ws = 0;
-        while (first_non_ws < len && (text[first_non_ws] == ' ' || text[first_non_ws] == '\t'))
-            first_non_ws++;
+    if (current_state(&state) == HS_MD_FENCE) {
+        if (is_md) {
+            int first_non_ws = 0;
+            while (first_non_ws < len && (text[first_non_ws] == ' ' || text[first_non_ws] == '\t'))
+                first_non_ws++;
 
-        if (first_non_ws + 3 <= len && strncmp(text + first_non_ws, "```", 3) == 0) {
-            if (out)
-                add_span(out, first_non_ws, len, HL_PREPROC);
+            if (first_non_ws + 3 <= len && strncmp(text + first_non_ws, "```", 3) == 0) {
+                if (out)
+                    add_span(out, first_non_ws, len, HL_PREPROC);
+                pop_state(&state);
+                *end = state;
+                return;
+            }
+
+            HighlightStackEntry *frame = state_top(&state);
+            if (frame && frame->sub_id >= 0 && frame->sub_id < profile_count &&
+                strcasecmp(profiles[frame->sub_id].name, "markdown") != 0) {
+                HighlightState inner_end = {0};
+                highlight_line(text, len, (HighlightState){0}, &profiles[frame->sub_id], out, &inner_end);
+                *end = state;
+                return;
+            }
+
+            *end = state;
+            return;
+        } else {
+            /* Not a markdown profile but in fence state? Pop it to avoid infinite loop. */
             pop_state(&state);
-            *end = state;
-            return;
+            /* Continue with HS_NORMAL processing */
         }
-
-        HighlightStackEntry *frame = state_top(&state);
-        if (frame && frame->sub_id >= 0 && frame->sub_id < profile_count &&
-            strcasecmp(profiles[frame->sub_id].name, "markdown") != 0) {
-            HighlightState inner_end = {0};
-            highlight_line(text, len, (HighlightState){0}, &profiles[frame->sub_id], out, &inner_end);
-            *end = state;
-            return;
-        }
-
-        *end = state;
-        return;
     }
 
     int pos = 0;
@@ -1325,7 +1333,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             for (int i = 0; i < profile->block_comment_count; i++) {
                 const char *start_tok = profile->block_comments[i].start;
                 int start_len = strlen(start_tok);
-                if (start_len && starts_with(text + pos, start_tok)) {
+                if (start_len && starts_with(text + pos, len - pos, start_tok)) {
                     int start_pos = pos;
                     if (out) add_span(out, start_pos, start_pos + start_len, HL_COMMENT);
                     pos += start_len;
@@ -1343,7 +1351,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             /* 2. Check Line Comments */
             bool matched_line = false;
             for (int i = 0; i < profile->line_comment_count; i++) {
-                if (starts_with(text + pos, profile->line_comments[i])) {
+                if (starts_with(text + pos, len - pos, profile->line_comments[i])) {
                     if (out) add_span(out, pos, len, HL_COMMENT);
                     pos = len;
                     matched_line = true;
@@ -1457,7 +1465,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             }
 
             /* 5. Numbers */
-            if (profile->enable_number_highlight && (isdigit(c) || (c == '.' && isdigit((unsigned char)text[pos+1])))) {
+            if (profile->enable_number_highlight && (isdigit(c) || (c == '.' && pos + 1 < len && isdigit((unsigned char)text[pos+1])))) {
                 int search = pos;
                 if (c == '0' && pos + 1 < len) {
                     char next = text[pos+1];
@@ -1476,7 +1484,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                 } else {
                     while (search < len && (isdigit((unsigned char)text[search]) || text[search] == '.' || 
                         text[search] == 'e' || text[search] == 'E')) {
-                        if ((text[search] == 'e' || text[search] == 'E') && (text[search+1] == '+' || text[search+1] == '-'))
+                        if ((text[search] == 'e' || text[search] == 'E') && search + 1 < len && (text[search+1] == '+' || text[search+1] == '-'))
                             search++;
                         search++;
                     }
@@ -1595,19 +1603,19 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
         
         else if (active == HS_BLOCK_COMMENT) {
             HighlightStackEntry *frame = state_top(&state);
-            if (!frame) {
+            if (!frame || frame->sub_id < 0 || frame->sub_id >= MAX_TOKENS) {
                 pop_state(&state);
                 continue;
             }
             const BlockCommentPair *pair = &profile->block_comments[frame->sub_id];
             const char *end_str = pair->end;
-            int end_len = strlen(end_str);
+            int end_len = (int)strlen(end_str);
             int chunk_start = pos;
             int close_pos = -1;
 
             if (end_len > 0) {
                 for (int scan = pos; scan <= len - end_len; ++scan) {
-                    if (strncmp(text + scan, end_str, end_len) == 0) {
+                    if (strncmp(text + scan, end_str, (size_t)end_len) == 0) {
                         close_pos = scan;
                         break;
                     }
@@ -1648,7 +1656,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                         while (pos + esc_len < len && isdigit((unsigned char)text[pos+esc_len]) && esc_len < 4) esc_len++;
                     }
                 }
-                if (out) add_span(out, pos, pos + esc_len, HL_ESCAPE);
+                if (out) add_span(out, pos, (pos + esc_len < len) ? (pos + esc_len) : len, HL_ESCAPE);
                 pos += esc_len;
                 continue;
             }
@@ -1674,6 +1682,10 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
             
             /* Just normal string character */
             if (out) add_span(out, pos, pos + 1, HL_STRING);
+            pos++;
+        } else {
+            /* Fallback for unhandled or corrupted states to prevent infinite loop */
+            if (out) add_span(out, pos, pos + 1, HL_NORMAL);
             pos++;
         }
     }

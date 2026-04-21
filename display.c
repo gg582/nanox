@@ -720,7 +720,7 @@ static void show_line(struct window *wp, struct line *lp)
     if (memcmp(&lp->hl_end_state, &end_state, sizeof(HighlightState)) != 0) {
         lp->hl_end_state = end_state;
         struct line *next = lforw(lp);
-        if (next != curbp->b_linep) {
+        if (next != wp->w_bufp->b_linep) {
             next->hl_start_state = end_state;
             lmark_dirty(next);
             lchange(WFHARD);
@@ -877,7 +877,7 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
     if (memcmp(&lp->hl_end_state, &end_state, sizeof(HighlightState)) != 0) {
         lp->hl_end_state = end_state;
         struct line *next = lforw(lp);
-        if (next != curbp->b_linep) {
+        if (next != wp->w_bufp->b_linep) {
             next->hl_start_state = end_state;
             lmark_dirty(next);
             lchange(WFHARD);
