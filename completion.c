@@ -8,6 +8,7 @@
 #include <windows.h>
 #else
 #include <dirent.h>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -84,8 +85,12 @@ static completion_pool_t java_class_cache = { NULL, 0, 0, MAX_JAVA_SYMBOLS };
 static completion_pool_t java_classpath_entries = { NULL, 0, 0, 0 };
 static int java_classpath_loaded = 0;
 static int java_symbols_loaded = 0;
+static int java_symbols_loading = 0;
 static int java_files_scanned = 0;
 static char java_classpath_string[4096];
+#ifndef USE_WINDOWS
+static pthread_mutex_t java_async_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
 
 typedef struct {
     int active;
@@ -151,6 +156,10 @@ static void add_path_entry(completion_pool_t *paths, const char *entry);
 static void parse_path_list(const char *value, completion_pool_t *paths);
 static int has_extension(const char *name, const char *const *exts, size_t count);
 static int prev_char_start(struct line *lp, int pos);
+#ifndef USE_WINDOWS
+static void *java_class_symbols_loader(void *arg);
+static void start_async_java_class_symbols_load(void);
+#endif
 
 static void completion_consider_candidate(const char *candidate, const char *prefix);
 static int completion_fuzzy_score(const char *candidate, const char *query);
@@ -911,8 +920,17 @@ static void ensure_java_class_symbols(void)
 {
     struct stat st;
 
+#ifdef USE_WINDOWS
     if (java_symbols_loaded)
         return;
+#else
+    pthread_mutex_lock(&java_async_mutex);
+    if (java_symbols_loaded) {
+        pthread_mutex_unlock(&java_async_mutex);
+        return;
+    }
+    pthread_mutex_unlock(&java_async_mutex);
+#endif
 
     ensure_java_classpath_entries();
     for (int i = 0; i < java_classpath_entries.count; i++) {
@@ -930,8 +948,59 @@ static void ensure_java_class_symbols(void)
         if (java_class_cache.max_items > 0 && java_class_cache.count >= java_class_cache.max_items)
             break;
     }
+#ifdef USE_WINDOWS
     java_symbols_loaded = 1;
+#else
+    pthread_mutex_lock(&java_async_mutex);
+    java_symbols_loaded = 1;
+    pthread_mutex_unlock(&java_async_mutex);
+#endif
 }
+
+#ifndef USE_WINDOWS
+static void *java_class_symbols_loader(void *arg)
+{
+    (void)arg;
+    ensure_java_class_symbols();
+    pthread_mutex_lock(&java_async_mutex);
+    java_symbols_loading = 0;
+    pthread_mutex_unlock(&java_async_mutex);
+    return NULL;
+}
+
+static void start_async_java_class_symbols_load(void)
+{
+    pthread_t tid;
+    pthread_attr_t attr;
+    int should_start = FALSE;
+
+    pthread_mutex_lock(&java_async_mutex);
+    if (!java_symbols_loaded && !java_symbols_loading) {
+        java_symbols_loading = 1;
+        should_start = TRUE;
+    }
+    pthread_mutex_unlock(&java_async_mutex);
+
+    if (!should_start)
+        return;
+
+    if (pthread_attr_init(&attr) != 0) {
+        pthread_mutex_lock(&java_async_mutex);
+        java_symbols_loading = 0;
+        pthread_mutex_unlock(&java_async_mutex);
+        return;
+    }
+    if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
+        pthread_create(&tid, &attr, java_class_symbols_loader, NULL) != 0) {
+        pthread_attr_destroy(&attr);
+        pthread_mutex_lock(&java_async_mutex);
+        java_symbols_loading = 0;
+        pthread_mutex_unlock(&java_async_mutex);
+        return;
+    }
+    pthread_attr_destroy(&attr);
+}
+#endif
 
 static const char *get_java_classpath_string(void)
 {
@@ -1000,8 +1069,19 @@ static void add_language_specific_matches(const char *prefix, completion_context
         ensure_c_symbols_loaded();
         add_matches_from_pool(&c_symbol_cache, prefix);
     } else if (is_java_file(curbp->b_fname)) {
+#ifdef USE_WINDOWS
         ensure_java_class_symbols();
-        add_matches_from_pool(&java_class_cache, prefix);
+#else
+        int ready = FALSE;
+        pthread_mutex_lock(&java_async_mutex);
+        ready = java_symbols_loaded;
+        pthread_mutex_unlock(&java_async_mutex);
+        if (ready) {
+            add_matches_from_pool(&java_class_cache, prefix);
+        } else {
+            start_async_java_class_symbols_load();
+        }
+#endif
     }
     if (completion_state.count > 0)
         completion_state.is_visible = 1;
