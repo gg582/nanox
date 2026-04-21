@@ -622,7 +622,8 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
         } else { // Normal character input
             quotef = FALSE;
             if (cpos < nbuf - 1) {
-                if ((unsigned)c >= 0x80 && (unsigned)c <= 0x10FFFF) {
+                if (((unsigned)c >= 0x80 && (unsigned)c < 0xD800) ||
+                    ((unsigned)c > 0xDFFF && (unsigned)c <= 0x10FFFF)) {
                     /* Handle multi-byte Unicode characters */
                     char utf8_buf[6];
                     int len = unicode_to_utf8((unsigned)c, (unsigned char *)utf8_buf);
