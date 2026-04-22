@@ -56,6 +56,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <locale.h>
 #ifdef HAVE_HUNSPELL
 #include <hunspell.h>
@@ -645,6 +646,36 @@ static void emergencyexit(int signr)
     quit(TRUE, 0);
 }
 
+static int files_equal(const char *f1, const char *f2)
+{
+    FILE *fp1, *fp2;
+    int c1, c2;
+
+    fp1 = fopen(f1, "rb");
+    if (fp1 == NULL)
+        return 0;
+
+    fp2 = fopen(f2, "rb");
+    if (fp2 == NULL) {
+        fclose(fp1);
+        return 0;
+    }
+
+    do {
+        c1 = fgetc(fp1);
+        c2 = fgetc(fp2);
+        if (c1 != c2) {
+            fclose(fp1);
+            fclose(fp2);
+            return 0;
+        }
+    } while (c1 != EOF);
+
+    fclose(fp1);
+    fclose(fp2);
+    return 1;
+}
+
 int swap_quit(int f, int n)
 {
     struct buffer *bp;
@@ -677,6 +708,10 @@ int swap_quit(int f, int n)
                     lp = lforw(lp);
                 }
                 fclose(fp);
+
+                if (files_equal(bp->b_fname, swapname)) {
+                    unlink(swapname);
+                }
             }
         }
         bp = bp->b_bufp;
