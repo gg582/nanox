@@ -268,10 +268,10 @@ int readin(char *fname, int lockfl)
             break;
         }
         lp2 = lback(curbp->b_linep);
-        lp2->l_fp = lp1;
-        lp1->l_fp = curbp->b_linep;
-        lp1->l_bp = lp2;
-        curbp->b_linep->l_bp = lp1;
+        lp2->next = lp1;
+        lp1->next = curbp->b_linep;
+        lp1->prev = lp2;
+        curbp->b_linep->prev = lp1;
         for (i = 0; i < nbytes; ++i)
             lputc(lp1, i, fline[i]);
         ++nline;
@@ -409,11 +409,11 @@ void normalize_whitespace(struct buffer *bp)
     while (lp != bp->b_linep) {
         int len = llength(lp);
         int i = len - 1;
-        while (i >= 0 && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) {
+        while (i >= 0 && (lp->text[i] == ' ' || lp->text[i] == '\t')) {
             i--;
         }
         if (i + 1 < len) {
-            lp->l_used = i + 1;
+            lp->used = i + 1;
             bp->b_flag |= BFCHG;
         }
         lp = lforw(lp);
@@ -512,7 +512,7 @@ int is_effectively_same(char *fname, struct buffer *bp)
 
         /* Compare current non-blank lines */
         if (llength(lp) != (int)strlen(fline) || 
-            memcmp(lp->l_text, fline, llength(lp)) != 0) {
+            memcmp(lp->text, fline, llength(lp)) != 0) {
             ffclose();
             return FALSE;
         }
@@ -576,7 +576,7 @@ int writeout(char *fn)
 
         /* Normalize line: 1. Filter non-essential control codes. 2. Remove trailing whitespace. */
         for (int i = 0; i < len && clean_idx < (NLINE - 1); i++) {
-            unsigned char c = lp->l_text[i];
+            unsigned char c = lp->text[i];
             /* Drop dangerous control codes but preserve UTF-8 and tabs/newlines */
             if (c >= 32 || c == '\t' || c >= 0x80) {
                 clean_buf[clean_idx++] = c;
@@ -688,13 +688,13 @@ int ifile(char *fname)
             break;          /* display.             */
         }
         lp0 = curwp->w_dotp;        /* line previous to insert */
-        lp2 = lp0->l_fp;        /* line after insert */
+        lp2 = lp0->next;        /* line after insert */
 
         /* re-link new line between lp0 and lp2 */
-        lp2->l_bp = lp1;
-        lp0->l_fp = lp1;
-        lp1->l_bp = lp0;
-        lp1->l_fp = lp2;
+        lp2->prev = lp1;
+        lp0->next = lp1;
+        lp1->prev = lp0;
+        lp1->next = lp2;
 
         /* and advance and write out the current line */
         curwp->w_dotp = lp1;

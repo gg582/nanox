@@ -42,12 +42,18 @@ struct line *lalloc(int used)
     size = (used + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
     if (size == 0)              /* Assume that is an empty. */
         size = BLOCK_SIZE;      /* Line is for type-in. */
-    if ((lp = (struct line *)malloc(sizeof(struct line) - 1 + size)) == NULL) {
+    if ((lp = (struct line *)malloc(sizeof(struct line))) == NULL) {
         mlwrite("(OUT OF MEMORY)");
         return NULL;
     }
-    lp->l_size = size;
-    lp->l_used = used;
+    if ((lp->text = (unsigned char *)malloc(size)) == NULL) {
+        free(lp);
+        mlwrite("(OUT OF MEMORY)");
+        return NULL;
+    }
+    lp->size = size;
+    lp->used = used;
+    lp->referenced_by = -1;
     lp->hl_start_state = (HighlightState){0};
     lp->hl_end_state = (HighlightState){0};
     lp->l_diag = 0;
@@ -67,37 +73,39 @@ void lfree(struct line *lp)
 
     wp = curwp;
     if (wp->w_linep == lp)
-        wp->w_linep = lp->l_fp;
+        wp->w_linep = lp->next;
     if (wp->w_dotp == lp) {
-        wp->w_dotp = lp->l_fp;
+        wp->w_dotp = lp->next;
         wp->w_doto = 0;
     }
     if (wp->w_markp == lp) {
-        wp->w_markp = lp->l_fp;
+        wp->w_markp = lp->next;
         wp->w_marko = 0;
     }
 
     bp = bheadp;
     while (bp != NULL) {
         if (bp->b_hl_dirty_line == lp) {
-            bp->b_hl_dirty_line = lp->l_fp;
+            bp->b_hl_dirty_line = lp->next;
             if (bp->b_hl_dirty_line == bp->b_linep)
                 bp->b_hl_dirty_line = NULL;
         }
         if (bp->b_nwnd == 0) {
             if (bp->b_dotp == lp) {
-                bp->b_dotp = lp->l_fp;
+                bp->b_dotp = lp->next;
                 bp->b_doto = 0;
             }
             if (bp->b_markp == lp) {
-                bp->b_markp = lp->l_fp;
+                bp->b_markp = lp->next;
                 bp->b_marko = 0;
             }
         }
         bp = bp->b_bufp;
     }
-    lp->l_bp->l_fp = lp->l_fp;
-    lp->l_fp->l_bp = lp->l_bp;
+    lp->prev->next = lp->next;
+    lp->next->prev = lp->prev;
+    if (lp->text != NULL)
+        free(lp->text);
     free((char *)lp);
 }
 
@@ -235,42 +243,35 @@ int linsert_byte(int n, int c)
         }
         if ((lp2 = lalloc(n)) == NULL)  /* Allocate new line        */
             return FALSE;
-        lp3 = lp1->l_bp;        /* Previous line        */
-        lp3->l_fp = lp2;        /* Link in              */
-        lp2->l_fp = lp1;
-        lp1->l_bp = lp2;
-        lp2->l_bp = lp3;
+        lp3 = lp1->prev;        /* Previous line        */
+        lp3->next = lp2;        /* Link in              */
+        lp2->next = lp1;
+        lp1->prev = lp2;
+        lp2->prev = lp3;
         for (i = 0; i < n; ++i)
-            lp2->l_text[i] = c;
+            lp2->text[i] = c;
         curwp->w_dotp = lp2;
         curwp->w_doto = n;
         return TRUE;
     }
     doto = curwp->w_doto;           /* Save for later.      */
-    if (lp1->l_used + n > lp1->l_size) {    /* Hard: reallocate     */
-        if ((lp2 = lalloc(lp1->l_used + n)) == NULL)
-            return FALSE;
-        cp1 = &lp1->l_text[0];
-        cp2 = &lp2->l_text[0];
-        while (cp1 != &lp1->l_text[doto])
-            *cp2++ = *cp1++;
-        cp2 += n;
-        while (cp1 != &lp1->l_text[lp1->l_used])
-            *cp2++ = *cp1++;
-        lp1->l_bp->l_fp = lp2;
-        lp2->l_fp = lp1->l_fp;
-        lp1->l_fp->l_bp = lp2;
-        lp2->l_bp = lp1->l_bp;
-    } else {                /* Easy: in place       */
-        lp2 = lp1;          /* Pretend new line     */
-        lp2->l_used += n;
-        cp2 = &lp1->l_text[lp1->l_used];
-        cp1 = cp2 - n;
-        while (cp1 != &lp1->l_text[doto])
-            *--cp2 = *--cp1;
+    if (lp1->used + n > lp1->size) {    /* Hard: reallocate     */
+        int newsize = (lp1->used + n + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
+        unsigned char *newtext = (unsigned char *)realloc(lp1->text, newsize);
+        if (newtext == NULL) return FALSE;
+        lp1->text = newtext;
+        lp1->size = newsize;
     }
+    
+    lp2 = lp1;
+    lp2->used += n;
+    cp2 = &lp1->text[lp2->used];
+    cp1 = cp2 - n;
+    while (cp1 != &lp1->text[doto])
+        *--cp2 = *--cp1;
+
     for (i = 0; i < n; ++i)         /* Add the characters       */
-        lp2->l_text[doto + i] = c;
+        lp2->text[doto + i] = c;
     wp = curwp;             /* Update window        */
     if (wp->w_linep == lp1)
         wp->w_linep = lp2;
@@ -282,11 +283,6 @@ int linsert_byte(int n, int c)
         wp->w_markp = lp2;
         if (wp->w_marko > doto)
             wp->w_marko += n;
-    }
-    if (lp1 != lp2) {
-        if (curbp->b_hl_dirty_line == lp1)
-            curbp->b_hl_dirty_line = lp2;
-        free((char *)lp1);
     }
     return TRUE;
 }
@@ -342,7 +338,7 @@ int sanitize_and_insert(int n, int c)
  */
 int lowrite(int c)
 {
-    if (curwp->w_doto < curwp->w_dotp->l_used) {
+    if (curwp->w_doto < curwp->w_dotp->used) {
         unicode_t existing_char;
         /* Determine the width of the existing character to be replaced */
         int bytes = lgetchar(&existing_char);
@@ -421,34 +417,34 @@ int lnewline(void)
 		/* Allocate an empty new line */
 		if ((lp2 = lalloc(0)) == NULL)
 			return FALSE;
-		lp3 = lp1->l_bp;		/* Previous line        */
-		lp3->l_fp = lp2;		/* Link in              */
-		lp2->l_fp = lp1;
-		lp1->l_bp = lp2;
-		lp2->l_bp = lp3;
+		lp3 = lp1->prev;		/* Previous line        */
+		lp3->next = lp2;		/* Link in              */
+		lp2->next = lp1;
+		lp1->prev = lp2;
+		lp2->prev = lp3;
 		/* Cursor stays on sentinel (end of buffer) */
 		return TRUE;
 	}
 
 	/* Ensure we don't split a UTF-8 character - adjust to character boundary */
-	while (doto > 0 && doto < lp1->l_used && !is_beginning_utf8((unsigned char)lp1->l_text[doto])) {
+	while (doto > 0 && doto < lp1->used && !is_beginning_utf8((unsigned char)lp1->text[doto])) {
 		doto--;
 	}
 
 	/* Allocate a new line for the second half */
-	if ((lp2 = lalloc(lp1->l_used - doto)) == NULL)
+	if ((lp2 = lalloc(lp1->used - doto)) == NULL)
 		return FALSE;
 
-	cp1 = &lp1->l_text[doto];
-	cp2 = &lp2->l_text[0];
-	while (cp1 != &lp1->l_text[lp1->l_used])
+	cp1 = (char *)&lp1->text[doto];
+	cp2 = (char *)&lp2->text[0];
+	while (cp1 != (char *)&lp1->text[lp1->used])
 		*cp2++ = *cp1++;
 
-	lp2->l_fp = lp1->l_fp;		/* Link in new line */
-	lp1->l_fp = lp2;
-	lp2->l_fp->l_bp = lp2;
-	lp2->l_bp = lp1;
-	lp1->l_used = doto;
+	lp2->next = lp1->next;		/* Link in new line */
+	lp1->next = lp2;
+	lp2->next->prev = lp2;
+	lp2->prev = lp1;
+	lp1->used = doto;
 
 	/* Update window pointers */
 	wp = curwp;
@@ -470,7 +466,7 @@ int lnewline(void)
 int lgetchar(unicode_t *c)
 {
     int len = llength(curwp->w_dotp);
-    unsigned char *buf = curwp->w_dotp->l_text;
+    unsigned char *buf = curwp->w_dotp->text;
     return utf8_to_unicode(buf, curwp->w_doto, len, c);
 }
 
@@ -526,7 +522,7 @@ int ldelete(long n, int kflag)
 		doto = curwp->w_doto;
 		if (dotp == curbp->b_linep)	/* Hit end of buffer.       */
 			return FALSE;
-		chunk = dotp->l_used - doto;	/* Size of chunk.       */
+		chunk = dotp->used - doto;	/* Size of chunk.       */
 		if (chunk > n)
 			chunk = n;
 		if (chunk == 0) {		/* End of line, merge.  */
@@ -537,7 +533,7 @@ int ldelete(long n, int kflag)
 			continue;
 		}
 		lchange(WFHARD);
-		cp1 = &dotp->l_text[doto];	/* Scrunch text.        */
+		cp1 = (char *)&dotp->text[doto];	/* Scrunch text.        */
 		cp2 = cp1 + chunk;
 		if (kflag != FALSE) {		/* Kill?                */
 			while (cp1 != cp2) {
@@ -546,11 +542,11 @@ int ldelete(long n, int kflag)
 					return FALSE;
 				++cp1;
 			}
-			cp1 = &dotp->l_text[doto];
+			cp1 = (char *)&dotp->text[doto];
 		}
-		while (cp2 != &dotp->l_text[dotp->l_used])
+		while (cp2 != (char *)&dotp->text[dotp->used])
 			*cp1++ = *cp2++;
-		dotp->l_used -= chunk;
+		dotp->used -= chunk;
 		
 		/* Fix window offsets - currently only curwp used in this editor */
 		wp = curwp;
@@ -577,14 +573,14 @@ char *getctext(void)
 {
     struct line *lp;            /* line to copy */
     int size;               /* length of line to return */
-    char *sp;               /* string pointer into line */
+    unsigned char *sp;               /* string pointer into line */
     char *dp;               /* string pointer into returned line */
     static char rline[NSTRING];     /* line to return */
 
     /* find the contents of the current line and its length */
     lp = curwp->w_dotp;
-    sp = lp->l_text;
-    size = lp->l_used;
+    sp = lp->text;
+    size = lp->used;
     if (size >= NSTRING)
         size = NSTRING - 1;
 
@@ -628,7 +624,6 @@ int joinline(int f, int n)
 {
     struct line *lp1;
     struct line *lp2;
-    int i;
     int status;
 
     if (curbp->b_mode & MDVIEW)
@@ -641,13 +636,13 @@ int joinline(int f, int n)
 
     while (n--) {
         lp1 = curwp->w_dotp;
-        lp2 = lp1->l_fp;
+        lp2 = lp1->next;
 
         if (lp2 == curbp->b_linep) /* At the end of buffer */
             break;
 
         /* Move to the end of the current line */
-        curwp->w_doto = lp1->l_used;
+        curwp->w_doto = lp1->used;
 
         /* Delete the newline */
         if ((status = ldelnewline()) != TRUE)
@@ -659,17 +654,17 @@ int joinline(int f, int n)
          */
 
         /* Remove leading whitespace from what was the next line */
-        while (curwp->w_doto < curwp->w_dotp->l_used &&
-               (curwp->w_dotp->l_text[curwp->w_doto] == ' ' ||
-                curwp->w_dotp->l_text[curwp->w_doto] == '\t')) {
+        while (curwp->w_doto < curwp->w_dotp->used &&
+               (curwp->w_dotp->text[curwp->w_doto] == ' ' ||
+                curwp->w_dotp->text[curwp->w_doto] == '\t')) {
             ldelchar(1, FALSE);
         }
 
         /* Add a single space if the line isn't empty and doesn't already end in a space
          * and we aren't at the end of the line.
          */
-        if (curwp->w_doto > 0 && curwp->w_dotp->l_text[curwp->w_doto - 1] != ' ' &&
-            curwp->w_doto < curwp->w_dotp->l_used) {
+        if (curwp->w_doto > 0 && curwp->w_dotp->text[curwp->w_doto - 1] != ' ' &&
+            curwp->w_doto < curwp->w_dotp->used) {
             linsert(1, ' ');
             /* back up so we are at the start of the joined content (Vim behavior) */
             backchar(FALSE, 1);
@@ -706,49 +701,50 @@ int ldelnewline(void)
     if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
         return rdonly();        /* we are in read only mode     */
     lp1 = curwp->w_dotp;
-    lp2 = lp1->l_fp;
+    lp2 = lp1->next;
     if (lp2 == curbp->b_linep) {        /* At the buffer end.   */
-        if (lp1->l_used == 0)       /* Blank line.              */
+        if (lp1->used == 0)       /* Blank line.              */
             lfree(lp1);
         return TRUE;
     }
-    if (lp2->l_used <= lp1->l_size - lp1->l_used) {
-        cp1 = &lp1->l_text[lp1->l_used];
-        cp2 = &lp2->l_text[0];
-        while (cp2 != &lp2->l_text[lp2->l_used])
+    if (lp2->used <= lp1->size - lp1->used) {
+        cp1 = (char *)&lp1->text[lp1->used];
+        cp2 = (char *)&lp2->text[0];
+        while (cp2 != (char *)&lp2->text[lp2->used])
             *cp1++ = *cp2++;
         wp = curwp;
         if (wp->w_linep == lp2)
             wp->w_linep = lp1;
         if (wp->w_dotp == lp2) {
             wp->w_dotp = lp1;
-            wp->w_doto += lp1->l_used;
+            wp->w_doto += lp1->used;
         }
         if (wp->w_markp == lp2) {
             wp->w_markp = lp1;
-            wp->w_marko += lp1->l_used;
+            wp->w_marko += lp1->used;
         }
-        lp1->l_used += lp2->l_used;
-        lp1->l_fp = lp2->l_fp;
-        lp2->l_fp->l_bp = lp1;
+        lp1->used += lp2->used;
+        lp1->next = lp2->next;
+        lp2->next->prev = lp1;
         if (curbp->b_hl_dirty_line == lp2)
             curbp->b_hl_dirty_line = lp1;
+        free((char *)lp2->text);
         free((char *)lp2);
         return TRUE;
     }
-    if ((lp3 = lalloc(lp1->l_used + lp2->l_used)) == NULL)
+    if ((lp3 = lalloc(lp1->used + lp2->used)) == NULL)
         return FALSE;
-    cp1 = &lp1->l_text[0];
-    cp2 = &lp3->l_text[0];
-    while (cp1 != &lp1->l_text[lp1->l_used])
+    cp1 = (char *)&lp1->text[0];
+    cp2 = (char *)&lp3->text[0];
+    while (cp1 != (char *)&lp1->text[lp1->used])
         *cp2++ = *cp1++;
-    cp1 = &lp2->l_text[0];
-    while (cp1 != &lp2->l_text[lp2->l_used])
+    cp1 = (char *)&lp2->text[0];
+    while (cp1 != (char *)&lp2->text[lp2->used])
         *cp2++ = *cp1++;
-    lp1->l_bp->l_fp = lp3;
-    lp3->l_fp = lp2->l_fp;
-    lp2->l_fp->l_bp = lp3;
-    lp3->l_bp = lp1->l_bp;
+    lp1->prev->next = lp3;
+    lp3->next = lp2->next;
+    lp2->next->prev = lp3;
+    lp3->prev = lp1->prev;
     wp = curwp;
     if (wp->w_linep == lp1 || wp->w_linep == lp2)
         wp->w_linep = lp3;
@@ -756,17 +752,19 @@ int ldelnewline(void)
         wp->w_dotp = lp3;
     else if (wp->w_dotp == lp2) {
         wp->w_dotp = lp3;
-        wp->w_doto += lp1->l_used;
+        wp->w_doto += lp1->used;
     }
     if (wp->w_markp == lp1)
         wp->w_markp = lp3;
     else if (wp->w_markp == lp2) {
         wp->w_markp = lp3;
-        wp->w_marko += lp1->l_used;
+        wp->w_marko += lp1->used;
     }
     if (curbp->b_hl_dirty_line == lp1 || curbp->b_hl_dirty_line == lp2)
         curbp->b_hl_dirty_line = lp3;
+    free((char *)lp1->text);
     free((char *)lp1);
+    free((char *)lp2->text);
     free((char *)lp2);
     return TRUE;
 }
@@ -902,50 +900,35 @@ int linsert_block(const char *block, int len)
                 if (lp1 == curbp->b_linep) {
                     /* Special case: end of buffer */
                     if ((lp2 = lalloc(segment_len)) == NULL) return FALSE;
-                    struct line *lp3 = lp1->l_bp;
-                    lp3->l_fp = lp2;
-                    lp2->l_fp = lp1;
-                    lp1->l_bp = lp2;
-                    lp2->l_bp = lp3;
+                    struct line *lp3 = lp1->prev;
+                    lp3->next = lp2;
+                    lp2->next = lp1;
+                    lp1->prev = lp2;
+                    lp2->prev = lp3;
                     for (j = 0; j < segment_len; j++)
-                        lp2->l_text[j] = block[start + j];
+                        lp2->text[j] = block[start + j];
                     curwp->w_dotp = lp2;
                     curwp->w_doto = segment_len;
                 } else {
                     /* Normal case: insert into line */
-                    if (lp1->l_used + segment_len > lp1->l_size) {
+                    if (lp1->used + segment_len > lp1->size) {
                         /* Reallocate */
-                        if ((lp2 = lalloc(lp1->l_used + segment_len)) == NULL) return FALSE;
-                        unsigned char *cp1 = &lp1->l_text[0];
-                        unsigned char *cp2 = &lp2->l_text[0];
-                        for (j = 0; j < doto; j++) *cp2++ = *cp1++;
-                        cp2 += segment_len;
-                        for (j = doto; j < lp1->l_used; j++) *cp2++ = *cp1++;
-                        
-                        lp1->l_bp->l_fp = lp2;
-                        lp2->l_fp = lp1->l_fp;
-                        lp1->l_fp->l_bp = lp2;
-                        lp2->l_bp = lp1->l_bp;
-
-                        /* Update windows before freeing lp1 */
-                        if (curwp->w_linep == lp1) curwp->w_linep = lp2;
-                        if (curwp->w_dotp == lp1) curwp->w_dotp = lp2;
-                        if (curwp->w_markp == lp1) curwp->w_markp = lp2;
-
-                        if (curbp->b_hl_dirty_line == lp1)
-                            curbp->b_hl_dirty_line = lp2;
-                        free((char *)lp1);
-                    } else {
-                        /* In place */
-                        lp2 = lp1;
-                        unsigned char *cp1 = &lp2->l_text[lp2->l_used + segment_len - 1];
-                        unsigned char *cp2 = &lp2->l_text[lp2->l_used - 1];
-                        for (j = lp2->l_used - 1; j >= doto; j--) *cp1-- = *cp2--;
-                        lp2->l_used += segment_len;
+                        int newsize = (lp1->used + segment_len + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
+                        unsigned char *newtext = (unsigned char *)realloc(lp1->text, newsize);
+                        if (newtext == NULL) return FALSE;
+                        lp1->text = newtext;
+                        lp1->size = newsize;
                     }
+                    
+                    lp2 = lp1;
+                    unsigned char *cp1 = &lp2->text[lp2->used + segment_len - 1];
+                    unsigned char *cp2 = &lp2->text[lp2->used - 1];
+                    for (j = lp2->used - 1; j >= doto; j--) *cp1-- = *cp2--;
+                    lp2->used += segment_len;
+
                     /* Fill in the text */
                     for (j = 0; j < segment_len; j++)
-                        lp2->l_text[doto + j] = block[start + j];
+                        lp2->text[doto + j] = block[start + j];
                     curwp->w_doto += segment_len;
                     
                     /* Final window updates for in-place case (lp1 == lp2) or segment finishing */

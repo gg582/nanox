@@ -415,7 +415,7 @@ int fillpara(int f, int n)
 
     /* initialize various info */
     clength = curwp->w_doto;
-    if (clength && curwp->w_dotp->l_text[0] == TAB)
+    if (clength && curwp->w_dotp->text[0] == TAB)
         clength = 8;
     wordlen = 0;
     dotflag = FALSE;
@@ -520,7 +520,7 @@ int justpara(int f, int n)
         curwp->w_doto = leftmarg;
 
     clength = curwp->w_doto;
-    if (clength && curwp->w_dotp->l_text[0] == TAB)
+    if (clength && curwp->w_dotp->text[0] == TAB)
         clength = 8;
 
     wordlen = 0;
@@ -664,7 +664,7 @@ int wordcount(int f, int n)
             ++nlines;
             bytes = 1;
         } else {
-            bytes = utf8_to_unicode(lp->l_text, offset, llength(lp), &ch);
+            bytes = utf8_to_unicode(lp->text, offset, llength(lp), &ch);
             offset += bytes;
         }
         size -= bytes;

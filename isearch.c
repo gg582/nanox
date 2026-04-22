@@ -52,8 +52,8 @@ void minibuf_init(void)
     }
     
     /* Setup circular line list */
-    lp->l_fp = lp;
-    lp->l_bp = lp;
+    lp->next = lp;
+    lp->prev = lp;
     
     /* Initialize buffer structure */
     minibuf_bp->b_bufp = NULL;
@@ -104,7 +104,7 @@ void minibuf_clear(void)
     while (lp != minibuf_bp->b_linep) {
         next = lforw(lp);
         /* Clear line content */
-        lp->l_used = 0;
+        lp->used = 0;
         lp = next;
     }
     
@@ -149,7 +149,7 @@ int minibuf_delete_char(long n)
     /* Move back one UTF-8 character */
     if (minibuf_wp->w_doto > 0) {
         int byte_offset = minibuf_wp->w_doto - 1;
-        unsigned char *text = minibuf_wp->w_dotp->l_text;
+        unsigned char *text = minibuf_wp->w_dotp->text;
         
         /* Move back to find UTF-8 character boundary */
         while (byte_offset > 0 && !is_beginning_utf8(text[byte_offset]))
@@ -219,8 +219,8 @@ void minibuf_update(const char *prompt)
     }
     
     /* Display buffer content - CLONED from show_line() logic */
-    text = lp->l_text;
-    len = lp->l_used;
+    text = lp->text;
+    len = lp->used;
     i = 0;
     
     while (i < len && col < term->t_ncol - 1) {
@@ -341,8 +341,8 @@ void minibuf_get_text(char *dest, int max_len)
         return;
     
     /* Copy content */
-    for (i = 0; i < lp->l_used && i < max_len - 1; i++) {
-        dest[i] = lp->l_text[i];
+    for (i = 0; i < lp->used && i < max_len - 1; i++) {
+        dest[i] = lp->text[i];
     }
     dest[i] = '\0';
 }

@@ -34,7 +34,7 @@ static int getgoal(struct line *dlp)
     dbo = 0;
     while (dbo != len) {
         unicode_t c;
-        int width = utf8_to_unicode(dlp->l_text, dbo, len, &c);
+        int width = utf8_to_unicode(dlp->text, dbo, len, &c);
 
         col = next_column(col, c, tab_width);
         if (col > curgoal)
@@ -114,7 +114,7 @@ int forwchar(int f, int n)
             curwp->w_flag |= WFMOVE;
         } else {
             unicode_t c;
-            int bytes = utf8_to_unicode(curwp->w_dotp->l_text, curwp->w_doto, len, &c);
+            int bytes = utf8_to_unicode(curwp->w_dotp->text, curwp->w_doto, len, &c);
             curwp->w_doto += bytes;
             if (curwp->w_doto > len) {
                 curwp->w_doto = len;

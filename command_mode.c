@@ -534,8 +534,8 @@ static void restore_cursor_to_index(int index, int offset)
 
     curwp->w_dotp = lp;
     if (lp != curbp->b_linep) {
-        if (offset > lp->l_used)
-            offset = lp->l_used;
+        if (offset > lp->used)
+            offset = lp->used;
         curwp->w_doto = offset;
     } else {
         curwp->w_doto = 0;
@@ -980,7 +980,7 @@ static int command_mode_guess_numbering_suffix(int start_line, int end_line, cha
 
     while (lp != curbp->b_linep && line <= end_line) {
         char current[8];
-        if (command_mode_parse_numbering_prefix(lp->l_text, llength(lp), NULL, NULL, current, sizeof(current))) {
+        if (command_mode_parse_numbering_prefix(lp->text, llength(lp), NULL, NULL, current, sizeof(current))) {
             int i;
             int found = -1;
             for (i = 0; i < candidate_count; ++i) {
@@ -1079,7 +1079,7 @@ static int command_mode_apply_numbering_range(int start_line, int end_line, int 
             mlwrite("%%Out of memory");
             return FALSE;
         }
-        memcpy(text, lp->l_text, (size_t)len);
+        memcpy(text, lp->text, (size_t)len);
         text[len] = '\0';
 
         if (!command_mode_parse_numbering_prefix((unsigned char *)text, len, &indent_end, &content_start, NULL, 0))
@@ -1319,7 +1319,7 @@ static int block_visual_column(struct line *lp, int offset)
 
     while (lp && idx < offset && idx < len) {
         unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)lp->l_text, idx, len, &c);
+        int bytes = utf8_to_unicode((unsigned char *)lp->text, idx, len, &c);
         if (bytes <= 0)
             break;
         col = next_column(col, c, tab_width);
@@ -1353,7 +1353,7 @@ static int line_offset_for_column(struct line *lp, int target_col, int *actual_c
 
     while (idx < len) {
         unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)lp->l_text, idx, len, &c);
+        int bytes = utf8_to_unicode((unsigned char *)lp->text, idx, len, &c);
         int next_col;
 
         if (bytes <= 0)
@@ -1604,8 +1604,8 @@ int command_mode_block_handle_key(int c, int f, int n)
 static int apply_regex_to_line(struct line *lp, pcre2_code *code, pcre2_match_data *match_data,
     const char *replacement, size_t repl_len, int is_global, int *total_count)
 {
-    char *text = malloc(lp->l_used + 1);
-    size_t text_len = lp->l_used;
+    char *text = malloc(lp->used + 1);
+    size_t text_len = lp->used;
     size_t search_offset = 0;
     int changed = FALSE;
 
@@ -1614,7 +1614,7 @@ static int apply_regex_to_line(struct line *lp, pcre2_code *code, pcre2_match_da
         return FALSE;
     }
 
-    memcpy(text, lp->l_text, text_len);
+    memcpy(text, lp->text, text_len);
     text[text_len] = '\0';
 
     while (search_offset <= text_len) {

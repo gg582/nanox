@@ -13,21 +13,22 @@
  * additions will include update hints, and a list of marks into the line.
  */
 struct line {
-    struct line *l_fp;          /* Link to the next line        */
-    struct line *l_bp;          /* Link to the previous line    */
-    int l_size;             /* Allocated size               */
-    int l_used;             /* Used size                    */
+    struct line *next;          /* Link to the next line        */
+    struct line *prev;          /* Link to the previous line    */
+    int size;                   /* Allocated size               */
+    int used;                   /* Used size                    */
+    int referenced_by;          /* Line index/ID that references this line */
     HighlightState hl_start_state;
     HighlightState hl_end_state;
-    char l_diag;            /* Diagnostic: 0=none, 1=warn, 2=error */
-    unsigned char l_text[1];             /* A bunch of characters.       */
+    char l_diag;                /* Diagnostic: 0=none, 1=warn, 2=error */
+    unsigned char *text;        /* Variable length text buffer  */
 };
 
-#define lforw(lp)       ((lp)->l_fp)
-#define lback(lp)       ((lp)->l_bp)
-#define lgetc(lp, n)    ((lp)->l_text[(n)]&0xFF)
-#define lputc(lp, n, c) ((lp)->l_text[(n)]=(c))
-#define llength(lp)     ((lp)->l_used)
+#define lforw(lp)       ((lp)->next)
+#define lback(lp)       ((lp)->prev)
+#define lgetc(lp, n)    ((lp)->text[(n)]&0xFF)
+#define lputc(lp, n, c) ((lp)->text[(n)]=(c))
+#define llength(lp)     ((lp)->used)
 
 extern void lfree(struct line *lp);
 extern void lmark_dirty(struct line *lp);

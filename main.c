@@ -570,7 +570,7 @@ int execute(int c, int f, int n)
            and next char is not a tab or we are at a tab stop,
            delete a char forword                        */
         if (curwp->w_bufp->b_mode & MDOVER &&
-            curwp->w_doto < curwp->w_dotp->l_used &&
+            curwp->w_doto < curwp->w_dotp->used &&
             (lgetc(curwp->w_dotp, curwp->w_doto) != '\t' || ((curwp->w_doto) & tab_width) == tab_width))
             ldelchar(1, FALSE);
 

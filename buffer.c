@@ -179,9 +179,9 @@ void bfreeall(void)
         struct buffer *next = bp->b_bufp;
         struct line *hlp = bp->b_linep;
         if (hlp) {
-            struct line *lp = hlp->l_fp;
+            struct line *lp = hlp->next;
             while (lp != hlp) {
-                struct line *nlp = lp->l_fp;
+                struct line *nlp = lp->next;
                 free(lp);
                 lp = nlp;
             }
@@ -254,10 +254,10 @@ int addline(char *text)
         return FALSE;
     for (i = 0; i < ntext; ++i)
         lputc(lp, i, text[i]);
-    blistp->b_linep->l_bp->l_fp = lp;   /* Hook onto the end    */
-    lp->l_bp = blistp->b_linep->l_bp;
-    blistp->b_linep->l_bp = lp;
-    lp->l_fp = blistp->b_linep;
+    blistp->b_linep->prev->next = lp;   /* Hook onto the end    */
+    lp->prev = blistp->b_linep->prev;
+    blistp->b_linep->prev = lp;
+    lp->next = blistp->b_linep;
     if (blistp->b_dotp == blistp->b_linep)  /* If "." is at the end */
         blistp->b_dotp = lp;        /* move it to new line  */
     return TRUE;
@@ -344,8 +344,8 @@ struct buffer *bfind(char *bname, int cflag, int bflag)
         bp->b_hl_dirty_line = NULL;
         strcpy(bp->b_fname, "");
         strcpy(bp->b_bname, bname);
-        lp->l_fp = lp;
-        lp->l_bp = lp;
+        lp->next = lp;
+        lp->prev = lp;
     }
     return bp;
 }

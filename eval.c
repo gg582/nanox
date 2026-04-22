@@ -264,7 +264,7 @@ char *gtenv(char *vname)
     case EVLASTKEY:
         return itoa(lastkey);
     case EVCURCHAR:
-        return (curwp->w_dotp->l_used ==
+        return (curwp->w_dotp->used ==
             curwp->w_doto ? itoa('\n') : itoa(lgetc(curwp->w_dotp, curwp->w_doto)));
     case EVDISCMD:
         return ltos(discmd);
@@ -762,14 +762,14 @@ static char *internal_getval(char *token)
             return errorm;
 
         /* grab the line as an argument */
-        blen = bp->b_dotp->l_used - bp->b_doto;
+        blen = bp->b_dotp->used - bp->b_doto;
         if (blen >= NSTRING)
             blen = NSTRING - 1;
-        strncpy(buf, bp->b_dotp->l_text + bp->b_doto, blen);
+        strncpy(buf, bp->b_dotp->text + bp->b_doto, blen);
         buf[blen] = 0;
 
         /* and step the buffer's line ptr ahead a line */
-        bp->b_dotp = bp->b_dotp->l_fp;
+        bp->b_dotp = bp->b_dotp->next;
         bp->b_doto = 0;
 
         /* if displayed buffer, reset window ptr vars */

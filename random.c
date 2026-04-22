@@ -349,29 +349,29 @@ int handle_markup_char(int c) {
 
         /* Look back for '<' */
         int scan = off - 2;
-        while (scan >= 0 && lp->l_text[scan] != '<') {
-            if (lp->l_text[scan] == '>') return TRUE; /* Already closed or nested? skip */
+        while (scan >= 0 && lp->text[scan] != '<') {
+            if (lp->text[scan] == '>') return TRUE; /* Already closed or nested? skip */
             scan--;
         }
 
-        if (scan >= 0 && lp->l_text[scan] == '<') {
+        if (scan >= 0 && lp->text[scan] == '<') {
             /* Found start of a potential tag */
             int tag_start = scan + 1;
             if (tag_start >= off - 1) return TRUE; /* Empty tag? <> */
-            if (lp->l_text[tag_start] == '/' || lp->l_text[tag_start] == '!' || lp->l_text[tag_start] == '?')
+            if (lp->text[tag_start] == '/' || lp->text[tag_start] == '!' || lp->text[tag_start] == '?')
                 return TRUE; /* Closing tag, comment, or PI */
 
             /* Extract tag name */
             char tag_name[64];
             int tidx = 0;
             int p = tag_start;
-            while (p < off - 1 && tidx < 63 && !isspace(lp->l_text[p]) && lp->l_text[p] != '/') {
-                tag_name[tidx++] = lp->l_text[p++];
+            while (p < off - 1 && tidx < 63 && !isspace(lp->text[p]) && lp->text[p] != '/') {
+                tag_name[tidx++] = lp->text[p++];
             }
             tag_name[tidx] = '\0';
 
             /* Check if it's a self-closing tag or void element */
-            if (lp->l_text[off-2] == '/') return TRUE;
+            if (lp->text[off-2] == '/') return TRUE;
             static const char *void_elements[] = {
                 "area", "base", "br", "col", "embed", "hr", "img", "input",
                 "link", "meta", "param", "source", "track", "wbr", NULL
@@ -393,7 +393,7 @@ int handle_markup_char(int c) {
         /* Auto-complete closing tag on '</' */
         struct line *lp = curwp->w_dotp;
         int off = curwp->w_doto;
-        if (off >= 2 && lp->l_text[off-2] == '<') {
+        if (off >= 2 && lp->text[off-2] == '<') {
             /* User just typed '</' */
             /* Scan back for the last unclosed tag */
             /* (Simplistic scan for now: just find the previous start tag) */
@@ -527,7 +527,7 @@ int getccol(int bflg)
     while (i < byte_offset) {
         unicode_t c;
 
-        i += utf8_to_unicode(dlp->l_text, i, len, &c);
+        i += utf8_to_unicode(dlp->text, i, len, &c);
         if (c != ' ' && c != '\t' && bflg)
             break;
         col = next_column(col, c, tab_width);
@@ -557,7 +557,7 @@ int setccol(int pos)
         int bytes;
 
         /* advance one character */
-        bytes = utf8_to_unicode(dlp->l_text, i, llen, &c);
+        bytes = utf8_to_unicode(dlp->text, i, llen, &c);
         col = next_column(col, c, tab_width);
         i += bytes;
     }
@@ -595,7 +595,7 @@ int twiddle(int f, int n)
         if (doto == 0) return FALSE; /* Empty line */
         do {
             doto--;
-        } while (doto > 0 && !is_beginning_utf8((unsigned char)dotp->l_text[doto]));
+        } while (doto > 0 && !is_beginning_utf8((unsigned char)dotp->text[doto]));
     }
     
     doto_r = doto;
@@ -605,11 +605,11 @@ int twiddle(int f, int n)
     doto_l = doto_r;
     do {
         doto_l--;
-    } while (doto_l > 0 && !is_beginning_utf8((unsigned char)dotp->l_text[doto_l]));
+    } while (doto_l > 0 && !is_beginning_utf8((unsigned char)dotp->text[doto_l]));
 
     /* Get the two characters */
-    len_l = utf8_to_unicode(dotp->l_text, doto_l, llength(dotp), &cl);
-    len_r = utf8_to_unicode(dotp->l_text, doto_r, llength(dotp), &cr);
+    len_l = utf8_to_unicode(dotp->text, doto_l, llength(dotp), &cl);
+    len_r = utf8_to_unicode(dotp->text, doto_r, llength(dotp), &cr);
 
     /* Move to left position, delete both chars, and insert swapped */
     curwp->w_doto = doto_l;
@@ -880,7 +880,7 @@ int trim(int f, int n)
     while (n) {
         lp = curwp->w_dotp;     /* find current line text */
         offset = curwp->w_doto;     /* save original offset */
-        length = lp->l_used;        /* find current length */
+        length = lp->used;        /* find current length */
 
         /* trim the current line */
         while (length > offset) {
@@ -888,7 +888,7 @@ int trim(int f, int n)
                 break;
             length--;
         }
-        lp->l_used = length;
+        lp->used = length;
 
         /* advance/or back to the next line */
         forwline(TRUE, inc);
@@ -928,16 +928,16 @@ static int handle_markdown_list(void) {
     struct line *lp = curwp->w_dotp;
     int len = llength(lp);
     int i = 0;
-    while (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) i++;
+    while (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) i++;
     
     int indent_len = i;
     int marker_start = i;
     
     /* Check for unordered list markers: -, *, + */
-    if (i < len && (lp->l_text[i] == '-' || lp->l_text[i] == '*' || lp->l_text[i] == '+')) {
+    if (i < len && (lp->text[i] == '-' || lp->text[i] == '*' || lp->text[i] == '+')) {
         i++;
-        if (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) {
-            while (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) i++;
+        if (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) {
+            while (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) i++;
             int marker_end = i;
             
             /* If the rest of the line is empty, "stop" the list */
@@ -950,7 +950,7 @@ static int handle_markdown_list(void) {
             /* Continue the list */
             if (lnewline() == FALSE) return FALSE;
             for (int k = 0; k < marker_end; k++) {
-                linsert(1, lp->l_text[k]);
+                linsert(1, lp->text[k]);
             }
             return TRUE;
         }
@@ -958,17 +958,17 @@ static int handle_markdown_list(void) {
     
     /* Check for ordered list markers: 1. , 2) , etc. */
     i = marker_start;
-    if (i < len && isdigit(lp->l_text[i])) {
+    if (i < len && isdigit(lp->text[i])) {
         int num = 0;
-        while (i < len && isdigit(lp->l_text[i])) {
-            num = num * 10 + (lp->l_text[i] - '0');
+        while (i < len && isdigit(lp->text[i])) {
+            num = num * 10 + (lp->text[i] - '0');
             i++;
         }
-        if (i < len && (lp->l_text[i] == '.' || lp->l_text[i] == ')')) {
-            char separator = lp->l_text[i];
+        if (i < len && (lp->text[i] == '.' || lp->text[i] == ')')) {
+            char separator = lp->text[i];
             i++;
-            if (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) {
-                while (i < len && (lp->l_text[i] == ' ' || lp->l_text[i] == '\t')) i++;
+            if (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) {
+                while (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) i++;
                 int marker_end = i;
                 
                 if (i == len) {
@@ -979,7 +979,7 @@ static int handle_markdown_list(void) {
                 
                 if (lnewline() == FALSE) return FALSE;
                 /* Insert indentation */
-                for (int k = 0; k < indent_len; k++) linsert(1, lp->l_text[k]);
+                for (int k = 0; k < indent_len; k++) linsert(1, lp->text[k]);
                 /* Insert incremented number */
                 char num_buf[32];
                 snprintf(num_buf, sizeof(num_buf), "%d%c ", num + 1, separator);
@@ -1739,7 +1739,7 @@ int backdel(int f, int n)
     /* If cursor is on an empty line at column 0, prefer removing that line
      * itself (join with next line) to avoid being stuck at BOB.
      */
-    if (n == 1 && curwp->w_doto == 0 && curwp->w_dotp->l_used == 0 &&
+    if (n == 1 && curwp->w_doto == 0 && curwp->w_dotp->used == 0 &&
         lforw(curwp->w_dotp) != curbp->b_linep)
         return ldelchar(1, f);
     if ((s = backchar(f, n)) == TRUE)
@@ -2067,7 +2067,7 @@ int fmatch(int ch)
         opench = '[';
 
     /* find the top line and set up for scan */
-    toplp = curwp->w_linep->l_bp;
+    toplp = curwp->w_linep->prev;
     count = 1;
     if (backchar(FALSE, 2) == FALSE)
         return TRUE;
@@ -2083,7 +2083,7 @@ int fmatch(int ch)
         if (c == opench)
             --count;
         backchar(FALSE, 1);
-        if (curwp->w_dotp == curwp->w_bufp->b_linep->l_fp && curwp->w_doto == 0)
+        if (curwp->w_dotp == curwp->w_bufp->b_linep->next && curwp->w_doto == 0)
             break;
     }
 
