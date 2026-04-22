@@ -405,18 +405,9 @@ void vtputc(int c)
     char_width = mystrnlen_raw_w(c);
 
     if (vtcol + char_width > term->t_ncol) {
-        if (vtrow < nanox_text_rows() - 1) {
-            vtrow++;
-            vtcol = vt_margin_left;
-            vscreen[vtrow]->v_flag |= VFCHG;
-            render_gutter(vtrow, 0, current_rendering_lp); // 0 indicates empty gutter for wrapped lines
-            for (int i = 0; i < 4; i++)
-                vtputc(' ');
-        } else {
-            vscreen[vtrow]->v_text[term->t_ncol - 1].ch = '$';
-            vtcol += char_width;
-            return;
-        }
+        vscreen[vtrow]->v_text[term->t_ncol - 1].ch = '$';
+        vtcol += char_width;
+        return;
     }
 
     vp = vscreen[vtrow];
@@ -861,9 +852,6 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
 {
     int len = llength(lp);
     current_rendering_lp = lp;
-    if (len == 0) {
-        return;
-    }
 
     SpanVec spans;
     HighlightState end_state;
@@ -884,105 +872,60 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
         }
     }
 
-        int current_span_idx = 0;
-        int line_start_idx = 0;
-        int line_start_col = 0;
+    int current_span_idx = 0;
+    int char_idx = 0;
+    int text_col = 0;
 
-        while(line_start_idx < len) {
-            int char_idx = line_start_idx;
-            int current_col = vtcol;
-            int last_space_idx = -1;
-            int text_col = line_start_col;
-            int last_space_col = -1;
-
-            // Determine the segment to render
-            int segment_end_idx = len;
-            int segment_end_col = text_col;
-            while(char_idx < len) {
-                unicode_t c;
-                int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
-                if (bytes <= 0)
-                    bytes = 1;
-                int char_width = get_char_width(c, current_col);
-                int next_text_col = next_column(text_col, c, tab_width);
-
-                if (c == ' ' || c == '\t') {
-                    last_space_idx = char_idx;
-                    last_space_col = next_text_col;
-                }
-
-                if (current_col + char_width > term->t_ncol && char_idx > line_start_idx) {
-                    if (last_space_idx != -1) {
-                        segment_end_idx = last_space_idx + 1;
-                        segment_end_col = last_space_col;
-                    } else {
-                        segment_end_idx = char_idx;
-                        segment_end_col = text_col;
-                    }
-                    goto render_segment;
-                }
-                current_col += char_width;
-                text_col = next_text_col;
-                char_idx += bytes;
+    while (char_idx < len) {
+        int style = HL_NORMAL;
+        while (current_span_idx < spans.count) {
+            Span *s = (spans.heap_spans) ? &spans.heap_spans[current_span_idx] : &spans.spans[current_span_idx];
+            if (char_idx >= s->end) {
+                current_span_idx++;
+                continue;
             }
-            segment_end_col = text_col;
-
-render_segment:
-        // Render the segment
-        char_idx = line_start_idx;
-        text_col = line_start_col;
-        while(char_idx < segment_end_idx) {
-            int style = HL_NORMAL;
-            while (current_span_idx < spans.count) {
-                Span *s = (spans.heap_spans) ? &spans.heap_spans[current_span_idx] : &spans.spans[current_span_idx];
-                if (char_idx >= s->end) {
-                    current_span_idx++;
-                    continue;
-                }
-                if (char_idx >= s->start) {
-                    style = s->style;
-                }
-                break;
+            if (char_idx >= s->start) {
+                style = s->style;
             }
-
-            unicode_t c;
-            int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
-            if (bytes <= 0)
-                bytes = 1;
-            int next_text_col = next_column(text_col, c, tab_width);
-            if (command_mode_block_selection_contains(lp, text_col, next_text_col))
-                style = HL_SELECTION;
-            HighlightStyle style_def = colorscheme_get(style);
-            HighlightStyle normal_def = colorscheme_get(HL_NORMAL);
-
-            current_color_fg = (style_def.fg == -1) ? normal_def.fg : style_def.fg;
-            current_color_bg = (style_def.bg == -1) ? normal_def.bg : style_def.bg;
-            current_color_bold = style_def.bold;
-            current_color_underline = style_def.underline;
-            current_color_italic = style_def.italic;
-            
-            vtputc(c);
-            char_idx += bytes;
-            text_col = next_text_col;
+            break;
         }
 
-        line_start_idx = segment_end_idx;
-        line_start_col = segment_end_col;
+        unicode_t c;
+        int bytes = utf8_to_unicode((unsigned char *)lp->l_text, char_idx, len, &c);
+        if (bytes <= 0) bytes = 1;
 
-        if (line_start_idx < len) {
+        int w = get_char_width(c, vtcol);
+        if (vtcol + w > term->t_ncol && char_idx > 0) {
+            vteeol();
             vtrow++;
-            if(vtrow >= nanox_text_rows()) {
-                break;
-            }
+            if (vtrow >= nanox_text_rows()) break;
             vtcol = vt_margin_left;
             vscreen[vtrow]->v_flag |= VFCHG;
-            render_gutter(vtrow, 0, current_rendering_lp);
+            render_gutter(vtrow, 0, lp);
             for (int i = 0; i < 4; i++) vtputc(' ');
+            /* Re-calculate width at new column (important for tabs) */
+            w = get_char_width(c, vtcol);
         }
+
+        int next_text_col = next_column(text_col, c, tab_width);
+        if (command_mode_block_selection_contains(lp, text_col, next_text_col))
+            style = HL_SELECTION;
+
+        HighlightStyle style_def = colorscheme_get(style);
+        HighlightStyle normal_def = colorscheme_get(HL_NORMAL);
+
+        current_color_fg = (style_def.fg == -1) ? normal_def.fg : style_def.fg;
+        current_color_bg = (style_def.bg == -1) ? normal_def.bg : style_def.bg;
+        current_color_bold = style_def.bold;
+        current_color_underline = style_def.underline;
+        current_color_italic = style_def.italic;
+
+        vtputc(c);
+        char_idx += bytes;
+        text_col = next_text_col;
     }
 
     span_vec_free(&spans);
-    // The color boxes logic is omitted for simplicity, as it would need to be adjusted for wrapping as well.
 }
 
 /*

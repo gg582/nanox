@@ -56,6 +56,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <locale.h>
 #ifdef HAVE_HUNSPELL
 #include <hunspell.h>
 #endif
@@ -70,6 +71,7 @@
 #include "version.h"
 #include "nanox.h"                  /* Added for Nanox specific declarations */
 #include "completion.h"
+#include "scraper.h"
 #include "command_mode.h"           /* F1 command mode */
 
 #include <signal.h>
@@ -155,6 +157,8 @@ int main(int argc, char **argv)
     int c = -1;                /* command character */
     int f;                    /* default flag */
     int n;                    /* numeric repeat count */
+
+    setlocale(LC_ALL, "");
     int mflag;                /* negative flag on repeat */
     struct buffer *bp;            /* temp buffer pointer */
     int firstfile;                /* first file flag */
@@ -709,6 +713,8 @@ int quit(int f, int n)
         }
 #endif
         nanox_cleanup();
+        completion_cleanup();
+        scraper_cleanup();
         struct buffer *bp = bheadp;
         while (bp != NULL) {
             cleanup_backup(bp, TRUE);

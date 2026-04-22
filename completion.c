@@ -2040,6 +2040,38 @@ void completion_init(void)
     completion_reset_state();
 }
 
+static void pool_free(completion_pool_t *pool)
+{
+    if (!pool) return;
+    for (int i = 0; i < pool->count; i++) {
+        if (pool->items[i]) free(pool->items[i]);
+    }
+    if (pool->items) free(pool->items);
+    pool->items = NULL;
+    pool->count = 0;
+    pool->capacity = 0;
+}
+
+void completion_cleanup(void)
+{
+    pool_free(&c_symbol_cache);
+    pool_free(&c_include_paths);
+    pool_free(&java_class_cache);
+    pool_free(&java_classpath_entries);
+    pool_free(&source_symbol_cache);
+
+    if (java_member_cache) {
+        for (int i = 0; i < java_member_cache_count; i++) {
+            if (java_member_cache[i].class_name) free(java_member_cache[i].class_name);
+            pool_free(&java_member_cache[i].members);
+        }
+        free(java_member_cache);
+        java_member_cache = NULL;
+        java_member_cache_count = 0;
+        java_member_cache_capacity = 0;
+    }
+}
+
 void completion_update(const char *prefix, completion_context_t ctx)
 {
     if (!nanox_cfg.autocomplete) {

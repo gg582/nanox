@@ -10,6 +10,7 @@ typedef enum {
 typedef void (*scraper_symbol_cb)(const char *symbol, void *userdata);
 
 void scraper_init(void);
+void scraper_cleanup(void);
 int scraper_iterate_symbols(scraper_lang_t lang, const char *module,
                             scraper_symbol_cb cb, void *userdata);
 

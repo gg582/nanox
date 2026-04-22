@@ -22,19 +22,9 @@ static inline void mystrscpy(char *dst, const char *src, int size)
 /*
  * mystrnlen_raw_w()
  *
- * Return the display width of a Unicode character, with specific handling for
- * CJK characters which are generally 2 columns wide.
+ * Return the display width of a Unicode character.
  */
 static inline int mystrnlen_raw_w(unicode_t c) {
-    // CJK Unified Ideographs
-    if (c >= 0x4E00 && c <= 0x9FFF) return 2;
-    // Hangul Syllables
-    if (c >= 0xAC00 && c <= 0xD7AF) return 2;
-    // Hiragana
-    if (c >= 0x3040 && c <= 0x309F) return 2;
-    // Katakana
-    if (c >= 0x30A0 && c <= 0x30FF) return 2;
-    // Fallback to unicode_width for other characters
     return unicode_width(c);
 }
 

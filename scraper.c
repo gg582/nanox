@@ -435,6 +435,30 @@ void scraper_init(void)
     pthread_mutex_unlock(&scraper_mutex);
 }
 
+void scraper_cleanup(void)
+{
+    pthread_mutex_lock(&scraper_mutex);
+    for (int l = 0; l < SCRAPER_LANG_COUNT; l++) {
+        runtime_cache_t *cache = &caches[l];
+        if (cache->entries) {
+            for (int i = 0; i < cache->count; i++) {
+                free_entry(cache->entries[i]);
+            }
+            free(cache->entries);
+            cache->entries = NULL;
+        }
+        cache->count = 0;
+        cache->capacity = 0;
+    }
+    if (job_queue) {
+        free(job_queue);
+        job_queue = NULL;
+    }
+    job_count = 0;
+    job_capacity = 0;
+    pthread_mutex_unlock(&scraper_mutex);
+}
+
 int scraper_iterate_symbols(scraper_lang_t lang, const char *module,
                             scraper_symbol_cb cb, void *userdata)
 {
