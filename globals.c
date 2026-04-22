@@ -75,8 +75,9 @@ int scrollcount = 1;            /* number of lines to scroll */
 
 /* uninitialized global definitions */
 
-int currow;         /* Cursor row                   */
-int curcol;         /* Cursor column                */
+#include <stdatomic.h>
+
+_Atomic struct c_pair cursor;    /* Cursor position (x, y)       */
 int thisflag;           /* Flags, this command          */
 int lastflag;           /* Flags, last command          */
 int curgoal;            /* Goal for C-P, C-N            */

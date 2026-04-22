@@ -56,8 +56,9 @@ void tcapclose(void);
 
 /* uninitialized global definitions */
 
-int currow;            /* Cursor row                    */
-int curcol;            /* Cursor column                 */
+_Atomic struct c_pair cursor;    /* Cursor position (x, y)       */
+#define curcol (cursor.x)
+#define currow (cursor.y)
 int thisflag;            /* Flags, this command          */
 int lastflag;            /* Flags, last command          */
 int curgoal;            /* Goal for C-P, C-N            */
@@ -162,8 +163,15 @@ extern int scrollcount;        /* number of lines to scroll    */
 
 /* uninitialized global external declarations */
 
-extern int currow;        /* Cursor row                    */
-extern int curcol;        /* Cursor column                 */
+#include <stdatomic.h>
+
+extern _Atomic struct c_pair cursor; /* Cursor position (x, y)       */
+#ifndef curcol
+#define curcol (cursor.x)
+#endif
+#ifndef currow
+#define currow (cursor.y)
+#endif
 extern int thisflag;        /* Flags, this command          */
 extern int lastflag;        /* Flags, last command          */
 extern int curgoal;        /* Goal for C-P, C-N            */

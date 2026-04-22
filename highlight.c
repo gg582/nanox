@@ -1,7 +1,3 @@
-#include "highlight.h"
-#include "colorscheme.h"
-#include "platform.h"
-#include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +5,14 @@
 #include <strings.h>
 #include <limits.h>
 #include <regex.h>
+
+#include "estruct.h"
+#include "edef.h"
+#include "line.h"
+#include "highlight.h"
+#include "colorscheme.h"
+#include "platform.h"
+#include "util.h"
 
 #ifdef USE_WINDOWS
 #include <windows.h>
@@ -592,6 +596,86 @@ bool highlight_is_enabled(void)
     return initialized && global_config.enable_colorscheme;
 }
 
+static HighlightProfile dynamic_profile;
+static bool dynamic_profile_active = false;
+
+typedef struct {
+    char word[MAX_TOKEN_LEN];
+    int count;
+} WordFreq;
+
+static int word_freq_compare(const void *a, const void *b)
+{
+    return ((WordFreq *)b)->count - ((WordFreq *)a)->count;
+}
+
+static void extract_dynamic_profile(struct buffer *bp)
+{
+    if (!bp) return;
+    
+    profile_init(&dynamic_profile, "dynamic");
+    WordFreq *freqs = calloc(MAX_TOKENS * 8, sizeof(WordFreq));
+    int word_count = 0;
+    
+    struct line *lp = lforw(bp->b_linep);
+    while (lp != bp->b_linep) {
+        int i = 0;
+        int len = llength(lp);
+        while (i < len) {
+            if (isalnum((unsigned char)lp->text[i]) || lp->text[i] == '_') {
+                int start = i;
+                while (i < len && (isalnum((unsigned char)lp->text[i]) || lp->text[i] == '_'))
+                    i++;
+                
+                int word_len = i - start;
+                if (word_len >= 3 && word_len < MAX_TOKEN_LEN) {
+                    char tmp[MAX_TOKEN_LEN];
+                    memcpy(tmp, &lp->text[start], word_len);
+                    tmp[word_len] = '\0';
+                    
+                    int found = -1;
+                    for (int j = 0; j < word_count; j++) {
+                        if (strcmp(freqs[j].word, tmp) == 0) {
+                            found = j;
+                            break;
+                        }
+                    }
+                    if (found >= 0) {
+                        freqs[found].count++;
+                    } else if (word_count < MAX_TOKENS * 8) {
+                        strcpy(freqs[word_count].word, tmp);
+                        freqs[word_count].count = 1;
+                        word_count++;
+                    }
+                }
+            } else {
+                i++;
+            }
+        }
+        lp = lforw(lp);
+    }
+    
+    if (word_count > 0) {
+        qsort(freqs, word_count, sizeof(WordFreq), word_freq_compare);
+        
+        /* Frequent words -> mild highlighting (KeyWords) */
+        /* We take top 10% or at most 50 words */
+        int top_limit = word_count / 10;
+        if (top_limit > 50) top_limit = 50;
+        if (top_limit < 5 && word_count > 5) top_limit = 5;
+        
+        dynamic_profile.keyword_count = 0;
+        for (int i = 0; i < top_limit && i < word_count; i++) {
+            if (freqs[i].count > 1) { /* Only if repeated */
+                strcpy(dynamic_profile.keywords[dynamic_profile.keyword_count++], freqs[i].word);
+            }
+        }
+    }
+    
+    free(freqs);
+    dynamic_profile_active = true;
+}
+
 const HighlightProfile *highlight_get_profile(const char *filename)
 {
     if (!filename || !*filename)
@@ -616,15 +700,25 @@ const HighlightProfile *highlight_get_profile(const char *filename)
             return &profiles[i];
     }
 
-    if (!ext)
-        return NULL;
-
-    for (int i = 0; i < profile_count; i++) {
-        for (int j = 0; j < profiles[i].ext_count; j++) {
-            if (strcasecmp(ext, profiles[i].extensions[j]) == 0)
-                return &profiles[i];
+    if (ext) {
+        for (int i = 0; i < profile_count; i++) {
+            for (int j = 0; j < profiles[i].ext_count; j++) {
+                if (strcasecmp(ext, profiles[i].extensions[j]) == 0)
+                    return &profiles[i];
+            }
         }
     }
+    
+    /* No profile found, use dynamic profiling */
+    if (curbp) {
+        static struct buffer *last_bp = NULL;
+        if (curbp != last_bp) {
+            extract_dynamic_profile(curbp);
+            last_bp = curbp;
+        }
+        return &dynamic_profile;
+    }
+    
     return NULL;
 }
 

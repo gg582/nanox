@@ -29,6 +29,14 @@ int is_markdown_file(void) {
     return FALSE;
 }
 
+int is_yaml_file(void) {
+    if (!curbp->b_fname[0]) return FALSE;
+    char *ext = strrchr(curbp->b_fname, '.');
+    if (ext && (strcasecmp(ext, ".yaml") == 0 || strcasecmp(ext, ".yml") == 0))
+        return TRUE;
+    return FALSE;
+}
+
 int is_markup_file(void) {
     if (!curbp->b_fname[0]) return FALSE;
     char *ext = strrchr(curbp->b_fname, '.');
@@ -924,7 +932,7 @@ int openline(int f, int n)
     return s;
 }
 
-static int handle_markdown_list(void) {
+static int handle_list_auto(void) {
     struct line *lp = curwp->w_dotp;
     int len = llength(lp);
     int i = 0;
@@ -940,7 +948,7 @@ static int handle_markdown_list(void) {
             while (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) i++;
             int marker_end = i;
             
-            /* If the rest of the line is empty, "stop" the list */
+            /* If the rest of the line is empty (only marker + optional space), "stop" the list */
             if (i == len) {
                 curwp->w_doto = marker_start;
                 ldelete((long)(len - marker_start), FALSE);
@@ -953,38 +961,45 @@ static int handle_markdown_list(void) {
                 linsert(1, lp->text[k]);
             }
             return TRUE;
+        } else if (i == len) {
+            /* Case where user typed just '-' then enter */
+            curwp->w_doto = marker_start;
+            ldelete((long)(len - marker_start), FALSE);
+            return lnewline();
         }
     }
     
-    /* Check for ordered list markers: 1. , 2) , etc. */
-    i = marker_start;
-    if (i < len && isdigit(lp->text[i])) {
-        int num = 0;
-        while (i < len && isdigit(lp->text[i])) {
-            num = num * 10 + (lp->text[i] - '0');
-            i++;
-        }
-        if (i < len && (lp->text[i] == '.' || lp->text[i] == ')')) {
-            char separator = lp->text[i];
-            i++;
-            if (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) {
-                while (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) i++;
-                int marker_end = i;
-                
-                if (i == len) {
-                    curwp->w_doto = marker_start;
-                    ldelete((long)(len - marker_start), FALSE);
-                    return lnewline();
+    /* Check for ordered list markers: 1. , 2) , etc. (Only for Markdown) */
+    if (is_markdown_file()) {
+        i = marker_start;
+        if (i < len && isdigit(lp->text[i])) {
+            int num = 0;
+            while (i < len && isdigit(lp->text[i])) {
+                num = num * 10 + (lp->text[i] - '0');
+                i++;
+            }
+            if (i < len && (lp->text[i] == '.' || lp->text[i] == ')')) {
+                char separator = lp->text[i];
+                i++;
+                if (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) {
+                    while (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t')) i++;
+                    int marker_end = i;
+                    
+                    if (i == len) {
+                        curwp->w_doto = marker_start;
+                        ldelete((long)(len - marker_start), FALSE);
+                        return lnewline();
+                    }
+                    
+                    if (lnewline() == FALSE) return FALSE;
+                    /* Insert indentation */
+                    for (int k = 0; k < indent_len; k++) linsert(1, lp->text[k]);
+                    /* Insert incremented number */
+                    char num_buf[32];
+                    snprintf(num_buf, sizeof(num_buf), "%d%c ", num + 1, separator);
+                    linstr(num_buf);
+                    return TRUE;
                 }
-                
-                if (lnewline() == FALSE) return FALSE;
-                /* Insert indentation */
-                for (int k = 0; k < indent_len; k++) linsert(1, lp->text[k]);
-                /* Insert incremented number */
-                char num_buf[32];
-                snprintf(num_buf, sizeof(num_buf), "%d%c ", num + 1, separator);
-                linstr(num_buf);
-                return TRUE;
             }
         }
     }
@@ -1005,10 +1020,10 @@ int insert_newline(int f, int n)
     if (n < 0)
         return FALSE;
 
-    /* Markdown/Markup auto-completion */
+    /* Markdown/YAML/Markup auto-completion */
     if (n == 1 && nanox_cfg.use_auto_doc_completion) {
-        if (is_markdown_file()) {
-            s = handle_markdown_list();
+        if (is_markdown_file() || is_yaml_file()) {
+            s = handle_list_auto();
             if (s != FAILED) return s;
         }
     }

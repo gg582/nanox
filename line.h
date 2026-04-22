@@ -2,6 +2,7 @@
 #define LINE_H_
 
 #include "utf8.h"
+#include <stdatomic.h>
 #include "highlight.h"
 
 /*
@@ -13,11 +14,10 @@
  * additions will include update hints, and a list of marks into the line.
  */
 struct line {
-    struct line *next;          /* Link to the next line        */
-    struct line *prev;          /* Link to the previous line    */
-    int size;                   /* Allocated size               */
-    int used;                   /* Used size                    */
-    int referenced_by;          /* Line index/ID that references this line */
+    _Atomic(struct line *) next;          /* Link to the next line        */
+    _Atomic(struct line *) prev;          /* Link to the previous line    */
+    _Atomic int size;                   /* Allocated size               */
+    _Atomic int used;                   /* Used size                    */
     HighlightState hl_start_state;
     HighlightState hl_end_state;
     char l_diag;                /* Diagnostic: 0=none, 1=warn, 2=error */

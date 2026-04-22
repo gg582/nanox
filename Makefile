@@ -32,12 +32,14 @@ LINK_NAME=nx
 SRC=	basic.c bind.c buffer.c colorscheme.c command_mode.c completion.c cutln.c display.c eval.c exec.c file.c \
 	fileio.c highlight.c input.c isearch.c line.c lock.c globals.c main.c \
 	names.c nanox.c paste_slot.c pklock.c platform.c posix.c random.c region.c search.c \
-	spawn.c tcap.c usage.c utf8.c version.c window.c word.c wrapper.c cscope.c term_wrapper.c
+	spawn.c tcap.c usage.c utf8.c version.c window.c word.c wrapper.c cscope.c term_wrapper.c \
+	render_plugin.c colors_engine.c
 
 OBJ=	basic.o bind.o buffer.o colorscheme.o command_mode.o completion.o cutln.o display.o eval.o exec.o file.o \
 	fileio.o highlight.o input.o isearch.o line.o lock.o globals.o main.o \
 	names.o nanox.o paste_slot.o pklock.o platform.o posix.o random.o region.o search.o \
-	spawn.o tcap.o usage.o utf8.o version.o window.o word.o wrapper.o cscope.o term_wrapper.o
+	spawn.o tcap.o usage.o utf8.o version.o window.o word.o wrapper.o cscope.o term_wrapper.o \
+	render_plugin.o colors_engine.o
 
 ifeq ($(USE_NCURSES),1)
 	SRC += ncurses.c

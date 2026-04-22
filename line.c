@@ -53,7 +53,6 @@ struct line *lalloc(int used)
     }
     lp->size = size;
     lp->used = used;
-    lp->referenced_by = -1;
     lp->hl_start_state = (HighlightState){0};
     lp->hl_end_state = (HighlightState){0};
     lp->l_diag = 0;
@@ -398,6 +397,8 @@ int lnewline(void)
 	struct line *lp2;
 	struct line *lp3;
 	int doto;
+
+	if (curbp) curbp->b_version++;
 	struct window *wp;
 
 	if (curbp->b_mode & MDVIEW)		/* don't allow this command if      */
@@ -697,6 +698,8 @@ int ldelnewline(void)
     struct line *lp2;
     struct line *lp3;
     struct window *wp;
+
+    if (curbp) curbp->b_version++;
 
     if (curbp->b_mode & MDVIEW)     /* don't allow this command if      */
         return rdonly();        /* we are in read only mode     */

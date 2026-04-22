@@ -283,6 +283,26 @@ static void execute_command(const char *input) {
         return;
     if (command_mode_handle_flip_command(buffer))
         return;
+
+    /* filename command */
+    if (strncasecmp(buffer, "filename", 8) == 0) {
+        char *args = buffer + 8;
+        while (*args && isspace((unsigned char)*args))
+            args++;
+        if (strcasecmp(args, "realpath") == 0) {
+            char full_path[PATH_MAX];
+            if (realpath(curbp->b_fname, full_path)) {
+                mlwrite("File: %s", full_path);
+            } else {
+                mlwrite("File: %s (could not resolve realpath)", curbp->b_fname);
+            }
+        } else if (*args == '\0') {
+            mlwrite("File: %s", curbp->b_fname[0] ? curbp->b_fname : "[No Name]");
+        } else {
+            mlwrite("Usage: filename [realpath]");
+        }
+        return;
+    }
     
     /* Check if it's a number (goto line) */
     int is_number = 1;
@@ -296,6 +316,13 @@ static void execute_command(const char *input) {
     if (is_number) {
         int line_num = atoi(buffer);
         execute_goto_line(line_num);
+    }
+    /* Check for colors command */
+    else if (strncasecmp(buffer, "colors", 6) == 0 && (buffer[6] == ' ' || buffer[6] == '\0')) {
+        const char *args = buffer + 6;
+        while (*args && isspace((unsigned char)*args)) args++;
+        extern int command_mode_handle_colors_command(const char *input);
+        command_mode_handle_colors_command(args);
     }
     /* Check for Help command (case insensitive) */
     else if (strcasecmp(buffer, "help") == 0 || strcasecmp(buffer, "h") == 0) {

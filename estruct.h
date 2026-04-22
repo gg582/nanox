@@ -154,6 +154,12 @@ extern int tab_width;                       /* Defined in globals.c / edef.h */
 #define islower(c)  isxlower((0xFF & (c)))
 #define isupper(c)  isxupper((0xFF & (c)))
 
+#ifdef  isxlower
+#undef  isxlower
+#endif
+#ifdef  isxupper
+#undef  isxupper
+#endif
 #define isxletter(c)    (('a' <= c && 'z' >= c) || ('A' <= c && 'Z' >= c))
 #define isxlower(c) (('a' <= c && 'z' >= c))
 #define isxupper(c) (('A' <= c && 'Z' >= c))
@@ -210,6 +216,10 @@ struct buffer {
     char b_bname[NBUFN];            /* Buffer name                  */
     int b_tabsize;                  /* Tab size (0: use real tabs)  */
     struct line *b_hl_dirty_line;   /* First line needing HL propagation */
+    int b_version;                  /* Incremented on line insert/delete */
+    int b_line_cache_version;
+    int b_line_cache_no;
+    struct line *b_line_cache_ptr;
 };
 
 #define BFINVS  0x01                /* Internal invisable buffer    */
@@ -404,6 +414,12 @@ struct while_block {
 
 #define BIT(n)      (1 << (n))      /* An integer with one bit set. */
 #define CHCASE(c)   ((c) ^ DIFCASE)     /* Toggle the case of a letter. */
+
+/* Cursor pair structure for Unicode-aware positioning */
+struct c_pair {
+    int x; /* visual column */
+    int y; /* visual row */
+};
 
 /* HICHAR - 1 is the largest character we will deal with.
  * HIBYTE represents the number of bytes in the bitmap.
