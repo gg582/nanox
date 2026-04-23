@@ -77,7 +77,7 @@ Nanox now includes powerful tools for structured text and data manipulation:
 | **F5** | Search Forward | **F6** | Copy (S:End) |
 | **F7** | Cut (S:End) | **F8** | Yank (Paste) |
 | **F9-F12** | Jump to Slot | **Ctrl+F9-F12** | Set Slot |
-| **Ctrl+G** | Goto Line | **Ctrl+C** | Execute Command |
+| **Ctrl+G** | Goto Line | **Ctrl+V** | Execute Command |
 
 ---
 
