@@ -47,9 +47,15 @@ static int getgoal(struct line *dlp)
 /*
  * Move the cursor to the beginning of the current line.
  */
+#include "cursor.h"
+
 int gotobol(int f, int n)
 {
-    curwp->w_doto = 0;
+    struct cursor c;
+    cursor_init(&c, curwp->w_dotp, curwp->w_doto);
+    cursor_gotobol(&c);
+    curwp->w_dotp = c.linep;
+    curwp->w_doto = c.offset;
     return TRUE;
 }
 
@@ -61,28 +67,14 @@ int gotobol(int f, int n)
  */
 int backchar(int f, int n)
 {
-	struct line *lp;
-
-	if (n < 0)
-		return forwchar(f, -n);
-	while (n--) {
-		if (curwp->w_doto == 0) {
-			if ((lp = lback(curwp->w_dotp)) == curbp->b_linep)
-				return FALSE;
-			curwp->w_dotp = lp;
-			curwp->w_doto = llength(lp);
-			curwp->w_flag |= WFMOVE;
-		} else {
-			unsigned char c;
-			do {
-				curwp->w_doto--;
-				c = lgetc(curwp->w_dotp, curwp->w_doto);
-				if (is_beginning_utf8(c))
-					break;
-			} while (curwp->w_doto);
-		}
-	}
-	return TRUE;
+    struct cursor c;
+    cursor_init(&c, curwp->w_dotp, curwp->w_doto);
+    int res = cursor_backchar(&c, n, curbp->b_linep);
+    if (c.linep != curwp->w_dotp)
+        curwp->w_flag |= WFMOVE;
+    curwp->w_dotp = c.linep;
+    curwp->w_doto = c.offset;
+    return res;
 }
 
 /*
@@ -90,7 +82,11 @@ int backchar(int f, int n)
  */
 int gotoeol(int f, int n)
 {
-    curwp->w_doto = llength(curwp->w_dotp);
+    struct cursor c;
+    cursor_init(&c, curwp->w_dotp, curwp->w_doto);
+    cursor_gotoeol(&c);
+    curwp->w_dotp = c.linep;
+    curwp->w_doto = c.offset;
     return TRUE;
 }
 
@@ -102,28 +98,15 @@ int gotoeol(int f, int n)
  */
 int forwchar(int f, int n)
 {
-    if (n < 0)
-        return backchar(f, -n);
-    while (n--) {
-        int len = llength(curwp->w_dotp);
-        if (curwp->w_doto == len) {
-            if (curwp->w_dotp == curbp->b_linep)
-                return FALSE;
-            curwp->w_dotp = lforw(curwp->w_dotp);
-            curwp->w_doto = 0;
-            curwp->w_flag |= WFMOVE;
-        } else {
-            unicode_t c;
-            int bytes = utf8_to_unicode(curwp->w_dotp->text, curwp->w_doto, len, &c);
-            curwp->w_doto += bytes;
-            if (curwp->w_doto > len) {
-                curwp->w_doto = len;
-            }
-        }
-    }
-    return TRUE;
+    struct cursor c;
+    cursor_init(&c, curwp->w_dotp, curwp->w_doto);
+    int res = cursor_forwchar(&c, n, curbp->b_linep);
+    if (c.linep != curwp->w_dotp)
+        curwp->w_flag |= WFMOVE;
+    curwp->w_dotp = c.linep;
+    curwp->w_doto = c.offset;
+    return res;
 }
-
 /*
  * Move to a particular line.
  *

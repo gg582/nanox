@@ -572,7 +572,7 @@ int execute(int c, int f, int n)
            delete a char forword                        */
         if (curwp->w_bufp->b_mode & MDOVER &&
             curwp->w_doto < curwp->w_dotp->used &&
-            (lgetc(curwp->w_dotp, curwp->w_doto) != '\t' || ((curwp->w_doto) & tab_width) == tab_width))
+            (lgetc(curwp->w_dotp, curwp->w_doto) != '\t' || (getccol(FALSE) & tab_width) == tab_width))
             ldelchar(1, FALSE);
 
         /* do the appropriate insertion */

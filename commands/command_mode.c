@@ -14,6 +14,7 @@
 #include "utf8.h"
 #include "util.h"
 #include "colorscheme.h"
+#include "raw_sig.h"
 
 #define CMD_BUF_SIZE 256
 #define REPLACE_PREVIEW 48
@@ -283,6 +284,18 @@ static void execute_command(const char *input) {
         return;
     if (command_mode_handle_flip_command(buffer))
         return;
+
+    /* file command */
+    if (strncasecmp(buffer, "file", 4) == 0 && (buffer[4] == ' ' || buffer[4] == '\0')) {
+        const char *args = buffer + 4;
+        while (*args && isspace((unsigned char)*args)) args++;
+        if (strncasecmp(args, "raw-sig", 7) == 0 && (args[7] == ' ' || args[7] == '\0')) {
+            const char *sig_args = args + 7;
+            while (*sig_args && isspace((unsigned char)*sig_args)) sig_args++;
+            command_mode_handle_raw_sig(sig_args);
+            return;
+        }
+    }
 
     /* filename command */
     if (strncasecmp(buffer, "filename", 8) == 0) {

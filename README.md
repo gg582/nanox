@@ -56,6 +56,16 @@ Designed for human hands and explicit intent.
 * **Nano-Style UI:** Familiar hint bars at the bottom mean you never have to memorize obscure chord combinations to get started.
 * **Smart Horizontal Scrolling:** The view automatically and intelligently scrolls to keep the cursor visible on long lines, correctly handling CJK characters and emoji widths.
 
+### 🚀 Advanced Editing Capabilities
+Nanox now includes powerful tools for structured text and data manipulation:
+* **Visual Block (Viblock) Mode:** Perform rectangular editing and replacements (`viblock-edit`, `viblock-replace`). Swap non-overlapping line ranges instantly with `viblock-flip`.
+* **Smart Numbering:** Automatically rewrite or reverse list numbering (1., 2., 3...) while preserving suffixes and indentation using `viblock-set-nr`.
+* **Sed-style Replace (^R):** Execute powerful regex replacements using the standard `s/pattern/replacement/flags` syntax.
+* **Built-in Lint & Tidy:** Automatically fix indentation across the entire buffer using a heuristic-based step detector via the `lint` command in Command Mode (^V).
+* **Integrated Color Engine:** Transform color codes (`#hex`, `rgb`) in real-time. Adjust hue/contrast, invert colors, or simulate colorblindness directly within the editor using the `colors` command.
+* **Raw Binary Inspection:** Analyze files at the byte or bit level with `file raw-sig`. Supports offset seeking, endianness switching, and bit-alignment visualization.
+* **Massive File Queuing:** The slot system can expand up to 64 concurrent file slots, allowing you to queue dozens of files and cycle through them seamlessly.
+
 ---
 
 ## ⌨️ Quick Shortcuts

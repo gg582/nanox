@@ -1,305 +1,109 @@
-# makefile for emacs, updated Sun Apr 28 17:59:07 EET DST 1996
-#
-# Notes
-# - Keep the auto-generated file lists (SRC/OBJ/HDR) intact. `make source` rewrites them.
-# - Installation is split:
-#   - `make install` installs the program binary only (may require privileges depending on PREFIX).
-#   - `make configs-install` installs user configuration files to the user's config directory.
-#   - `make install-all` runs both in a predictable order.
-# - Do not hard-code privilege escalation in Makefile targets. Use `sudo make install`
-#   when installing into system directories (e.g. /usr/local).
+# Modern Makefile for nanox
 
-# Make the build silent by default
-V =
+PROGRAM = nanox
+LINK_NAME = nx
 
-ifeq ($(strip $(V)),)
-	E = @echo
-	Q = @
-else
-	E = @\#
-	Q =
-endif
-export E Q
+# Build directory
+BUILD_DIR = build
+
+# Modules
+MODULES = core commands io platform utils features tui
+
+# Compiler and flags
+CC ?= gcc
+CFLAGS = -std=c2x -Ofast -g \
+         -Wall -Wextra -Wshadow -Wformat=2 -Wundef -Wconversion \
+         -fstack-protector-strong -fno-common \
+         -Iinclude \
+         $(foreach mod,$(MODULES),-I$(mod)) \
+         -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=700 -DPOSIX -D_GNU_SOURCE
 
 # Feature Flags
 USE_NCURSES ?= 1
-
-uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
-
-PROGRAM=nanox
-LINK_NAME=nx
-
-SRC=	basic.c bind.c buffer.c colorscheme.c command_mode.c completion.c cutln.c display.c eval.c exec.c file.c \
-	fileio.c highlight.c input.c isearch.c line.c lock.c globals.c main.c \
-	names.c nanox.c paste_slot.c pklock.c platform.c posix.c random.c region.c search.c \
-	spawn.c tcap.c usage.c utf8.c version.c window.c word.c wrapper.c cscope.c term_wrapper.c \
-	render_plugin.c colors_engine.c
-
-OBJ=	basic.o bind.o buffer.o colorscheme.o command_mode.o completion.o cutln.o display.o eval.o exec.o file.o \
-	fileio.o highlight.o input.o isearch.o line.o lock.o globals.o main.o \
-	names.o nanox.o paste_slot.o pklock.o platform.o posix.o random.o region.o search.o \
-	spawn.o tcap.o usage.o utf8.o version.o window.o word.o wrapper.o cscope.o term_wrapper.o \
-	render_plugin.o colors_engine.o
-
 ifeq ($(USE_NCURSES),1)
-	SRC += ncurses.c
-	OBJ += ncurses.o
-	DEFINES += -DUSE_NCURSES
+    CFLAGS += -DUSE_NCURSES
 endif
 
-HDR=	command_mode.h completion.h ebind.h edef.h efunc.h epath.h estruct.h evar.h line.h paste_slot.h usage.h \
-	utf8.h util.h version.h wrapper.h nanox.h
+# Libraries discovery
+LIBS = ncursesw pcre2-8 pthread
+LDLIBS = $(shell pkg-config --libs $(LIBS) 2>/dev/null || echo -lncursesw -lpcre2-8 -lpthread)
 
-# DO NOT ADD OR MODIFY ANY LINES ABOVE THIS -- make source creates them
-
-SRC += scraper.c
-OBJ += scraper.o
-HDR += scraper.h
-
-CC?=gcc
-WARNINGS=-Wall -Wstrict-prototypes -Wuninitialized
-
-# Extra warnings for static analysis (no debug/sanitizer, keeps binary small)
-EXTRA_WARNINGS = -Wextra -Wpedantic -Wshadow -Wformat=2 -Wcast-qual -Wcast-align \
-	             -Wwrite-strings -Wconversion -Wsign-conversion -Wundef -Wvla \
-	             -Wpointer-arith -Wbad-function-cast -Wmissing-prototypes \
-	             -Wstrict-prototypes -Wold-style-definition
-
-# Treat warnings as errors
-WERROR ?= 0
-ifeq ($(WERROR),1)
-	EXTRA_WARNINGS += -Werror
-endif
-
-DEFINES += -DPOSIX -D_GNU_SOURCE
-
-CFLAGS = -std=c2x -Ofast \
-              -Wno-error=deprecated-declarations -DSSH_CHATTER_USE_GC=$(ENABLE_GC) \
-              -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=700 \
-              -Wall -Wextra -Wshadow -Wformat=2 -Wundef -Wconversion -Wdouble-promotion \
-              -fstack-protector-strong -fno-common \
-              -fPIC -ftls-model=global-dynamic \
-              -g \
-              -D_FORTIFY_SOURCE=3 \
-              -march=native -mtune=native \
-              -fomit-frame-pointer \
-              -fno-signed-zeros \
-              -funroll-loops \
-              -falign-functions=32 -falign-loops=32 -falign-jumps=32 -falign-labels=32 \
-              -ftree-vectorize \
-              -fno-math-errno -freciprocal-math \
-              -fmerge-all-constants -fipa-pta -fdevirtualize-at-ltrans \
-              -fpeel-loops -fweb \
-              -fdata-sections -ffunction-sections \
-              -fno-asynchronous-unwind-tables \
-              -fstrict-aliasing -fno-trapping-math -fstrict-overflow \
-              -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free \
-              -fipa-pure-const -fipa-cp-clone \
-              -fno-semantic-interposition \
-              -fprefetch-loop-arrays \
-              -fivopts \
-              -faggressive-loop-optimizations \
-              -fipa-sra \
-              -fmodulo-sched -fmodulo-sched-allow-regmoves \
-              -ftracer \
-              -fvisibility=hidden \
-              -fno-plt \
-              -funsafe-math-optimizations \
-              -ftree-loop-vectorize -ftree-slp-vectorize \
-              -fno-exceptions \
-              -fdelete-null-pointer-checks \
-              -MMD -MP
-CFLAGS += -I.
-LDFLAGS = \
-		-flto=auto -fuse-linker-plugin \
-    -Wl,-Ofast \
-    -Wl,--hash-style=gnu \
-    -Wl,--sort-common \
-    -Wl,-z,relro \
-    -Wl,-z,now \
-    -Wl,-Bsymbolic \
-    -Wl,--gc-sections \
-    -Wl,--as-needed \
-    -Wl,--strip-all \
-    -Wl,--relax \
-    -Wl,--no-undefined \
-    -Wl,--warn-execstack -Wl,-z,noexecstack \
-    -Wl,-z,separate-code \
-    -Wl,-z,stack-size=786432 \
-    -Wl,-z,combreloc \
-    -Wl,--build-id=none
-
-LIBS=
-ifeq ($(USE_NCURSES),1)
-	LIBS += ncursesw
-endif
-
-BINDIR=$(HOME)/bin
-LIBDIR=$(HOME)/lib
-
-CFLAGS += $(shell pkg-config --cflags $(LIBS) 2>/dev/null)
-LDLIBS += $(shell pkg-config --libs $(LIBS) 2>/dev/null)
-PCRE2_LIB := $(shell if [ -f /usr/lib/x86_64-linux-gnu/libpcre2-8.so.0 ]; then echo /usr/lib/x86_64-linux-gnu/libpcre2-8.so.0; elif [ -f /lib/x86_64-linux-gnu/libpcre2-8.so.0 ]; then echo /lib/x86_64-linux-gnu/libpcre2-8.so.0; else echo -lpcre2-8; fi)
-LDLIBS += $(PCRE2_LIB)
-LDLIBS += -lpthread
-
+# Hunspell support
 HUNSPELL_CFLAGS := $(shell pkg-config --cflags hunspell 2>/dev/null)
 HUNSPELL_LIBS := $(shell pkg-config --libs hunspell 2>/dev/null)
 ifneq ($(strip $(HUNSPELL_LIBS)),)
-	DEFINES += -DHAVE_HUNSPELL
-	CFLAGS += $(HUNSPELL_CFLAGS)
-	LDLIBS += $(HUNSPELL_LIBS)
+    CFLAGS += -DHAVE_HUNSPELL $(HUNSPELL_CFLAGS)
+    LDLIBS += $(HUNSPELL_LIBS)
 endif
+
+# Linker flags
+LDFLAGS = -flto=auto -fuse-linker-plugin -Wl,--gc-sections
+
+# Source discovery
+# We explicitly list some to maintain control, or use wildcard and filter
+SRC = $(foreach mod,$(MODULES),$(wildcard $(mod)/*.c))
+
+# If not using ncurses, exclude ncurses.c
+ifneq ($(USE_NCURSES),1)
+    SRC := $(filter-out tui/ncurses.c,$(SRC))
+endif
+
+# Always exclude orig_display.c
+SRC := $(filter-out tui/orig_display.c,$(SRC))
+
+OBJ = $(SRC:%.c=$(BUILD_DIR)/%.o)
+DEP = $(OBJ:.o=.d)
+
+# Silent build
+V ?= 0
+ifeq ($(V),0)
+    E = @echo
+    Q = @
+else
+    E = @#
+    Q =
+endif
+
+.PHONY: all clean install configs-install install-all
+
+all: $(PROGRAM)
 
 $(PROGRAM): $(OBJ)
 	$(E) "  LINK    " $@
-	$(Q) $(CC) $(LDFLAGS) $(DEFINES) -o $@ $(OBJ) $(LDLIBS)
+	$(Q) $(CC) $(LDFLAGS) -o $@ $(OBJ) $(LDLIBS)
 
-.c.o:
-	$(E) "  CC      " $@
-	$(Q) ${CC} ${CFLAGS} -c $<
+$(BUILD_DIR)/%.o: %.c
+	$(E) "  CC      " $<
+	$(Q) mkdir -p $(dir $@)
+	$(Q) $(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+
+-include $(DEP)
 
 clean:
 	$(E) "  CLEAN"
-	$(Q) rm -f $(PROGRAM) core lintout makeout tags makefile.bak *.o
+	$(Q) rm -rf $(BUILD_DIR) $(PROGRAM)
 
-# -----------------------------------------------------------------------------
-# Install configuration
-#
-# PREFIX:
-#   - Default install prefix for the program binary.
-#   - Typical system install uses PREFIX=/usr/local with `sudo make install`.
-#   - For per-user install, use PREFIX=$(HOME)/.local.
-#
-# Config installation:
-#   - User configuration belongs in XDG_CONFIG_HOME when available.
-#   - Default fallback is $(HOME)/.config.
-#   - Config installation is separated into `configs-install`.
-# -----------------------------------------------------------------------------
-
+# Installation
 PREFIX ?= /usr/local
 DESTDIR ?=
-
-# Default install path for the executable.
 INSTALL_BIN = $(DESTDIR)$(PREFIX)/bin
-
-# User config directory (XDG base directory spec fallback).
 XDG_CONFIG_HOME ?= $(HOME)/.config
 INSTALL_CONF = $(DESTDIR)$(XDG_CONFIG_HOME)/nanox
-
-PROG_EXT =
-
-# Adjust for Windows (MinGW/MSYS/Cygwin).
-ifneq (,$(findstring MINGW,$(uname_S)))
-	PROG_EXT = .exe
-	# Avoid system prefixes by default on MSYS/MinGW unless PREFIX is explicitly set.
-	ifeq ($(PREFIX),/usr/local)
-		INSTALL_BIN = $(DESTDIR)$(HOME)/bin
-	endif
-endif
-ifneq (,$(findstring CYGWIN,$(uname_S)))
-	PROG_EXT = .exe
-endif
-
-# -----------------------------------------------------------------------------
-# Install targets
-#
-# - `install` installs only the binary to $(INSTALL_BIN).
-# - `configs-install` installs configs/nanox/* into $(INSTALL_CONF).
-# - `install-all` runs all install targets.
-# -----------------------------------------------------------------------------
 
 install: $(PROGRAM)
 	$(E) "  INSTALL " $(PROGRAM) " -> " $(INSTALL_BIN)
 	$(Q) install -d "$(INSTALL_BIN)"
-	$(Q) install -m 755 "$(PROGRAM)$(PROG_EXT)" "$(INSTALL_BIN)/$(PROGRAM)$(PROG_EXT)"
+	$(Q) install -m 755 "$(PROGRAM)" "$(INSTALL_BIN)/$(PROGRAM)"
 	$(E) "  LINK    " "$(LINK_NAME) -> $(PROGRAM)"
-	$(Q) ln -f "$(INSTALL_BIN)/$(PROGRAM)$(PROG_EXT)" "$(INSTALL_BIN)/$(LINK_NAME)$(PROG_EXT)"
+	$(Q) ln -sf "$(PROGRAM)" "$(INSTALL_BIN)/$(LINK_NAME)"
 
 configs-install:
 	$(E) "  CONFIG  " "configs/nanox -> " $(INSTALL_CONF)
 	$(Q) install -d "$(INSTALL_CONF)"
-	$(Q) find configs/nanox -type f -not -name '.editorconfig' | while read f; do \
-		rel=$${f#configs/nanox/}; \
-		dir=$(INSTALL_CONF)/$$(dirname $$rel); \
-		install -d "$$dir"; \
-		if [ -f "$(INSTALL_CONF)/$$rel" ]; then \
-			cp "$(INSTALL_CONF)/$$rel" "$(INSTALL_CONF)/$$rel.bak"; \
-		fi; \
-		cp "$$f" "$(INSTALL_CONF)/$$rel"; \
-	done
-	$(E) "  HELP    " "emacs*.hlp -> " $(INSTALL_CONF)
-	$(Q) for hlp in emacs*.hlp; do \
-		[ -f "$$hlp" ] || continue; \
-		dest="$(INSTALL_CONF)/$$hlp"; \
-		if [ -f "$$dest" ]; then \
-			cp "$$dest" "$$dest.bak"; \
-		fi; \
-		cp "$$hlp" "$$dest"; \
-	done
-
-backups-clean:
-	$(E) "  CLEAN BACKUPS"
-	$(Q) find "$(INSTALL_CONF)" -name "*.bak" -delete
+	$(Q) cp -r configs/nanox/* "$(INSTALL_CONF)/"
+	$(E) "  HELP    " "assets/emacs*.hlp -> " $(INSTALL_CONF)
+	$(Q) cp assets/emacs*.hlp "$(INSTALL_CONF)/" 2>/dev/null || true
+	$(E) "  RC      " "assets/emacs.rc -> " $(INSTALL_CONF)
+	$(Q) cp assets/emacs.rc "$(INSTALL_CONF)/" 2>/dev/null || true
 
 install-all: install configs-install
-
-source:
-	@mv makefile makefile.bak
-	@echo "# makefile for emacs, updated `date`" >makefile
-	@echo '' >>makefile
-	@echo SRC=`ls *.c` >>makefile
-	@echo OBJ=`ls *.c | sed s/c$$/o/` >>makefile
-	@echo HDR=`ls *.h` >>makefile
-	@echo '' >>makefile
-	@sed -n -e '/^# DO NOT ADD OR MODIFY/,$$p' <makefile.bak >>makefile
-
-depend: ${SRC}
-	@for i in ${SRC}; do $(CC) ${DEFINES} -MM $$i; done >makedep
-	@echo '/^# DO NOT DELETE THIS LINE/+2,$$d' >eddep
-	@echo '$$r ./makedep' >>eddep
-	@echo 'w' >>eddep
-	@cp makefile makefile.bak
-	@ed - makefile <eddep
-	@rm eddep makedep
-	@echo '' >>makefile
-	@echo '# DEPENDENCIES MUST END AT END OF FILE' >>makefile
-	@echo '# IF YOU PUT STUFF HERE IT WILL GO AWAY' >>makefile
-	@echo '# see make depend above' >>makefile
-
-# DO NOT DELETE THIS LINE -- make depend uses it
-
-basic.o: basic.c estruct.h edef.h efunc.h line.h utf8.h
-bind.o: bind.c estruct.h edef.h efunc.h epath.h line.h utf8.h util.h
-buffer.o: buffer.c estruct.h edef.h efunc.h line.h utf8.h
-display.o: display.c estruct.h edef.h efunc.h line.h utf8.h version.h wrapper.h
-eval.o: eval.c estruct.h edef.h efunc.h evar.h line.h utf8.h util.h version.h
-exec.o: exec.c estruct.h edef.h efunc.h line.h utf8.h
-file.o: file.c estruct.h edef.h efunc.h line.h utf8.h util.h
-fileio.o: fileio.c estruct.h edef.h efunc.h
-input.o: input.c estruct.h edef.h efunc.h wrapper.h
-isearch.o: isearch.c estruct.h edef.h efunc.h line.h utf8.h
-line.o: line.c line.h utf8.h estruct.h edef.h efunc.h
-lock.o: lock.c estruct.h edef.h efunc.h
-main.o: main.c estruct.h edef.h efunc.h ebind.h line.h utf8.h version.h
-pklock.o: pklock.c estruct.h edef.h efunc.h
-posix.o: posix.c estruct.h edef.h efunc.h utf8.h
-random.o: random.c estruct.h edef.h efunc.h line.h utf8.h
-region.o: region.c estruct.h edef.h efunc.h line.h utf8.h
-search.o: search.c estruct.h edef.h efunc.h line.h utf8.h
-spawn.o: spawn.c estruct.h edef.h efunc.h
-tcap.o: tcap.c estruct.h edef.h efunc.h
-window.o: window.c estruct.h edef.h efunc.h line.h utf8.h wrapper.h
-word.o: word.c estruct.h edef.h efunc.h line.h utf8.h
-names.o: names.c estruct.h edef.h efunc.h line.h utf8.h
-globals.o: globals.c estruct.h edef.h
-version.o: version.c version.h
-usage.o: usage.c usage.h
-wrapper.o: wrapper.c usage.h
-utf8.o: utf8.c utf8.h
-nanox.o: nanox.c nanox.h estruct.h edef.h efunc.h line.h util.h version.h
-
-# DEPENDENCIES MUST END AT END OF FILE
-# IF YOU PUT STUFF HERE IT WILL GO AWAY
-# see make depend above
-cutln.o: cutln.c estruct.h edef.h efunc.h line.h paste_slot.h

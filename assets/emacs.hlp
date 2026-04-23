@@ -39,3 +39,22 @@ F9-F12 : File Slots     F8/^Y : Paste           ------------------
 * BS: Backspace (Cancels current range operation)
 * ^K: Kill current line. Prefix with ^U <n> (e.g., ^U 3 ^K) to kill multiple lines at once.
 * After each search match press Y to continue or Enter to open a fresh "Search:" prompt instantly.
+* file raw-sig <bytes|bits> <n> [offset <hex>] [endian be|le] [bits-nr <int>] [align <int>]
+  - bytes: displays <n> bytes in hex and ASCII.
+  - bits: displays <n> bits starting from bits-nr.
+  - offset: starts reading from the given byte offset.
+  - endian: specifies byte order (be for big-endian, le for little-endian).
+  - bits-nr: starting bit position for 'bits' type.
+  - align: for 'bytes' type, inserts a separator '|' every <align> bytes.
+* colors <ops>
+  - Applies color transformations to hex/rgb colors in the current line or selected region.
+  - Operations (separated by ;): adjust-hue <deg>, adjust-contrast <pct>, invert absolute,
+    invert relative, grayscale, colorblind <type> (r, g, b, whole), bit-depth 565.
+* filename [realpath]
+  - Displays the current buffer's filename. 'realpath' shows the absolute path.
+* ^R (Ctrl+R) / sed-replace
+  - Starts a sed-style replacement: s/pattern/replacement/flags (g: global, i: case-insensitive).
+* viblock-edit / viblock-replace
+  - Starts visual block mode for rectangular editing or replacement.
+* viblock-flip <range1> <range2>
+  - Swaps two non-overlapping line ranges (e.g., viblock-flip 1-5 10-15).

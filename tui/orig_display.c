@@ -1,0 +1,1767 @@
+/*  display.c
+ *
+ *      The functions in this file handle redisplay. There are two halves, the
+ *      ones that update the virtual display screen, and the ones that make the
+ *      physical display screen the same as the virtual display screen. These
+ *      functions use hints that are left in the windows by the commands.
+ *
+ *  Modified by Petri Kutvonen
+ */
+
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <string.h>
+#include <ctype.h>
+#include <unistd.h>
+
+#include "estruct.h"
+#include "edef.h"
+#include "efunc.h"
+#include "line.h"
+#include "version.h"
+#include "nanox.h"
+#include "wrapper.h"
+#include "utf8.h"
+#include "util.h"
+#include "highlight.h"
+#include "video.h"
+#include "render_plugin.h"
+
+extern struct terminal *term;
+
+struct video **vscreen;          /* Virtual screen. */
+
+void vtputc(int c);
+void vteeol(void);
+
+static int rendering_color_fg = -1;
+static int rendering_color_bg = -1;
+static bool rendering_color_bold = false;
+static bool rendering_color_underline = false;
+static bool rendering_color_italic = false;
+
+static int get_gutter_width(void)
+{
+    return !nanox_cfg.nonr ? 8 : 0;
+}
+
+static void gutter_plugin_fn(render_ctx_t *ctx) {
+    if (nanox_cfg.nonr) return;
+    int row = ctx->visual_row;
+    struct line *lp = ctx->lp;
+    int lnum = ctx->line_num;
+
+    char buf[10];
+    char indicator[3] = "  ";
+
+    if (lnum > 0) {
+        snprintf(buf, sizeof(buf), "%4d ", lnum);
+        if (lp && lp->l_diag == 1) {
+            indicator[0] = '?'; indicator[1] = '>';
+        } else if (lp && lp->l_diag == 2) {
+            indicator[0] = '!'; indicator[1] = '>';
+        }
+    } else {
+        snprintf(buf, sizeof(buf), "     ");
+    }
+
+    HighlightStyle num_style = colorscheme_get(HL_LINENUM);
+    HighlightStyle err_style = colorscheme_get(HL_LSP_ERROR);
+    HighlightStyle warn_style = colorscheme_get(HL_LSP_WARN);
+    
+    video_cell *vcp = vscreen[row]->v_text;
+    for (int i = 0; i < 5; i++) {
+        vcp[i].ch = buf[i];
+        vcp[i].fg = num_style.fg;
+        vcp[i].bg = num_style.bg;
+        vcp[i].bold = num_style.bold;
+        vcp[i].underline = num_style.underline;
+        vcp[i].italic = num_style.italic;
+    }
+
+    /* Indicators */
+    for (int i = 0; i < 2; i++) {
+        vcp[5+i].ch = indicator[i];
+        if (indicator[0] == '!') {
+            vcp[5+i].fg = err_style.fg;
+            vcp[5+i].bg = err_style.bg;
+            vcp[5+i].bold = err_style.bold;
+        } else if (indicator[0] == '?') {
+            vcp[5+i].fg = warn_style.fg;
+            vcp[5+i].bg = warn_style.bg;
+            vcp[5+i].bold = warn_style.bold;
+        } else {
+            vcp[5+i].fg = num_style.fg;
+            vcp[5+i].bg = num_style.bg;
+        }
+    }
+
+    vcp[7].ch = 0x2502; /* Unicode box-drawing vertical separator */
+    vcp[7].fg = num_style.fg;
+    vcp[7].bg = num_style.bg;
+}
+
+static void ghost_text_plugin_fn(render_ctx_t *ctx) {
+    if (ctx->wp != curwp || ctx->lp != curwp->w_dotp || !nanox_cfg.autocomplete)
+        return;
+
+    char prefix[MAX_COMPLETION_LEN];
+    struct line *lp = ctx->lp;
+    int offset = curwp->w_doto;
+    int i = offset;
+    while (i > 0 && isalnum((unsigned char)lp->text[i-1])) i--;
+    
+    if (i < offset) {
+        int plen = offset - i;
+        if (plen < (int)sizeof(prefix)) {
+            memcpy(prefix, lp->text + i, (size_t)plen);
+            prefix[plen] = '\0';
+            
+            extern const char *completion_get_best_hint(const char *prefix);
+            const char *hint = completion_get_best_hint(prefix);
+            if (hint && *hint) {
+                HighlightStyle ghost = colorscheme_get(HL_GHOST_TEXT);
+                rendering_color_fg = ghost.fg;
+                rendering_color_bg = ghost.bg;
+                rendering_color_bold = ghost.bold;
+                rendering_color_italic = ghost.italic;
+                rendering_color_underline = ghost.underline;
+                
+                while (*hint) {
+                    vtputc(*hint++);
+                }
+                
+                /* Reset to normal */
+                HighlightStyle normal = colorscheme_get(HL_NORMAL);
+                rendering_color_fg = normal.fg;
+                rendering_color_bg = normal.bg;
+                rendering_color_bold = normal.bold;
+                rendering_color_italic = normal.italic;
+                rendering_color_underline = normal.underline;
+            }
+        }
+    }
+}
+
+static void render_gutter(int row, int lnum, struct line *lp)
+{
+    render_ctx_t ctx = { NULL, lp, row, 0, 0, 0, HL_NORMAL, lnum };
+    render_plugin_execute(RENDER_HOOK_GUTTER, &ctx);
+}
+
+static int vt_margin_left = 0;
+static struct line *current_rendering_lp = NULL;
+
+static int displaying = TRUE;
+#include <signal.h>
+#include <sys/ioctl.h>
+/* for window size changes */
+int chg_width, chg_height;
+
+static int reframe(struct window *wp);
+static void updone(struct window *wp);
+static void updall(struct window *wp);
+static int updateline(int row, struct video *vp);
+static void modeline(struct window *wp);
+static void show_line_wrapped(struct window *wp, struct line *lp);
+
+
+static int get_char_width(unicode_t c, int col)
+{
+    if (c == '\t') {
+        int rel_col = col - vt_margin_left;
+        return (tab_width + 1) - ((rel_col + taboff) & tab_width);
+    }
+    if (c < 0x20 || c == 0x7f)
+        return 2;
+    return mystrnlen_raw_w(c);
+}
+
+static int get_line_height(struct line *lp)
+{
+    if (lp == curbp->b_linep)
+        return 0;
+
+    int len = llength(lp);
+    int col = 0;
+    int height = 1;
+    int i = 0;
+    while (i < len) {
+        unicode_t c;
+        int bytes = utf8_to_unicode((unsigned char *)lp->text, i, len, &c);
+        int w = get_char_width(c, col);
+        if (col + w > nanox_text_cols()) {
+            height++;
+            col = 4;
+            w = get_char_width(c, col);
+        }
+        col += w;
+        i += bytes;
+    }
+    return height;
+}
+
+void vtputc(int c);
+void vteeol(void);
+struct mlbuf {
+    char *buf;
+    size_t len;
+    size_t cap;
+};
+
+static void mlbuf_init(struct mlbuf *dest, char *storage, size_t size)
+{
+    dest->buf = storage;
+    dest->len = 0;
+    dest->cap = size;
+    if (size)
+        dest->buf[0] = 0;
+}
+
+static void mlbuf_putc(struct mlbuf *dest, int ch)
+{
+    if (dest->len + 1 >= dest->cap)
+        return;
+    dest->buf[dest->len++] = ch;
+    dest->buf[dest->len] = 0;
+}
+
+static void mlbuf_puts(struct mlbuf *dest, const char *text)
+{
+    while (text && *text)
+        mlbuf_putc(dest, *text++);
+}
+
+static void draw_hint_row(int row, const char *left, const char *status)
+{
+    int width = term->t_ncol;
+
+    if (width > MAXCOL)
+        width = MAXCOL;
+    if (width <= 0)
+        return;
+
+    vtmove(row, 0);
+    
+    // Draw left string and track display columns
+    int display_col = 0;
+    if (left && *left) {
+        int left_len = strlen(left);
+        int left_i = 0;
+        
+        while (left_i < left_len && display_col < width) {
+            unicode_t c;
+            int bytes = utf8_to_unicode((unsigned char *)left, left_i, left_len, &c);
+            if (bytes <= 0)
+                break;
+                        int char_width = mystrnlen_raw_w(c);
+                    
+                        if (display_col + char_width > width)
+                            break;
+                        
+                        vtputc(c);
+                        display_col += char_width;
+                        left_i += bytes;
+                    }
+                }
+                
+                // Calculate status display width
+                int status_width = 0;
+                if (status && *status) {
+                    status_width = utf8_display_width(status, strlen(status));
+                }
+                
+                // Fill middle with spaces to position status at the right
+                int status_start_col = width - status_width;
+                if (status_start_col < display_col)
+                    status_start_col = display_col;
+                
+                while (display_col < status_start_col) {
+                    vtputc(' ');
+                    display_col++;
+                }
+                
+                // Draw status string
+                if (status && *status && display_col < width) {
+                    int status_len = strlen(status);
+                    int status_i = 0;
+                    
+                    while (status_i < status_len && display_col < width) {
+                        unicode_t c;
+                        int bytes = utf8_to_unicode((unsigned char *)status, status_i, status_len, &c);
+                        if (bytes <= 0)
+                            break;
+                        int char_width = mystrnlen_raw_w(c);
+                        
+                        if (display_col + char_width > width)
+                            break;
+                        
+                        vtputc(c);
+                        display_col += char_width;
+                        status_i += bytes;
+                    }
+                }
+                
+                vteeol();
+            }
+            
+            static int get_line_num(struct buffer *bp, struct line *target)
+            {
+                if (target == bp->b_linep) return 0;
+
+                if (bp->b_line_cache_version == bp->b_version && bp->b_line_cache_ptr != NULL) {
+                    if (bp->b_line_cache_ptr == target) return bp->b_line_cache_no;
+
+                    int dist = 0;
+                    struct line *fw = bp->b_line_cache_ptr;
+                    struct line *bw = bp->b_line_cache_ptr;
+
+                    /* Search outward from cache up to 1000 lines */
+                    while (dist < 1000) {
+                        if (fw == target) {
+                            bp->b_line_cache_ptr = target;
+                            bp->b_line_cache_no += dist;
+                            return bp->b_line_cache_no;
+                        }
+                        if (bw == target) {
+                            bp->b_line_cache_ptr = target;
+                            bp->b_line_cache_no -= dist;
+                            return bp->b_line_cache_no;
+                        }
+                        if (fw != bp->b_linep) fw = lforw(fw);
+                        if (bw != bp->b_linep) bw = lback(bw);
+                        if (fw == bp->b_linep && bw == bp->b_linep) break;
+                        dist++;
+                    }
+                }
+
+                /* Fallback to full search from top, then cache it */
+                struct line *lp = lforw(bp->b_linep);
+                int count = 1;
+
+                while (lp != bp->b_linep) {
+                    if (lp == target) {
+                        bp->b_line_cache_ptr = target;
+                        bp->b_line_cache_no = count;
+                        bp->b_line_cache_version = bp->b_version;
+                        return count;
+                    }
+                    ++count;
+                    lp = lforw(lp);
+                }
+                return count;
+            }
+
+            static int window_line_number(struct window *wp)
+            {
+                return get_line_num(wp->w_bufp, wp->w_dotp);
+            }
+            static int window_column_number(struct window *wp)
+            {
+                struct line *lp = wp->w_dotp;
+                int i = 0;
+                int len = llength(lp);
+                int col = 0;
+            
+                while (i < wp->w_doto) {
+                    unicode_t c;
+                    int bytes = utf8_to_unicode((unsigned char *)lp->text, i, len, &c);
+                    i += bytes;
+                    col = next_column(col, c, tab_width);
+                }
+                return col + 1;
+            }
+            
+            static void mlputi(int i, int r, struct mlbuf *dest);
+            static void mlputli(long l, int r, struct mlbuf *dest);
+            static void mlputf(int s, struct mlbuf *dest);
+            int newscreensize(int h, int w);
+/*
+ * Initialize the data structures used by the display code. The edge vectors
+ * used to access the screens are set up. The operating system's terminal I/O
+ * channel is set up. All the other things get initialized at compile time.
+ * The original window has "WFCHG" set, so that it will get completely
+ * redrawn on the first call to "update".
+ */
+void vtinit(void)
+{
+    int i;
+    struct video *vp;
+
+    TTopen();               /* open the screen */
+    TTkopen();              /* open the keyboard */
+    TTrev(FALSE);
+    vscreen = xmalloc(term->t_mrow * sizeof(struct video *));
+    memset(vscreen, 0, term->t_mrow * sizeof(struct video *));
+
+    rendering_color_fg = -1;
+    rendering_color_bg = -1;
+    rendering_color_bold = false;
+    rendering_color_underline = false;
+    rendering_color_italic = false;
+
+    for (i = 0; i < term->t_mrow; ++i) {
+        vp = xmalloc(sizeof(struct video) + term->t_mcol * sizeof(video_cell));
+        memset(vp, 0, sizeof(struct video) + term->t_mcol * sizeof(video_cell));
+        vp->v_flag = 0;
+        vscreen[i] = vp;
+    }
+
+    /* Register built-in plugins */
+    render_plugin_register((render_plugin_t){ RENDER_HOOK_GUTTER, gutter_plugin_fn, NULL });
+    render_plugin_register((render_plugin_t){ RENDER_HOOK_POST_LINE, ghost_text_plugin_fn, NULL });
+}
+
+/*
+ * Clean up the virtual terminal system, in anticipation for a return to the
+ * operating system. Move down to the last line and clear it out (the next
+ * system prompt will be written in the line). Shut down the channel to the
+ * terminal.
+ */
+void vttidy(void)
+{
+    int i;
+    mlerase();
+    movecursor(term->t_nrow, 0);
+    TTflush();
+    TTclose();
+    TTkclose();
+    if (vscreen != NULL) {
+        for (i = 0; i < term->t_mrow; ++i) {
+            if (vscreen[i] != NULL)
+                free(vscreen[i]);
+        }
+        free(vscreen);
+        vscreen = NULL;
+    }
+    write(1, "\r", 1);
+}
+
+/*
+ * Set the virtual cursor to the specified row and column on the virtual
+ * screen. There is no checking for nonsense values; this might be a good
+ * idea during the early stages.
+ */
+void vtmove(int row, int col)
+{
+    vtrow = row;
+    vtcol = col + vt_margin_left;
+}
+
+/*
+ * Write a character to the virtual screen. The virtual row and
+ * column are updated. If we are not yet on left edge, don't print
+ * it yet. If the line is too long put a "$" in the last column.
+ *
+ * This routine only puts printing characters into the virtual
+ * terminal buffers. Only column overflow is checked.
+ */
+void vtputc(int c)
+{
+    struct video *vp;
+    int char_width;
+
+    if (c == '\t') {
+        do {
+            vtputc(' ');
+        } while ((((vtcol - vt_margin_left) + taboff) & tab_width) != 0);
+        return;
+    }
+
+    if (c < 0x20) {
+        vtputc('^');
+        vtputc(c ^ 0x40);
+        return;
+    }
+
+    if (c == 0x7f) {
+        vtputc('^');
+        vtputc('?');
+        return;
+    }
+
+    char_width = mystrnlen_raw_w(c);
+
+    if (vtcol + char_width > term->t_ncol) {
+        vscreen[vtrow]->v_text[term->t_ncol - 1].ch = '$';
+        vtcol += char_width;
+        return;
+    }
+
+    vp = vscreen[vtrow];
+    if (vtcol >= 0) {
+        int i;
+        for (i = 0; i < char_width; i++) {
+            if (vtcol + i < term->t_ncol) {
+                vp->v_text[vtcol + i].ch = (i == 0) ? c : 0;
+                vp->v_text[vtcol + i].fg = rendering_color_fg;
+                vp->v_text[vtcol + i].bg = rendering_color_bg;
+                vp->v_text[vtcol + i].bold = rendering_color_bold;
+                vp->v_text[vtcol + i].underline = rendering_color_underline;
+                vp->v_text[vtcol + i].italic = rendering_color_italic;
+            }
+        }
+        vtcol += char_width;
+    }
+}
+
+/*
+ * Erase from the end of the software cursor to the end of the line on which
+ * the software cursor is located.
+ */
+void vteeol(void)
+{
+    video_cell *vcp = vscreen[vtrow]->v_text;
+
+    if (vtcol < 0) vtcol = 0;
+    if (vtcol > term->t_ncol) vtcol = term->t_ncol;
+
+    while (vtcol < term->t_ncol) {
+        vcp[vtcol].ch = ' ';
+        vcp[vtcol].fg = rendering_color_fg;
+        vcp[vtcol].bg = rendering_color_bg;
+        vcp[vtcol].bold = rendering_color_bold;
+        vcp[vtcol].underline = rendering_color_underline;
+        vcp[vtcol].italic = rendering_color_italic;
+        vtcol++;
+    }
+}
+
+/*
+ * upscreen:
+ *  user routine to force a screen update
+ *  always finishes complete update
+ */
+int upscreen(int f, int n)
+{
+    update(TRUE);
+    return TRUE;
+}
+
+static void update_syntax_highlighting(struct buffer *bp) {
+    if (!highlight_is_enabled()) return;
+    
+    struct line *lp = bp->b_hl_dirty_line;
+    if (lp == NULL) lp = lforw(bp->b_linep);
+    
+    const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
+    const HighlightProfile *profile = highlight_get_profile(fname);
+    if (!profile) return;
+
+    HighlightState current_state = lp->hl_start_state;
+    
+    while (lp != bp->b_linep) {
+        bool changed = false;
+        if (memcmp(&lp->hl_start_state, &current_state, sizeof(HighlightState)) != 0) {
+            lp->hl_start_state = current_state;
+            changed = true;
+        }
+
+        HighlightState computed_end;
+        highlight_line((const char *)lp->text, lp->used, current_state, profile, NULL, &computed_end);
+        
+        if (memcmp(&lp->hl_end_state, &computed_end, sizeof(HighlightState)) != 0) {
+            lp->hl_end_state = computed_end;
+            changed = true;
+        }
+        
+        current_state = computed_end;
+        if (!changed) {
+            /* If state didn't change and matched previous end state, we might be able to stop.
+             * But we need to check if the NEXT line's hl_start_state also matches.
+             */
+            struct line *next = lforw(lp);
+            if (next == bp->b_linep || memcmp(&next->hl_start_state, &current_state, sizeof(HighlightState)) == 0) {
+                break;
+            }
+        }
+        
+        lp = lforw(lp);
+    }
+    bp->b_hl_dirty_line = NULL;
+}
+
+bool buffer_needs_hl_update(struct buffer *bp)
+{
+    return highlight_is_enabled() && bp->b_hl_dirty_line != NULL;
+}
+
+void highlight_incremental_step(struct buffer *bp)
+{
+    if (!highlight_is_enabled() || bp->b_hl_dirty_line == NULL) return;
+
+    const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
+    const HighlightProfile *profile = highlight_get_profile(fname);
+    if (!profile) {
+        bp->b_hl_dirty_line = NULL;
+        return;
+    }
+
+    struct line *lp = bp->b_hl_dirty_line;
+    HighlightState current_state = lp->hl_start_state;
+    int count = 0;
+    const int MAX_INCREMENTAL_LINES = 100;
+
+    while (lp != bp->b_linep && count < MAX_INCREMENTAL_LINES) {
+        bool changed = false;
+        if (memcmp(&lp->hl_start_state, &current_state, sizeof(HighlightState)) != 0) {
+            lp->hl_start_state = current_state;
+            changed = true;
+        }
+
+        HighlightState computed_end;
+        highlight_line((const char *)lp->text, lp->used, current_state, profile, NULL, &computed_end);
+        
+        if (memcmp(&lp->hl_end_state, &computed_end, sizeof(HighlightState)) != 0) {
+            lp->hl_end_state = computed_end;
+            changed = true;
+        }
+        
+        current_state = computed_end;
+        lp = lforw(lp);
+        count++;
+
+        if (!changed) {
+            if (lp == bp->b_linep || memcmp(&lp->hl_start_state, &current_state, sizeof(HighlightState)) == 0) {
+                bp->b_hl_dirty_line = NULL;
+                return;
+            }
+        }
+    }
+
+    if (lp == bp->b_linep)
+        bp->b_hl_dirty_line = NULL;
+    else
+        bp->b_hl_dirty_line = lp;
+}
+
+/*
+ * Make sure that the display is right. This is a three part process. First,
+ * scan through all of the windows looking for dirty ones. Check the framing,
+ * and refresh the screen. Second, make sure that "currow" and "curcol" are
+ * correct for the current window. Third, make the virtual and physical
+ * screens the same.
+ *
+ * int force;       force update past type ahead?
+ */
+int update(int force)
+{
+    struct window *wp;
+
+    if (force == FALSE && kbdmode == PLAY)
+        return TRUE;
+
+    displaying = TRUE;
+
+    /* Sync default colors from colorscheme */
+    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+    rendering_color_fg = normal.fg;
+    rendering_color_bg = normal.bg;
+    rendering_color_bold = normal.bold;
+    rendering_color_underline = normal.underline;
+    rendering_color_italic = normal.italic;
+
+    /* update any windows that need refreshing */
+    wp = curwp;
+
+    if (wp->w_flag) {
+        /* Update syntax highlighting incrementally, not the whole buffer */
+        if (buffer_needs_hl_update(wp->w_bufp)) {
+            highlight_incremental_step(wp->w_bufp);
+        }
+
+        /* if the window has changed, service it */
+        reframe(wp);        /* check the framing */
+
+        if ((wp->w_flag & ~WFMODE) == WFEDIT)
+            updone(wp); /* update EDITed line */
+        else if (wp->w_flag & ~WFMOVE)
+            updall(wp); /* update all lines */
+        if (wp->w_flag & WFMODE)
+            modeline(wp);   /* update modeline */
+        wp->w_flag = 0;
+        wp->w_force = 0;
+    }
+
+    if (should_redraw_underbar && curwp != NULL) {
+        modeline(curwp);
+        should_redraw_underbar = false;
+    }
+
+    /* recalc the current hardware cursor location */
+    updpos();
+
+    /* if screen is garbage, re-plot it */
+    if (sgarbf != FALSE)
+        updgar();
+
+    /* update the virtual screen to the physical screen */
+    updupd(force);
+
+    /* update the cursor and flush the buffers */
+    movecursor(currow, curcol + get_gutter_width() - lbound);
+    TTflush();
+    displaying = FALSE;
+    while (chg_width || chg_height)
+        newscreensize(chg_height, chg_width);
+    return TRUE;
+}
+
+/*
+ * reframe:
+ *  check to see if the cursor is on in the window
+ *  and re-frame it if needed or wanted
+ */
+static int reframe(struct window *wp)
+{
+    struct line *lp;
+    int i = 0;
+    int rows = nanox_text_rows();
+
+    /* if not a requested reframe, check for a needed one */
+    if ((wp->w_flag & WFFORCE) == 0) {
+        lp = wp->w_linep;
+        int vrow = 0;
+        while (vrow < rows && lp != wp->w_bufp->b_linep) {
+            if (lp == wp->w_dotp) {
+                /* Dot is on this line. Calculate its subrow. */
+                int dot_vrow = vrow;
+                int col = 0;
+                int char_idx = 0;
+                while (char_idx < wp->w_doto) {
+                    unicode_t c;
+                    int bytes = utf8_to_unicode((unsigned char *)lp->text, char_idx, wp->w_doto, &c);
+                    int w = get_char_width(c, col);
+                    if (col + w > nanox_text_cols()) {
+                        dot_vrow++;
+                        col = 4;
+                        w = get_char_width(c, col);
+                    }
+                    col += w;
+                    char_idx += bytes;
+                }
+                
+                if (dot_vrow < rows)
+                    return TRUE;
+                else
+                    break; /* Need reframe */
+            }
+            vrow += get_line_height(lp);
+            lp = lforw(lp);
+        }
+    }
+
+    /* Force a reframe. Determine how many lines above the dot to show. */
+    if (wp->w_flag & WFFORCE)
+        i = wp->w_force;
+    else
+        i = rows / 2; /* Center dot by default */
+
+    /*
+     * Build the new window.
+     */
+    wp->w_linep = wp->w_dotp;
+    while (i > 0 && lback(wp->w_linep) != wp->w_bufp->b_linep) {
+        wp->w_linep = lback(wp->w_linep);
+        i--;
+    }
+
+    wp->w_flag |= WFHARD;
+    wp->w_flag &= ~WFFORCE;
+    return TRUE;
+}
+
+static void show_line(struct window *wp, struct line *lp)
+{
+    int len = llength(lp);
+    current_rendering_lp = lp;
+
+    /* Highlight logic */
+    SpanVec spans;
+    HighlightState end_state;
+
+    const char *fname = wp->w_bufp->b_fname;
+    if (!fname || !*fname)
+        fname = wp->w_bufp->b_bname;
+    const HighlightProfile *profile = highlight_get_profile(fname);
+
+    highlight_line((const char *)lp->text, len, lp->hl_start_state, profile, &spans, &end_state);
+
+    if (memcmp(&lp->hl_end_state, &end_state, sizeof(HighlightState)) != 0) {
+        lp->hl_end_state = end_state;
+        struct line *next = lforw(lp);
+        if (next != wp->w_bufp->b_linep) {
+            next->hl_start_state = end_state;
+            lmark_dirty(next);
+            lchange(WFHARD);
+        }
+    }
+
+    int current_span_idx = 0;
+    int char_idx = 0; /* byte index */
+    int text_col = 0;
+
+    while (char_idx < len) {
+        int style = HL_NORMAL;
+        while (current_span_idx < spans.count) {
+            Span *s = (spans.heap_spans) ? &spans.heap_spans[current_span_idx] : &spans.spans[current_span_idx];
+            if (char_idx >= s->end) {
+                current_span_idx++;
+                continue;
+            }
+            if (char_idx >= s->start) {
+                style = s->style;
+            }
+            break;
+        }
+
+        unicode_t c;
+        int bytes = utf8_to_unicode((unsigned char *)lp->text, char_idx, len, &c);
+        if (bytes <= 0)
+            bytes = 1;
+        int next_col = next_column(text_col, c, tab_width);
+
+        if (command_mode_block_selection_contains(lp, text_col, next_col))
+            style = HL_SELECTION;
+
+        HighlightStyle style_def = colorscheme_get(style);
+        HighlightStyle normal_def = colorscheme_get(HL_NORMAL);
+
+        rendering_color_fg = (style_def.fg == -1) ? normal_def.fg : style_def.fg;
+        rendering_color_bg = (style_def.bg == -1) ? normal_def.bg : style_def.bg;
+        rendering_color_bold = style_def.bold;
+        rendering_color_underline = style_def.underline;
+        rendering_color_italic = style_def.italic;
+
+        vtputc(c);
+        char_idx += bytes;
+        text_col = next_col;
+    }
+
+    span_vec_free(&spans);
+
+    /* Detect color codes in the line and show preview boxes */
+    ColorInfo colors[MAX_COLORS_PER_LINE];
+    int color_count = highlight_find_colors((const char *)lp->text, len, colors, MAX_COLORS_PER_LINE);
+    
+    if (color_count > 0) {
+        /* Add a space separator, then color preview boxes */
+        HighlightStyle normal = colorscheme_get(HL_NORMAL);
+        rendering_color_fg = normal.fg;
+        rendering_color_bg = normal.bg;
+        rendering_color_bold = false;
+        rendering_color_underline = false;
+        
+        vtputc(' ');
+        
+        /* Show color preview boxes (using block character with background color) */
+        for (int i = 0; i < color_count && i < 8; i++) {
+            /* Pack RGB as 0x01RRGGBB for true color */
+            int packed_color = 0x01000000 | (colors[i].r << 16) | (colors[i].g << 8) | colors[i].b;
+            rendering_color_bg = packed_color;
+            rendering_color_fg = packed_color;
+            vtputc(' ');  /* Space with colored background acts as color box */
+            vtputc(' ');
+            
+            /* Reset to normal for separator */
+            rendering_color_bg = normal.bg;
+            rendering_color_fg = normal.fg;
+            if (i < color_count - 1 && i < 7) {
+                vtputc(' ');
+            }
+        }
+    }
+
+    /* Fill trailing whitespace using the default style colors */
+    {
+        HighlightStyle normal = colorscheme_get(HL_NORMAL);
+        rendering_color_fg = normal.fg;
+        rendering_color_bg = normal.bg;
+        rendering_color_bold = normal.bold;
+        rendering_color_underline = normal.underline;
+        rendering_color_italic = normal.italic;
+    }
+
+    /* 6. Inline Plugins (e.g. Ghost Text, LSP) */
+    render_ctx_t ctx = { wp, lp, vtrow, vtcol, 0, 0, HL_NORMAL, 0 };
+    render_plugin_execute(RENDER_HOOK_POST_LINE, &ctx);
+}
+
+static void show_line_wrapped(struct window *wp, struct line *lp)
+{
+    int len = llength(lp);
+    current_rendering_lp = lp;
+
+    SpanVec spans;
+    HighlightState end_state;
+    const char *fname = wp->w_bufp->b_fname;
+    if (!fname || !*fname)
+        fname = wp->w_bufp->b_bname;
+    const HighlightProfile *profile = highlight_get_profile(fname);
+
+    highlight_line((const char *)lp->text, len, lp->hl_start_state, profile, &spans, &end_state);
+
+    if (memcmp(&lp->hl_end_state, &end_state, sizeof(HighlightState)) != 0) {
+        lp->hl_end_state = end_state;
+        struct line *next = lforw(lp);
+        if (next != wp->w_bufp->b_linep) {
+            next->hl_start_state = end_state;
+            lmark_dirty(next);
+            lchange(WFHARD);
+        }
+    }
+
+    int current_span_idx = 0;
+    int char_idx = 0;
+    int text_col = 0;
+
+    while (char_idx < len) {
+        int style = HL_NORMAL;
+        while (current_span_idx < spans.count) {
+            Span *s = (spans.heap_spans) ? &spans.heap_spans[current_span_idx] : &spans.spans[current_span_idx];
+            if (char_idx >= s->end) {
+                current_span_idx++;
+                continue;
+            }
+            if (char_idx >= s->start) {
+                style = s->style;
+            }
+            break;
+        }
+
+        unicode_t c;
+        int bytes = utf8_to_unicode((unsigned char *)lp->text, char_idx, len, &c);
+        if (bytes <= 0) bytes = 1;
+
+        int w = get_char_width(c, vtcol);
+        if (vtcol + w > term->t_ncol - 2 && char_idx > 0) {
+            vteeol();
+            vtrow++;
+            if (vtrow >= nanox_text_rows()) break;
+            vtcol = vt_margin_left;
+            vscreen[vtrow]->v_flag |= VFCHG;
+            render_gutter(vtrow, 0, lp);
+            for (int i = 0; i < 4; i++) vtputc(' ');
+            /* Re-calculate width at new column (important for tabs) */
+            w = get_char_width(c, vtcol);
+        }
+
+        int next_text_col = next_column(text_col, c, tab_width);
+        if (command_mode_block_selection_contains(lp, text_col, next_text_col))
+            style = HL_SELECTION;
+
+        HighlightStyle style_def = colorscheme_get(style);
+        HighlightStyle normal_def = colorscheme_get(HL_NORMAL);
+
+        rendering_color_fg = (style_def.fg == -1) ? normal_def.fg : style_def.fg;
+        rendering_color_bg = (style_def.bg == -1) ? normal_def.bg : style_def.bg;
+        rendering_color_bold = style_def.bold;
+        rendering_color_underline = style_def.underline;
+        rendering_color_italic = style_def.italic;
+
+        vtputc(c);
+        char_idx += bytes;
+        text_col = next_text_col;
+    }
+
+    span_vec_free(&spans);
+
+    /* 6. Inline Plugins (e.g. Ghost Text, LSP) */
+    render_ctx_t ctx = { wp, lp, vtrow, vtcol, 0, 0, HL_NORMAL, 0 };
+    render_plugin_execute(RENDER_HOOK_POST_LINE, &ctx);
+}
+
+/*
+ * updone:
+ *  update the current line to the virtual screen
+ *
+ * struct window *wp;       window to update current line in
+ */
+static void updone(struct window *wp)
+{
+    struct line *lp;
+    int sline;
+    int rows = nanox_text_rows();
+
+    /* Softwrap requires full update to handle wrap/unwrap shifting */
+    if (wp->w_bufp->b_mode & MDSOFTWRAP) {
+        updall(wp);
+        return;
+    }
+
+    /* find the right sline for the dotp line */
+    lp = wp->w_linep;
+    sline = 0;
+    while (lp != wp->w_dotp && sline < rows) {
+        sline += get_line_height(lp);
+        lp = lforw(lp);
+    }
+
+    if (sline < rows) {
+        vscreen[sline]->v_flag |= VFCHG;
+        vscreen[sline]->v_flag &= ~VFREQ;
+        
+        int lnum = get_line_num(wp->w_bufp, lp);
+        render_gutter(sline, lnum, lp);
+        vt_margin_left = get_gutter_width();
+        
+        vtmove(sline, 0);
+        if (wp->w_bufp->b_mode & MDSOFTWRAP)
+            show_line_wrapped(wp, lp);
+        else
+            show_line(wp, lp);
+        vteeol();
+        vt_margin_left = 0;
+        if (vtrow != sline)
+            updall(wp);
+    }
+}
+
+/*
+ * updall:
+ *  update all the lines in a window on the virtual screen
+ *
+ * struct window *wp;       window to update lines in
+ */
+static void updall(struct window *wp)
+{
+    struct line *lp;            /* line to update */
+    int sline;              /* physical screen line to update */
+    int rows = nanox_text_rows();
+    int lnum = get_line_num(wp->w_bufp, wp->w_linep);
+
+    /* search down the lines, updating them */
+    lp = wp->w_linep;
+    sline = 0;
+    vt_margin_left = get_gutter_width();
+    while (sline < rows && sline < term->t_mrow) {
+
+        /* and update the virtual line */
+        vscreen[sline]->v_flag |= VFCHG;
+        vscreen[sline]->v_flag &= ~VFREQ;
+        
+        render_gutter(sline, (lp != wp->w_bufp->b_linep) ? lnum : -1, (lp != wp->w_bufp->b_linep) ? lp : NULL);
+
+        vtmove(sline, 0);
+        if (lp != wp->w_bufp->b_linep) {
+            /* if we are not at the end */
+            if (wp->w_bufp->b_mode & MDSOFTWRAP)
+                show_line_wrapped(wp, lp);
+            else
+                show_line(wp, lp);
+            lp = lforw(lp);
+            lnum++;
+            sline = vtrow;
+        }
+
+        /* on to the next one */
+        vteeol();
+        ++sline;
+    }
+    vt_margin_left = 0;
+}
+
+/*
+ * updpos:
+ *  update the position of the hardware cursor and handle extended
+ *  lines. This is the only update for simple moves.
+ */
+void updpos(void)
+{
+    struct line *lp;
+    int i;
+    int rows = nanox_text_rows();
+
+    /* find the current row */
+    lp = curwp->w_linep;
+    currow = 0;
+    while (lp != curwp->w_dotp && currow < rows) {
+        currow += get_line_height(lp);
+        lp = lforw(lp);
+    }
+
+    /* find the current column and subrow */
+    curcol = 0;
+    i = 0;
+    lp = curwp->w_dotp;
+    while (i < curwp->w_doto) {
+        unicode_t c;
+        int bytes;
+
+        bytes = utf8_to_unicode((unsigned char *)lp->text, i, curwp->w_doto, &c);
+        int w = get_char_width(c, curcol);
+        if (curcol + w > nanox_text_cols()) {
+            currow++;
+            curcol = 4;
+            w = get_char_width(c, curcol);
+        }
+        curcol += w;
+        i += bytes;
+    }
+
+    lbound = 0;
+}
+
+/*
+ * upddex:
+ *  de-extend any line that derserves it
+ */
+void upddex(void)
+{
+    struct window *wp;
+    struct line *lp;
+    int i;
+
+    wp = curwp;
+    lp = wp->w_linep;
+    i = 0;
+
+    while (i < nanox_text_rows()) {
+        if (vscreen[i]->v_flag & VFEXT) {
+            if ((wp != curwp) || (lp != wp->w_dotp) ||
+                (curcol < nanox_text_cols() - 1)) {
+                vtmove(i, 0);
+                show_line(wp, lp);
+                vteeol();
+
+                /* this line no longer is extended */
+                vscreen[i]->v_flag &= ~VFEXT;
+                vscreen[i]->v_flag |= VFCHG;
+            }
+        }
+        lp = lforw(lp);
+        ++i;
+    }
+}
+
+/*
+ * Send a string to the terminal.
+ */
+void TTputs(const char *s)
+{
+    for (char c; (c = *s) != 0; s++)
+        TTputc(c);
+}
+
+static void start_screen_reset_smoothing(void)
+{
+    /* Hide cursor and disable wrap so terminal clear happens without visible flicker */
+    TTputs("\x1b[?25l");           /* Hide cursor */
+    TTputs("\x1b[0m");             /* Reset attributes */
+    TTputs("\x1b[?7l");            /* Disable line wrap temporarily */
+}
+
+static void finish_screen_reset_smoothing(void)
+{
+    TTputs("\x1b[?7h");            /* Restore wrap mode */
+    TTputs("\x1b[?25h");           /* Show cursor */
+}
+
+/*
+ * updgar:
+ *  if the screen is garbage, clear the physical screen and
+ *  the virtual screen images
+ */
+void updgar(void)
+{
+    int i;
+
+    for (i = 0; i < term->t_nrow; ++i)
+        vscreen[i]->v_flag |= VFCHG;
+
+    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+    if (normal.bg != -1) {
+        TTsetcolors(normal.fg, normal.bg);
+    }
+
+    start_screen_reset_smoothing();
+    movecursor(0, 0);           /* Erase the screen. */
+    (*term->t_eeop) ();
+    finish_screen_reset_smoothing();
+    TTsetcolors(-1, -1);          /* Reset colors immediately after erase */
+    TTflush();                  /* Force the clear to happen */
+
+    sgarbf = FALSE;             /* Erase-page clears */
+    mpresf = FALSE;             /* the message area. */
+}
+
+/*
+ * updupd:
+ *  update the physical screen from the virtual screen
+ *
+ * int force;       forced update flag
+ */
+int updupd(int force)
+{
+    struct video *vp1;
+    int i;
+
+    for (i = 0; i < term->t_nrow; ++i) {
+        vp1 = vscreen[i];
+
+        /* for each line that needs to be updated */
+        if ((vp1->v_flag & VFCHG) != 0) {
+            updateline(i, vp1);
+        }
+    }
+    return TRUE;
+}
+
+/*
+ * updext:
+ *  update the extended line which the cursor is currently
+ *  on at a column greater than the terminal width. The line
+ *  will be scrolled right or left to let the user see where
+ *  the cursor is
+ */
+static void updext(void)
+{
+    int rcursor;                /* real cursor location */
+    struct line *lp;            /* pointer to current line */
+
+    /* calculate what column the real cursor will end up in */
+    rcursor = ((curcol - term->t_ncol) % term->t_scrsiz) + term->t_margin;
+    taboff = lbound = curcol - rcursor + 1;
+
+    /* scan through the line outputing characters to the virtual screen */
+    /* once we reach the left edge                                  */
+    vtmove(currow, -lbound);        /* start scanning offscreen */
+    lp = curwp->w_dotp;         /* line to output */
+    show_line(curwp, lp);
+
+    /* truncate the virtual line, restore tab offset */
+    vteeol();
+    taboff = 0;
+
+    /* and put a '$' in column 1 */
+    vscreen[currow]->v_text[0].ch = '$';
+}
+
+static bool is_letter(unicode_t ch)
+{
+    return ch > 128 || isalpha(ch);
+}
+
+static bool is_notaword(unicode_t ch)
+{
+    return ch == '_' || (ch >= '0' && ch <= '9');
+}
+
+static int find_letter(unicode_t *line, size_t len, int pos)
+{
+    while (pos < len) {
+        if (is_letter(line[pos]))
+            return pos;
+        pos++;
+    }
+    return -1;
+}
+
+static int find_not_letter(unicode_t *line, size_t len, int pos)
+{
+    while (pos < len) {
+        if (!is_letter(line[pos]))
+            return pos;
+        pos++;
+    }
+    return len;
+}
+
+#define BAD_WORD_BEGIN 1
+#define BAD_WORD_END 2
+
+static size_t findwords(unicode_t *line, size_t len, unsigned char *result, size_t size)
+{
+    int pos = 0;
+
+    if (len < size)
+        size = len;
+    memset(result, 0, size);
+
+    while ((pos = find_letter(line, len, pos)) >= 0) {
+        int start = pos;
+        int end = find_not_letter(line, len, pos + 1);
+
+        // Special case: allow (one) apostrophe for abbreviations
+        if (end + 1 < len && line[end] == '\'' && is_letter(line[end + 1]))
+            end = find_not_letter(line, len, end + 2);
+
+        pos = end + 1;
+
+        // A word with adjacent numbers or underscores is
+        // not a word, it's a hex number or a variable name
+        if (start && is_notaword(line[start - 1]))
+            continue;
+        if (end < len && is_notaword(line[end]))
+            continue;
+
+        // We found something that may be a real word.
+        // Check it, and mark it in the result
+        if (end > size)
+            break;
+
+        char word_buffer[80];
+        int word_len = end - start;
+        if (word_len >= sizeof(word_buffer) - 1)
+            continue;
+        for (int i = 0; i < word_len; i++)
+            word_buffer[i] = line[start + i];
+        word_buffer[word_len] = 0;
+        if (spellcheck(word_buffer))
+            continue;
+
+        // We found something that hunspell doesn't like
+        result[start] = BAD_WORD_BEGIN;
+        result[end - 1] |= BAD_WORD_END;
+    }
+    return size;
+}
+
+/*
+ * Update a single line. This does not know how to use insert or delete
+ * character sequences; we are using VT52 functionality. Update the physical
+ * row and column variables. It does try an exploit erase to end of line.
+ */
+
+/*
+ * updateline()
+ *
+ * int row;         row of screen to update
+ * struct video *vp;    virtual screen image
+ */
+static int updateline(int row, struct video *vp)
+{
+    int maxchar = 0, analyzed = 0;
+    unsigned char array[256];
+    unicode_t text_buf[MAXCOL];
+    bool spellcheck = curwp->w_bufp->b_mode & MDSPELL;
+
+    movecursor(row, 0);             /* Go to start of line. */
+    TTsetcolors(-1, -1);           /* Reset colors */
+    TTsetattrs(0, 0, 0);           /* Reset attributes */
+    int phys_fg = -1;
+    int phys_bg = -1;
+    bool phys_bold = false;
+    bool phys_underline = false;
+    bool phys_italic = false;
+
+    /* scan through the line and dump it to the the
+       virtual screen array, finding where the last non-space is  */
+    for (int i = 0; i < term->t_ncol; i++) {
+        text_buf[i] = vp->v_text[i].ch;
+        /* Exclude dummy cells (ch == 0) from maxchar calculation */
+        if (text_buf[i] != 0 && (text_buf[i] != ' ' || vp->v_text[i].bg != -1 || vp->v_text[i].underline || vp->v_text[i].italic))
+            maxchar = i + 1;
+    }
+
+    /* set rev video if needed, and fill all the way */
+    if (vp->v_flag & VFREQ) {
+        maxchar = term->t_ncol;
+        TTrev(TRUE);
+        spellcheck = false;
+    }
+
+    if (spellcheck)
+        analyzed = findwords(text_buf, maxchar, array, sizeof(array));
+
+    int started = 0;
+    for (int i = 0; i < maxchar; i++) {
+        video_cell *cell = &vp->v_text[i];
+
+        /* Skip dummy cells used for wide characters */
+        if (cell->ch == 0)
+            continue;
+
+        /* Attribute Handling */
+        if (cell->bold != phys_bold || cell->underline != phys_underline || cell->italic != phys_italic) {
+            TTsetattrs(cell->bold, cell->underline, cell->italic);
+            phys_bold = cell->bold;
+            phys_underline = cell->underline;
+            phys_italic = cell->italic;
+        }
+
+        /* Color Handling */
+        if (cell->fg != phys_fg || cell->bg != phys_bg) {
+            TTsetcolors(cell->fg, cell->bg);
+            phys_fg = cell->fg;
+            phys_bg = cell->bg;
+        }
+
+        if (i < analyzed && (array[i] & BAD_WORD_BEGIN)) {
+            started = 1;
+            TTsetattrs(1, phys_underline, phys_italic); /* Start bold for spellcheck */
+        }
+
+        TTputc(cell->ch);
+
+        if (i < analyzed && (array[i] & BAD_WORD_END)) {
+            TTsetattrs(phys_bold, phys_underline, phys_italic); /* Restore previous bold */
+            started = 0;
+        }
+    }
+
+    if (started)
+        TTsetattrs(phys_bold, phys_underline, phys_italic);
+
+    /* Move to actual end of visible content and clear remaining trash */
+    ttcol = maxchar;
+
+    TTsetcolors(-1, -1); /* Reset */
+    TTsetattrs(0, 0, 0);
+
+    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+    if (normal.bg != -1) {
+        TTsetcolors(normal.fg, normal.bg);
+    }
+
+    TTeeol();
+    TTsetcolors(-1, -1); /* Final Reset */
+    TTsetattrs(0, 0, 0);
+
+    /* turn rev video off */
+    TTrev(FALSE);
+
+    /* update the needed flags */
+    vp->v_flag &= ~VFCHG;
+    return TRUE;
+}
+/*
+ * Redisplay the mode line for the window pointed to by the "wp". This is the
+ * only routine that has any idea of how the modeline is formatted. You can
+ * change the modeline format by hacking at this routine. Called by "update"
+ * any time there is a dirty window.
+ */
+static void modeline(struct window *wp)
+{
+    struct buffer *bp = wp->w_bufp;
+    const char *row1 = nanox_cfg.hint_bar ? "F1/^H Help F2/^S Save F3/^O Open F4/^Q Quit F5/^F Search" : "";
+    const char *row2 = "";
+    char status[MAXCOL + 1];
+    const char *fname = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
+    const char *lamp = nanox_lamp_label();
+    char mark = (bp->b_flag & BFCHG) ? '*' : '-';
+    int line = window_line_number(wp);
+    int col = window_column_number(wp);
+    int top = nanox_hint_top_row();
+    int bottom = nanox_hint_bottom_row();
+
+    if (nanox_cfg.hint_bar) {
+        row2 = nanox_cfg.no_function_slot
+            ? "F6/^W Copy(S:End) F7/^X Cut(S:End) F8/^V Paste ^A+num Slot"
+            : "F6/^W Copy(S:End) F7/^X Cut(S:End) F8/^V Paste F9-12 Slot";
+    }
+
+    snprintf(status, sizeof(status), "%s L%d C%d %c",
+         fname, line, col, mark);
+
+    if (top >= 0 && top < term->t_nrow) {
+        vscreen[top]->v_flag |= VFCHG | VFCOL;
+        draw_hint_row(top, row1, status);
+    }
+
+    if (bottom >= 0 && bottom < term->t_nrow) {
+        vscreen[bottom]->v_flag |= VFCHG | VFCOL;
+        draw_hint_row(bottom, row2, "");
+    }
+}
+
+void upmode(void)
+{                       /* update all the mode lines */
+    curwp->w_flag |= WFMODE;
+}
+
+/*
+ * Send a command to the terminal to move the hardware cursor to row "row"
+ * and column "col". The row and column arguments are origin 0. Optimize out
+ * random calls. Update "ttrow" and "ttcol".
+ */
+void movecursor(int row, int col)
+{
+    if (row != ttrow || col != ttcol) {
+        ttrow = row;
+        ttcol = col;
+        TTmove(row, col);
+    }
+}
+
+/*
+ * Erase the message line. This is a special routine because the message line
+ * is not considered to be part of the virtual screen. It always works
+ * immediately; the terminal buffer is flushed via a call to the flusher.
+ */
+void mlerase(void)
+{
+    int i;
+
+    movecursor(term->t_nrow, 0);
+    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+    TTsetcolors(normal.fg, normal.bg);
+
+    if (eolexist == TRUE)
+        TTeeol();
+    else {
+        for (i = 0; i < term->t_ncol - 1; i++)
+            TTputc(' ');
+        movecursor(term->t_nrow, 1); /* force the move! */
+        movecursor(term->t_nrow, 0);
+    }
+
+    if (normal.bg != -1) {
+        TTputs("\033[0m");
+    }
+
+    TTflush();
+    mpresf = FALSE;
+}
+
+/*
+ * Write a message into the message line. Keep track of the physical cursor
+ * position. A small class of printf like format items is handled. Assumes the
+ * stack grows down; this assumption is made by the "++" in the argument scan
+ * loop. Set the "message line" flag TRUE.
+ *
+ * char *fmt;        format string for output
+ * char *arg;        pointer to first argument to print
+ */
+void mlwrite(const char *fmt, ...)
+{
+    int c;                   /* current char in format string */
+    va_list ap;
+    char raw[1024];
+    char final[1200];
+    struct mlbuf dest;
+
+    /* if we are not currently echoing on the command line, abort this */
+    if (discmd == FALSE) {
+        movecursor(term->t_nrow, 0);
+        return;
+    }
+
+    /* if we can not erase to end-of-line, do it manually */
+    if (eolexist == FALSE) {
+        mlerase();
+        TTflush();
+    }
+
+    movecursor(term->t_nrow, 0);
+
+    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+    TTsetcolors(normal.fg, normal.bg);
+
+    mlbuf_init(&dest, raw, sizeof(raw));
+    va_start(ap, fmt);
+    while ((c = *fmt++) != 0) {
+        if (c != '%') {
+            mlbuf_putc(&dest, c);
+        } else {
+            c = *fmt++;
+            switch (c) {
+            case 'd':
+                mlputi(va_arg(ap, int), 10, &dest);
+                break;
+
+            case 'o':
+                mlputi(va_arg(ap, int), 8, &dest);
+                break;
+
+            case 'x':
+                mlputi(va_arg(ap, int), 16, &dest);
+                break;
+
+            case 'D':
+                mlputli(va_arg(ap, long), 10, &dest);
+                break;
+
+            case 's':
+                mlbuf_puts(&dest, va_arg(ap, char *));
+                break;
+
+            case 'f':
+                mlputf(va_arg(ap, int), &dest);
+                break;
+
+            default:
+                mlbuf_putc(&dest, c);
+            }
+        }
+    }
+    va_end(ap);
+    nanox_message_prefix(dest.buf, final, sizeof(final));
+    
+    unsigned char *p = (unsigned char *)final;
+    int len = strlen((char *)p);
+    int i = 0;
+    while (i < len) {
+        unicode_t uc;
+        int bytes = utf8_to_unicode(p, i, len, &uc);
+        TTputc(uc);
+        ttcol += mystrnlen_raw_w(uc);
+        i += bytes;
+    }
+
+    /* if we can, erase to the end of screen */
+    if (eolexist == TRUE)
+        TTeeol();
+
+    TTflush();
+    mpresf = TRUE;
+    nanox_notify_message(final);
+}
+
+/*
+ * Force a string out to the message line regardless of the
+ * current $discmd setting. This is needed when $debug is TRUE
+ * and for the write-message and clear-message-line commands
+ *
+ * char *s;     string to force out
+ */
+void mlforce(char *s)
+{
+    int oldcmd;             /* original command display flag */
+
+    oldcmd = discmd;            /* save the discmd value */
+    discmd = TRUE;              /* and turn display on */
+    mlwrite(s);             /* write the string out */
+    discmd = oldcmd;            /* and restore the original setting */
+}
+
+/*
+ * Write out a string. Update the physical cursor position. This assumes that
+ * the characters in the string all have width "1"; if this is not the case
+ * things will get screwed up a little.
+ */
+void mlputs(char *s)
+{
+    unsigned char *p = (unsigned char *)s;
+    int len = strlen(s);
+    int i = 0;
+    while (i < len) {
+        unicode_t uc;
+        int bytes = utf8_to_unicode(p, i, len, &uc);
+        TTputc(uc);
+        ttcol += mystrnlen_raw_w(uc);
+        i += bytes;
+    }
+}
+
+/*
+ * Write out an integer, in the specified radix. Update the physical cursor
+ * position.
+ */
+static void mlputi(int i, int r, struct mlbuf *dest)
+{
+    int q;
+    static char hexdigits[] = "0123456789ABCDEF";
+
+    if (i < 0) {
+        i = -i;
+        mlbuf_putc(dest, '-');
+    }
+
+    q = i / r;
+
+    if (q != 0)
+        mlputi(q, r, dest);
+
+    mlbuf_putc(dest, hexdigits[i % r]);
+}
+
+/*
+ * do the same except as a long integer.
+ */
+static void mlputli(long l, int r, struct mlbuf *dest)
+{
+    long q;
+
+    if (l < 0) {
+        l = -l;
+        mlbuf_putc(dest, '-');
+    }
+
+    q = l / r;
+
+    if (q != 0)
+        mlputli(q, r, dest);
+
+    mlbuf_putc(dest, (int)(l % r) + '0');
+}
+
+/*
+ * write out a scaled integer with two decimal places
+ *
+ * int s;       scaled integer to output
+ */
+static void mlputf(int s, struct mlbuf *dest)
+{
+    int i;                  /* integer portion of number */
+    int f;                  /* fractional portion of number */
+
+    /* break it up */
+    i = s / 100;
+    f = s % 100;
+
+    if (f < 0)
+        f = -f;
+    if (i < 0 && s > 0)
+        i = -i;
+
+    /* send out the integer portion */
+    mlputi(i, 10, dest);
+    mlbuf_putc(dest, '.');
+    if (f < 10)
+        mlbuf_putc(dest, '0');
+    mlbuf_putc(dest, (f / 10) + '0');
+    mlbuf_putc(dest, (f % 10) + '0');
+}
+
+/* Get terminal size from system.
+   Store number of lines into *heightp and width into *widthp.
+   If zero or a negative number is stored, the value is not valid.  */
+
+void getscreensize(int *widthp, int *heightp)
+{
+    struct winsize size;
+    *widthp = 0;
+    *heightp = 0;
+    if (ioctl(0, TIOCGWINSZ, &size) < 0)
+        return;
+    *widthp = size.ws_col;
+    *heightp = size.ws_row;
+}
+
+void sizesignal(int signr)
+{
+    int w, h;
+    int old_errno = errno;
+
+    getscreensize(&w, &h);
+
+    if (h && w && (h - 1 != term->t_nrow || w != term->t_ncol))
+        newscreensize(h, w);
+
+    signal(SIGWINCH, sizesignal);
+    errno = old_errno;
+}
+
+int newscreensize(int h, int w)
+{
+    /* do the change later */
+    if (displaying) {
+        chg_width = w;
+        chg_height = h;
+        return FALSE;
+    }
+    chg_width = chg_height = 0;
+
+    if (h - 1 != term->t_mrow)
+        newsize(TRUE, h);
+
+    if (w != term->t_mcol)
+        newwidth(TRUE, w);
+
+    update(TRUE);
+    return TRUE;
+}

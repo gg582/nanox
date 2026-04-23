@@ -665,6 +665,7 @@ int joinline(int f, int n)
          * and we aren't at the end of the line.
          */
         if (curwp->w_doto > 0 && curwp->w_dotp->text[curwp->w_doto - 1] != ' ' &&
+            curwp->w_dotp->text[curwp->w_doto - 1] != '\t' &&
             curwp->w_doto < curwp->w_dotp->used) {
             linsert(1, ' ');
             /* back up so we are at the start of the joined content (Vim behavior) */
