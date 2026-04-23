@@ -77,21 +77,7 @@ Nanox now includes powerful tools for structured text and data manipulation:
 | **F5** | Search Forward | **F6** | Copy (S:End) |
 | **F7** | Cut (S:End) | **F8** | Yank (Paste) |
 | **F9-F12** | Jump to Slot | **Ctrl+F9-F12** | Set Slot |
-| **Alt+G** | Goto Line | **Alt+X** | Execute Command |
-
-### Classic Emacs Bindings
-
-For users coming from a traditional Emacs background, Nanox maintains compatibility with several core MicroEmacs shortcuts:
-
-| Key | Action | Key | Action |
-| :--- | :--- | :--- | :--- |
-| **Ctrl+X** | Cut (S:End) | **Ctrl+W** | Copy (S:End) |
-| **Ctrl+Y** | Yank (Paste) | **Alt+Space** | Set Mark |
-| **Ctrl+X Ctrl+X** | Exchange Point/Mark | **Ctrl+X Ctrl+U** | Upper Case Region |
-| **Ctrl+X Ctrl+L** | Lower Case Region | **Alt+Ctrl+R** | Query Replace |
-| **Alt+R** | Replace String | **Alt+W** | Search Forward |
-| **Alt+Z** | Quick Save & Exit | **Alt+X** | Execute Named Command |
-| **Alt+Ctrl+C** | Word Count (Region) | | |
+| **Ctrl+G** | Goto Line | **Ctrl+C** | Execute Command |
 
 ---
 
