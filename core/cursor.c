@@ -20,7 +20,7 @@ int cursor_forwchar(struct cursor *c, int n, struct line *head)
             c->offset = 0;
         } else {
             unicode_t ch;
-            int bytes = utf8_to_unicode(c->linep->text, c->offset, len, &ch);
+            int bytes = utf8_to_unicode(ltext(c->linep), c->offset, len, &ch);
             if (bytes <= 0) bytes = 1; /* Fallback for safety */
             c->offset += bytes;
             if (c->offset > len) {

@@ -622,15 +622,15 @@ static void extract_dynamic_profile(struct buffer *bp)
         int i = 0;
         int len = llength(lp);
         while (i < len) {
-            if (isalnum((unsigned char)lp->text[i]) || lp->text[i] == '_') {
+            if (isalnum((unsigned char)ltext(lp)[i]) || ltext(lp)[i] == '_') {
                 int start = i;
-                while (i < len && (isalnum((unsigned char)lp->text[i]) || lp->text[i] == '_'))
+                while (i < len && (isalnum((unsigned char)ltext(lp)[i]) || ltext(lp)[i] == '_'))
                     i++;
                 
                 int word_len = i - start;
                 if (word_len >= 3 && word_len < MAX_TOKEN_LEN) {
                     char tmp[MAX_TOKEN_LEN];
-                    memcpy(tmp, &lp->text[start], word_len);
+                    memcpy(tmp, &ltext(lp)[start], word_len);
                     tmp[word_len] = '\0';
                     
                     int found = -1;

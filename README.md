@@ -13,7 +13,7 @@ nx
 ```
 *A terminal editor designed around two hands, physical keys, and explicit intent.*
 
-Nanox(/na.noks/) is a modern, minimalistic, feature-rich fork of **uEmacs/PK** that brings the intuitive user experience of `nano` to the professional power of `MicroEmacs`. It's designed to be ultra-fast, lightweight, and fully UTF-8 aware, making it the perfect choice for terminal-based editing on any system.
+Nanox(/na.noks/) is a modern, minimalistic, feature-rich fork of **uEmacs/PK** that brings the intuitive user experience of `nano` to the professional power of `MicroEmacs`. It's designed to be NOT Blazingly Fast, Fairly Small, and fully UTF-8 aware, making it the perfect choice for terminal-based editing on any system. It employs a custom memory management strategy that chunks large files and lazily decompresses them via LZ4, maintaining a small RSS footprint even on extremely large files.
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
 [![License](https://img.shields.io/badge/license-Custom-blue)](LICENSE)

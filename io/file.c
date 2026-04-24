@@ -172,12 +172,10 @@ int readin(char *fname, int lockfl)
 {
     struct line *lp1;
     struct line *lp2;
-    int i;
     struct window *wp;
     struct buffer *bp;
     int s;
-    int nbytes;
-    int nline;
+    int nline = 0;
     char mesg[NSTRING];
 
     if (lockfl && lockchk(fname) == ABORT) {
@@ -244,45 +242,80 @@ int readin(char *fname, int lockfl)
         }
     }
 
-    if ((s = ffropen(use_swap ? swapname : fname)) == FIOERR) {   /* Hard file open.      */
-        nanox_set_lamp(NANOX_LAMP_ERROR);
+    FILE *fp = fopen(use_swap ? swapname : fname, "rb");
+    if (!fp) {
+        if (!use_swap) {
+            mlwrite("(New file)");
+            s = FIOFNF;
+        } else {
+            nanox_set_lamp(NANOX_LAMP_ERROR);
+            s = FIOERR;
+        }
         goto out;
     }
 
-    if (s == FIOFNF) {          /* File not found.      */
-        mlwrite("(New file)");
-        goto out;
-    }
+    mlwrite("(Reading file...)");
+    
+    char *buffer = malloc(128 * 1024);
+    if (!buffer) { fclose(fp); s = FIOMEM; goto msg_out; }
 
-    /* read the file in */
-    mlwrite("(Reading file)");
-    nline = 0;
-    while ((s = ffgetline()) == FIOSUC) {
-        nbytes = strlen(fline);
-        if ((lp1 = lalloc(nbytes)) == NULL) {
-            s = FIOMEM;     /* Keep message on the  */
-            break;          /* display.             */
+    size_t bytes_read;
+    while ((bytes_read = fread(buffer, 1, 128 * 1024, fp)) > 0) {
+        MemoryHandle hChunk = my_handle_alloc(bytes_read);
+        if (!hChunk) { s = FIOMEM; break; }
+        memcpy(handle_deref(hChunk), buffer, bytes_read);
+        
+        if (nline > 100) mymemory_freeze(hChunk);
+
+        size_t offset = 0;
+        while (offset < bytes_read) {
+            size_t line_end = offset;
+            while (line_end < bytes_read && buffer[line_end] != '\n' && buffer[line_end] != '\r') {
+                line_end++;
+            }
+
+            int used = (int)(line_end - offset);
+            lp1 = (struct line *)malloc(sizeof(struct line));
+            if (!lp1) { s = FIOMEM; break; }
+
+            lp1->l_handle = hChunk;
+            lp1->l_offset = (uint32_t)offset;
+            lp1->used = (uint16_t)used;
+            lp1->size = (uint16_t)used;
+            lp1->hl_start_state = (HighlightState){0};
+            lp1->hl_end_state = (HighlightState){0};
+            lp1->l_diag = 0;
+
+            lp2 = lback(curbp->b_linep);
+            lp2->next = lp1;
+            lp1->next = curbp->b_linep;
+            lp1->prev = lp2;
+            curbp->b_linep->prev = lp1;
+
+            nline++;
+            offset = line_end;
+            if (offset < bytes_read && buffer[offset] == '\r') offset++;
+            if (offset < bytes_read && buffer[offset] == '\n') {
+                if (offset - 1 >= 0 && buffer[offset - 1] == '\r') {
+                   offset++;
+                } else {
+                   offset++;
+                }
+            }
         }
-        if (nline > MAXNLINE) {
-            s = FIOMEM;
-            break;
-        }
-        lp2 = lback(curbp->b_linep);
-        lp2->next = lp1;
-        lp1->next = curbp->b_linep;
-        lp1->prev = lp2;
-        curbp->b_linep->prev = lp1;
-        for (i = 0; i < nbytes; ++i)
-            lputc(lp1, i, fline[i]);
-        ++nline;
+        if (s == FIOMEM) break;
     }
-    ffclose();              /* Ignore errors.       */
+    
+    free(buffer);
+    fclose(fp);
 
     if (use_swap) {
         bp->b_flag |= BFCHG;
         unlink(swapname);
     }
+    s = FIOSUC;
 
+ msg_out:
     strcpy(mesg, "(");
     if (s == FIOERR) {
         strcat(mesg, "I/O ERROR, ");
@@ -409,7 +442,7 @@ void normalize_whitespace(struct buffer *bp)
     while (lp != bp->b_linep) {
         int len = llength(lp);
         int i = len - 1;
-        while (i >= 0 && (lp->text[i] == ' ' || lp->text[i] == '\t')) {
+        while (i >= 0 && (ltext(lp)[i] == ' ' || ltext(lp)[i] == '\t')) {
             i--;
         }
         if (i + 1 < len) {
@@ -512,7 +545,7 @@ int is_effectively_same(char *fname, struct buffer *bp)
 
         /* Compare current non-blank lines */
         if (llength(lp) != (int)strlen(fline) || 
-            memcmp(lp->text, fline, llength(lp)) != 0) {
+            memcmp(ltext(lp), fline, llength(lp)) != 0) {
             ffclose();
             return FALSE;
         }
@@ -576,7 +609,7 @@ int writeout(char *fn)
 
         /* Normalize line: 1. Filter non-essential control codes. 2. Remove trailing whitespace. */
         for (int i = 0; i < len && clean_idx < (NLINE - 1); i++) {
-            unsigned char c = lp->text[i];
+            unsigned char c = ltext(lp)[i];
             /* Drop dangerous control codes but preserve UTF-8 and tabs/newlines */
             if (c >= 32 || c == '\t' || c >= 0x80) {
                 clean_buf[clean_idx++] = c;

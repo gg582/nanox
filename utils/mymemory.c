@@ -1,168 +1,278 @@
 #include "mymemory.h"
-#include <stddef.h>
-#include <stdlib.h>
+#include <lz4.h>
 #include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h> // For sbrk (though we use a static buffer)
-#include <sys/mman.h> // For mmap if needed
+#include <stddef.h>
+#include <stdint.h>
 
-#define MEMORY_POOL_SIZE (1024 * 1024) // 1MB pool
+#define ARENA_INITIAL_SIZE (1024 * 1024 * 8)
+#define CHUNK_SIZE (128 * 1024)
 
-// Structure for memory block metadata, stored *before* the user data
-typedef struct MemoryBlock {
-    size_t size;        // Size of the user data part
-    struct MemoryBlock *next_free; // Pointer to the next free block (if this block is free)
-    char is_free;       // Flag to indicate if the block is free
-} MemoryBlock;
+typedef enum { STATE_HOT, STATE_COLD } block_state_t;
 
-static char memory_pool[MEMORY_POOL_SIZE]; // The actual memory pool
-static MemoryBlock *free_list_head = NULL;
-static size_t total_allocated = 0;
+struct HandleSlot {
+    void* actual_ptr;       /* 8 bytes */
+    uint32_t raw_size;      /* 4 bytes */
+    uint32_t comp_size;     /* 4 bytes */
+    uint8_t state;          /* 1 byte */
+    uint8_t is_active;      /* 1 byte */
+    uint8_t _padding[6];    /* 6 bytes manual padding for 8-byte alignment */
+};
 
-// Helper function to get the MemoryBlock header for a given user pointer
-static MemoryBlock *get_block_from_ptr(void *ptr) {
-    if (ptr == NULL) return NULL;
-    return (MemoryBlock *)((char *)ptr - sizeof(MemoryBlock));
-}
+typedef struct BlockHeader {
+    struct HandleSlot *handle; /* 8 bytes */
+    uint32_t size;             /* 4 bytes */
+    uint32_t is_free;          /* 4 bytes */
+} BlockHeader;
 
-// Helper function to get the user data pointer from a MemoryBlock
-static void *get_ptr_from_block(MemoryBlock *block) {
-    if (block == NULL) return NULL;
-    return (void *)((char *)block + sizeof(MemoryBlock));
-}
+#define HEADER_SIZE (sizeof(BlockHeader))
+#define FOOTER_SIZE (sizeof(uint32_t))
+#define MIN_BLOCK_SIZE (HEADER_SIZE + FOOTER_SIZE + 16)
+
+typedef struct Arena {
+    struct Arena *next;
+    size_t total_size;
+    size_t used_count;
+    char *data;
+} Arena;
+
+static Arena *arena_head = NULL;
+static struct HandleSlot *proxy_table = NULL;
+#define MAX_PROXIES 262144
 
 void mymemory_init(void) {
-    // Initialize the memory pool by creating a single large free block
-    free_list_head = (MemoryBlock *)memory_pool;
-    free_list_head->size = MEMORY_POOL_SIZE - sizeof(MemoryBlock); // Size is for user data
-    free_list_head->next_free = NULL;
-    free_list_head->is_free = 1;
-    total_allocated = 0;
+    if (!proxy_table) {
+        proxy_table = (struct HandleSlot*)calloc(MAX_PROXIES, sizeof(struct HandleSlot));
+    }
 }
 
-void *mymalloc(size_t size) {
-    if (size == 0) {
-        return NULL;
-    }
-
-    // Ensure alignment: align to a multiple of 8 bytes
-    size = (size + 7) & ~7;
-
-    MemoryBlock *current = free_list_head;
-    MemoryBlock *previous = NULL;
-
-    // Find the first fit block that is large enough
-    while (current != NULL) {
-        if (current->is_free && current->size >= size) {
-            // Found a suitable block
-
-            // Check if splitting the block is worthwhile
-            // We need enough space for the allocated block (size + header) AND at least one FreeBlock header
-            if (current->size >= size + sizeof(MemoryBlock)) {
-                // Split the block
-                MemoryBlock *new_free_block = (MemoryBlock *)((char *)current + sizeof(MemoryBlock) + size);
-                new_free_block->size = current->size - size - sizeof(MemoryBlock);
-                new_free_block->next_free = current->next_free;
-                new_free_block->is_free = 1;
-
-                // Update the free list pointers
-                if (previous == NULL) {
-                    free_list_head = new_free_block;
-                } else {
-                    previous->next_free = new_free_block;
-                }
-                current->size = size; // Update the size of the allocated block
-            } else {
-                // Use the whole block, it's not large enough to split optimally
-                if (previous == NULL) {
-                    free_list_head = current->next_free;
-                } else {
-                    previous->next_free = current->next_free;
-                }
-            }
-
-            current->is_free = 0;
-            current->next_free = NULL; // Mark as not free
-            total_allocated += size;
-            // Zero out the allocated memory (as per calloc behavior, good practice)
-            memset(get_ptr_from_block(current), 0, size);
-            return get_ptr_from_block(current);
+static struct HandleSlot* get_new_proxy(void* actual, size_t size) {
+    for (int i = 0; i < MAX_PROXIES; i++) {
+        if (!proxy_table[i].is_active) {
+            proxy_table[i].is_active = 1;
+            proxy_table[i].actual_ptr = actual;
+            proxy_table[i].raw_size = (uint32_t)size;
+            proxy_table[i].state = STATE_HOT;
+            proxy_table[i].comp_size = 0;
+            return &proxy_table[i];
         }
-        previous = current;
-        current = current->next_free;
     }
-
-    // No suitable block found
-    fprintf(stderr, "mymalloc: failed to allocate %zu bytes (pool exhausted or fragmented)\n", size);
     return NULL;
 }
 
-void myfree(void *ptr) {
-    if (ptr == NULL) {
+static Arena* create_arena(size_t req) {
+    size_t s = (req + sizeof(Arena) + 4096) & ~4095;
+    if (s < ARENA_INITIAL_SIZE) s = ARENA_INITIAL_SIZE;
+    
+    Arena *a = (Arena*)malloc(sizeof(Arena));
+    if (!a) return NULL;
+    a->data = (char*)malloc(s);
+    if (!a->data) { free(a); return NULL; }
+    
+    a->total_size = s;
+    a->used_count = 0;
+    a->next = arena_head;
+    arena_head = a;
+
+    BlockHeader *h = (BlockHeader*)a->data;
+    h->size = (uint32_t)s;
+    h->is_free = 1;
+    h->handle = NULL;
+    *(uint32_t*)(a->data + s - FOOTER_SIZE) = (uint32_t)s;
+    
+    return a;
+}
+
+static void* arena_alloc(Arena *a, size_t size, struct HandleSlot **out_slot) {
+    size_t total_needed = (size + HEADER_SIZE + FOOTER_SIZE + 7) & ~7;
+    char *curr = a->data;
+    while (curr < a->data + a->total_size) {
+        BlockHeader *h = (BlockHeader*)curr;
+        if (h->is_free && h->size >= total_needed) {
+            if (h->size >= total_needed + MIN_BLOCK_SIZE) {
+                uint32_t old_size = h->size;
+                h->size = (uint32_t)total_needed;
+                h->is_free = 0;
+                
+                BlockHeader *next_h = (BlockHeader*)(curr + total_needed);
+                next_h->size = old_size - (uint32_t)total_needed;
+                next_h->is_free = 1;
+                next_h->handle = NULL;
+                *(uint32_t*)(curr + total_needed + next_h->size - FOOTER_SIZE) = next_h->size;
+            } else {
+                h->is_free = 0;
+            }
+            *(uint32_t*)(curr + h->size - FOOTER_SIZE) = h->size;
+            
+            a->used_count++;
+            struct HandleSlot *slot = get_new_proxy(curr + HEADER_SIZE, size);
+            h->handle = slot;
+            *out_slot = slot;
+            return curr + HEADER_SIZE;
+        }
+        curr += h->size;
+    }
+    return NULL;
+}
+
+void* mymalloc(size_t s) {
+    if (!proxy_table) mymemory_init();
+    struct HandleSlot *slot = NULL;
+    for (Arena *a = arena_head; a; a = a->next) {
+        void* p = arena_alloc(a, s, &slot);
+        if (p) return (void*)slot;
+    }
+    Arena *new_a = create_arena(s + HEADER_SIZE + FOOTER_SIZE);
+    if (!new_a) return NULL;
+    return (void*)arena_alloc(new_a, s, &slot);
+}
+
+void myfree(void* p) {
+    if (!p) return;
+    struct HandleSlot *slot = (struct HandleSlot*)p;
+    if (!slot->is_active) return;
+
+    if (slot->state == STATE_COLD) {
+        free(slot->actual_ptr);
+        slot->is_active = 0;
         return;
     }
 
-    MemoryBlock *block_to_free = get_block_from_ptr(ptr);
-    if (!block_to_free || block_to_free->is_free) {
-        // Attempt to free invalid pointer or already freed memory
-        fprintf(stderr, "myfree: invalid pointer or double free detected\n");
-        return;
-    }
+    BlockHeader *h = (BlockHeader*)((char*)slot->actual_ptr - HEADER_SIZE);
+    h->is_free = 1;
+    h->handle = NULL;
+    slot->is_active = 0;
 
-    block_to_free->is_free = 1;
-    // Add to the front of the free list. Merging would be a further optimization.
-    block_to_free->next_free = free_list_head;
-    free_list_head = block_to_free;
-    total_allocated -= block_to_free->size;
+    for (Arena *a = arena_head; a; a = a->next) {
+        if ((char*)h >= a->data && (char*)h < a->data + a->total_size) {
+            a->used_count--;
+            break;
+        }
+    }
 }
 
-void *mycalloc(size_t nmemb, size_t size) {
-    size_t total_size = nmemb * size;
-    void *ptr = mymalloc(total_size);
-    if (ptr != NULL) {
-        memset(ptr, 0, total_size);
+void mymemory_compact(void) {
+    Arena **curr_a = &arena_head;
+    while (*curr_a) {
+        Arena *a = *curr_a;
+        if (a->used_count == 0) {
+            *curr_a = a->next;
+            free(a->data);
+            free(a);
+            continue;
+        }
+
+        char *p = a->data;
+        while (p < a->data + a->total_size) {
+            BlockHeader *h = (BlockHeader*)p;
+            if (h->is_free) {
+                char *next_p = p + h->size;
+                while (next_p < a->data + a->total_size) {
+                    BlockHeader *next_h = (BlockHeader*)next_p;
+                    if (next_h->is_free) {
+                        h->size += next_h->size;
+                        *(uint32_t*)(p + h->size - FOOTER_SIZE) = h->size;
+                        next_p = p + h->size;
+                    } else break;
+                }
+            }
+            p += h->size;
+        }
+        curr_a = &((*curr_a)->next);
     }
-    return ptr;
 }
 
-void *myrealloc(void *ptr, size_t size) {
-    if (ptr == NULL) {
-        return mymalloc(size);
-    }
-    if (size == 0) {
-        myfree(ptr);
-        return NULL;
-    }
+void* restrict _mymemory_deref(void* handle) {
+    if (!handle) return NULL;
+    struct HandleSlot *s = (struct HandleSlot*)handle;
+    if (s->state == STATE_HOT) return s->actual_ptr;
 
-    MemoryBlock *block = get_block_from_ptr(ptr);
-    size_t old_size = block->size;
-
-    // If new size is smaller and block is large enough to split, try splitting
-    if (size < old_size && old_size >= size + sizeof(MemoryBlock)) {
-        // Split the block
-        MemoryBlock *new_free_block = (MemoryBlock *)((char *)block + sizeof(MemoryBlock) + size);
-        new_free_block->size = old_size - size - sizeof(MemoryBlock);
-        new_free_block->next_free = block->next_free;
-        new_free_block->is_free = 1;
-        block->size = size;
-        // Update free list - this is tricky as block might not be at head
-        // For simplicity, we'll just add the new free block to the head
-        new_free_block->next_free = free_list_head;
-        free_list_head = new_free_block;
-
-        total_allocated -= (old_size - size - sizeof(MemoryBlock)); // Adjust total allocated
-        return ptr; // Return original pointer, as it was just resized in place
-    }
-
-    // If new size is larger or cannot split, allocate new, copy, free old
-    void *new_ptr = mymalloc(size);
-    if (new_ptr == NULL) {
-        return NULL; // Failed to reallocate
-    }
-
-    // Copy data from old block to new block
-    memcpy(new_ptr, ptr, old_size < size ? old_size : size);
-    myfree(ptr);
-    return new_ptr;
+    void *new_hot_handle = mymalloc(s->raw_size);
+    if (!new_hot_handle) return NULL;
+    
+    struct HandleSlot *new_s = (struct HandleSlot*)new_hot_handle;
+    LZ4_decompress_safe((char*)s->actual_ptr, (char*)new_s->actual_ptr, (int)s->comp_size, (int)s->raw_size);
+    
+    free(s->actual_ptr);
+    s->actual_ptr = new_s->actual_ptr;
+    s->state = STATE_HOT;
+    
+    BlockHeader *h = (BlockHeader*)((char*)s->actual_ptr - HEADER_SIZE);
+    h->handle = s;
+    new_s->is_active = 0;
+    
+    return s->actual_ptr;
 }
 
+int mymemory_freeze(void* p) {
+    if (!p) return 0;
+    struct HandleSlot *s = (struct HandleSlot*)p;
+    if (s->state == STATE_COLD || !s->is_active) return 0;
+
+    int max_comp = LZ4_compressBound((int)s->raw_size);
+    char *comp_buf = (char*)malloc(max_comp);
+    if (!comp_buf) return 0;
+
+    int actual_comp = LZ4_compress_default((char*)s->actual_ptr, comp_buf, (int)s->raw_size, max_comp);
+    
+    if (actual_comp > 0) {
+        void *old_ptr = s->actual_ptr;
+        s->actual_ptr = realloc(comp_buf, actual_comp);
+        if (!s->actual_ptr) s->actual_ptr = comp_buf;
+        s->comp_size = (uint32_t)actual_comp;
+        s->state = STATE_COLD;
+
+        BlockHeader *h = (BlockHeader*)((char*)old_ptr - HEADER_SIZE);
+        h->is_free = 1;
+        h->handle = NULL;
+        
+        for (Arena *a = arena_head; a; a = a->next) {
+            if ((char*)h >= a->data && (char*)h < a->data + a->total_size) {
+                a->used_count--;
+                break;
+            }
+        }
+        return 1;
+    }
+    free(comp_buf);
+    return 0;
+}
+
+MemoryHandle my_handle_alloc(size_t size) { return (MemoryHandle)mymalloc(size); }
+MemoryHandle my_handle_calloc(size_t nmemb, size_t size) { 
+    MemoryHandle h = (MemoryHandle)mymalloc(nmemb * size);
+    if (h) memset(handle_deref(h), 0, nmemb * size);
+    return h;
+}
+MemoryHandle my_handle_realloc(MemoryHandle h, size_t size) {
+    if (!h) return my_handle_alloc(size);
+    MemoryHandle nh = my_handle_alloc(size);
+    if (nh) {
+        struct HandleSlot *os = (struct HandleSlot*)h;
+        size_t cp = os->raw_size < size ? os->raw_size : size;
+        memcpy(handle_deref(nh), handle_deref(h), cp);
+        my_handle_free(h);
+    }
+    return nh;
+}
+void my_handle_free(MemoryHandle h) { myfree((void*)h); }
+void* restrict handle_deref(MemoryHandle h) { return _mymemory_deref((void*)h); }
+
+void mymemory_shutdown(void) {
+    while (arena_head) {
+        Arena *a = arena_head;
+        arena_head = a->next;
+        free(a->data);
+        free(a);
+    }
+    if (proxy_table) {
+        for (int i = 0; i < MAX_PROXIES; i++) {
+            if (proxy_table[i].is_active && proxy_table[i].state == STATE_COLD) {
+                free(proxy_table[i].actual_ptr);
+            }
+        }
+        free(proxy_table);
+        proxy_table = NULL;
+    }
+}

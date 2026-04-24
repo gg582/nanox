@@ -26,7 +26,7 @@ endif
 
 # Libraries discovery
 LIBS = ncursesw pcre2-8 pthread
-LDLIBS = $(shell pkg-config --libs $(LIBS) 2>/dev/null || echo -lncursesw -lpcre2-8 -lpthread)
+LDLIBS = $(shell pkg-config --libs $(LIBS) 2>/dev/null || echo -lncursesw -lpcre2-8 -lpthread) -llz4
 
 # Hunspell support
 HUNSPELL_CFLAGS := $(shell pkg-config --cflags hunspell 2>/dev/null)

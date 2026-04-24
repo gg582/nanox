@@ -300,7 +300,7 @@ int command_mode_handle_colors_command(const char *input) {
 
         Match matches[32];
         // We pass the string starting at start_offset
-        int mcount = match_colors((char*)lp->text + start_offset, proc_len, matches, 32);
+        int mcount = match_colors((char*)ltext(lp) + start_offset, proc_len, matches, 32);
 
         if (mcount > 0) {
             match_count_total += mcount;
@@ -311,7 +311,7 @@ int command_mode_handle_colors_command(const char *input) {
             
             // copy before start_offset
             while (in_idx < start_offset) {
-                new_text[out_idx++] = lp->text[in_idx++];
+                new_text[out_idx++] = ltext(lp)[in_idx++];
             }
 
             for (int m = 0; m < mcount; m++) {
@@ -320,7 +320,7 @@ int command_mode_handle_colors_command(const char *input) {
 
                 // copy before this match
                 while (in_idx < match_abs_start) {
-                    new_text[out_idx++] = lp->text[in_idx++];
+                    new_text[out_idx++] = ltext(lp)[in_idx++];
                 }
                 
                 // apply ops
@@ -362,7 +362,7 @@ int command_mode_handle_colors_command(const char *input) {
             }
             // copy rest
             while (in_idx < line_len) {
-                new_text[out_idx++] = lp->text[in_idx++];
+                new_text[out_idx++] = ltext(lp)[in_idx++];
             }
             new_text[out_idx] = '\0';
 

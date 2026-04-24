@@ -81,14 +81,16 @@ typedef enum {
 #define HL_STATE_STACK_MAX 8
 
 typedef struct {
-    StateID state;
-    int sub_id;       /* Block comment index or string metadata */
-    char string_delim;
+    int sub_id;           /* 4 bytes */
+    StateID state;        /* 4 bytes */
+    char string_delim;    /* 1 byte */
+    char _padding[3];     /* 3 bytes padding for 8-byte alignment */
 } HighlightStackEntry;
 
 typedef struct {
     HighlightStackEntry stack[HL_STATE_STACK_MAX];
-    int depth;
+    int depth;            /* 4 bytes */
+    char _padding[4];     /* 4 bytes padding for 8-byte alignment */
 } HighlightState;
 
 void highlight_init(const char *rule_config_path);

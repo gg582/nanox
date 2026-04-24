@@ -3,7 +3,9 @@
 
 #include "utf8.h"
 #include <stdatomic.h>
+#include <stdint.h>
 #include "highlight.h"
+#include "../utils/mymemory.h"
 
 /*
  * All text is kept in circularly linked lists of "struct line" structures. These
@@ -14,20 +16,24 @@
  * additions will include update hints, and a list of marks into the line.
  */
 struct line {
-    _Atomic(struct line *) next;          /* Link to the next line        */
-    _Atomic(struct line *) prev;          /* Link to the previous line    */
-    _Atomic int size;                   /* Allocated size               */
-    _Atomic int used;                   /* Used size                    */
-    HighlightState hl_start_state;
-    HighlightState hl_end_state;
-    char l_diag;                /* Diagnostic: 0=none, 1=warn, 2=error */
-    unsigned char *text;        /* Variable length text buffer  */
+    _Atomic(struct line *) next;          /* 8 bytes */
+    _Atomic(struct line *) prev;          /* 8 bytes */
+    MemoryHandle l_handle;                /* 8 bytes */
+    HighlightState hl_start_state;        /* 104 bytes */
+    HighlightState hl_end_state;          /* 104 bytes */
+    _Atomic int size;                     /* 4 bytes */
+    _Atomic int used;                     /* 4 bytes */
+    uint32_t l_offset;                    /* 4 bytes */
+    char l_diag;                          /* 1 byte */
+    char _padding[3];                     /* 3 bytes manual padding for 8-byte alignment */
 };
+
+#define ltext(lp)       (((unsigned char * restrict)handle_deref((lp)->l_handle)) + (lp)->l_offset)
 
 #define lforw(lp)       ((lp)->next)
 #define lback(lp)       ((lp)->prev)
-#define lgetc(lp, n)    ((lp)->text[(n)]&0xFF)
-#define lputc(lp, n, c) ((lp)->text[(n)]=(c))
+#define lgetc(lp, n)    (ltext(lp)[(n)]&0xFF)
+#define lputc(lp, n, c) (ltext(lp)[(n)]=(c))
 #define llength(lp)     ((lp)->used)
 
 extern void lfree(struct line *lp);

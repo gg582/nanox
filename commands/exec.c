@@ -450,7 +450,7 @@ int dobuf(struct buffer *bp)
     lp = hlp->next;
     while (lp != hlp) {
         /* scan the current line */
-        eline = lp->text;
+        eline = ltext(lp);
         i = lp->used;
 
         /* trim leading whitespace */
@@ -536,7 +536,7 @@ int dobuf(struct buffer *bp)
             freewhile(whlist);
             return FALSE;
         }
-        strncpy(eline, lp->text, linlen);
+        strncpy(eline, ltext(lp), linlen);
         eline[linlen] = 0;      /* make sure it ends */
 
         /* trim leading whitespace */
@@ -674,9 +674,9 @@ int dobuf(struct buffer *bp)
                     linlen = strlen(golabel);
                     glp = hlp->next;
                     while (glp != hlp) {
-                        if (*glp->text == '*' &&
+                        if (*ltext(glp) == '*' &&
                             (strncmp
-                             (&glp->text[1], golabel, linlen) == 0)) {
+                             (&ltext(glp)[1], golabel, linlen) == 0)) {
                             lp = glp;
                             goto onward;
                         }

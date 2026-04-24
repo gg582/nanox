@@ -765,7 +765,7 @@ static char *internal_getval(char *token)
         blen = bp->b_dotp->used - bp->b_doto;
         if (blen >= NSTRING)
             blen = NSTRING - 1;
-        strncpy(buf, bp->b_dotp->text + bp->b_doto, blen);
+        strncpy(buf, ltext(bp->b_dotp) + bp->b_doto, blen);
         buf[blen] = 0;
 
         /* and step the buffer's line ptr ahead a line */

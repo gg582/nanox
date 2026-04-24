@@ -112,12 +112,12 @@ static void ghost_text_plugin_fn(render_ctx_t *ctx) {
     struct line *lp = ctx->lp;
     int offset = curwp->w_doto;
     int i = offset;
-    while (i > 0 && isalnum((unsigned char)lp->text[i-1])) i--;
+    while (i > 0 && isalnum((unsigned char)ltext(lp)[i-1])) i--;
     
     if (i < offset) {
         int plen = offset - i;
         if (plen < (int)sizeof(prefix)) {
-            memcpy(prefix, lp->text + i, (size_t)plen);
+            memcpy(prefix, ltext(lp) + i, (size_t)plen);
             prefix[plen] = '\0';
             
             extern const char *completion_get_best_hint(const char *prefix);
@@ -191,7 +191,7 @@ static int get_line_height(struct line *lp)
     int i = 0;
     while (i < len) {
         unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)lp->text, i, len, &c);
+        int bytes = utf8_to_unicode((unsigned char *)ltext(lp), i, len, &c);
         int w = get_char_width(c, col);
         if (col + w > nanox_text_cols()) {
             height++;
@@ -368,7 +368,7 @@ static void draw_hint_row(int row, const char *left, const char *status)
             
                 while (i < wp->w_doto) {
                     unicode_t c;
-                    int bytes = utf8_to_unicode((unsigned char *)lp->text, i, len, &c);
+                    int bytes = utf8_to_unicode((unsigned char *)ltext(lp), i, len, &c);
                     i += bytes;
                     col = next_column(col, c, tab_width);
                 }
@@ -561,7 +561,7 @@ static void update_syntax_highlighting(struct buffer *bp) {
         }
 
         HighlightState computed_end;
-        highlight_line((const char *)lp->text, lp->used, current_state, profile, NULL, &computed_end);
+        highlight_line((const char *)ltext(lp), lp->used, current_state, profile, NULL, &computed_end);
         
         if (memcmp(&lp->hl_end_state, &computed_end, sizeof(HighlightState)) != 0) {
             lp->hl_end_state = computed_end;
@@ -613,7 +613,7 @@ void highlight_incremental_step(struct buffer *bp)
         }
 
         HighlightState computed_end;
-        highlight_line((const char *)lp->text, lp->used, current_state, profile, NULL, &computed_end);
+        highlight_line((const char *)ltext(lp), lp->used, current_state, profile, NULL, &computed_end);
         
         if (memcmp(&lp->hl_end_state, &computed_end, sizeof(HighlightState)) != 0) {
             lp->hl_end_state = computed_end;
@@ -733,7 +733,7 @@ static int reframe(struct window *wp)
                 int char_idx = 0;
                 while (char_idx < wp->w_doto) {
                     unicode_t c;
-                    int bytes = utf8_to_unicode((unsigned char *)lp->text, char_idx, wp->w_doto, &c);
+                    int bytes = utf8_to_unicode((unsigned char *)ltext(lp), char_idx, wp->w_doto, &c);
                     int w = get_char_width(c, col);
                     if (col + w > nanox_text_cols()) {
                         dot_vrow++;
@@ -788,7 +788,7 @@ static void show_line(struct window *wp, struct line *lp)
         fname = wp->w_bufp->b_bname;
     const HighlightProfile *profile = highlight_get_profile(fname);
 
-    highlight_line((const char *)lp->text, len, lp->hl_start_state, profile, &spans, &end_state);
+    highlight_line((const char *)ltext(lp), len, lp->hl_start_state, profile, &spans, &end_state);
 
     if (memcmp(&lp->hl_end_state, &end_state, sizeof(HighlightState)) != 0) {
         lp->hl_end_state = end_state;
@@ -819,7 +819,7 @@ static void show_line(struct window *wp, struct line *lp)
         }
 
         unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)lp->text, char_idx, len, &c);
+        int bytes = utf8_to_unicode((unsigned char *)ltext(lp), char_idx, len, &c);
         if (bytes <= 0)
             bytes = 1;
         int next_col = next_column(text_col, c, tab_width);
@@ -845,7 +845,7 @@ static void show_line(struct window *wp, struct line *lp)
 
     /* Detect color codes in the line and show preview boxes */
     ColorInfo colors[MAX_COLORS_PER_LINE];
-    int color_count = highlight_find_colors((const char *)lp->text, len, colors, MAX_COLORS_PER_LINE);
+    int color_count = highlight_find_colors((const char *)ltext(lp), len, colors, MAX_COLORS_PER_LINE);
     
     if (color_count > 0) {
         /* Add a space separator, then color preview boxes */
@@ -902,7 +902,7 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
         fname = wp->w_bufp->b_bname;
     const HighlightProfile *profile = highlight_get_profile(fname);
 
-    highlight_line((const char *)lp->text, len, lp->hl_start_state, profile, &spans, &end_state);
+    highlight_line((const char *)ltext(lp), len, lp->hl_start_state, profile, &spans, &end_state);
 
     if (memcmp(&lp->hl_end_state, &end_state, sizeof(HighlightState)) != 0) {
         lp->hl_end_state = end_state;
@@ -933,7 +933,7 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
         }
 
         unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)lp->text, char_idx, len, &c);
+        int bytes = utf8_to_unicode((unsigned char *)ltext(lp), char_idx, len, &c);
         if (bytes <= 0) bytes = 1;
 
         int w = get_char_width(c, vtcol);
@@ -1091,7 +1091,7 @@ void updpos(void)
         unicode_t c;
         int bytes;
 
-        bytes = utf8_to_unicode((unsigned char *)lp->text, i, curwp->w_doto, &c);
+        bytes = utf8_to_unicode((unsigned char *)ltext(lp), i, curwp->w_doto, &c);
         int w = get_char_width(c, curcol);
         if (curcol + w > nanox_text_cols()) {
             currow++;

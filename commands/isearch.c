@@ -149,7 +149,7 @@ int minibuf_delete_char(long n)
     /* Move back one UTF-8 character */
     if (minibuf_wp->w_doto > 0) {
         int byte_offset = minibuf_wp->w_doto - 1;
-        unsigned char *text = minibuf_wp->w_dotp->text;
+        unsigned char *text = ltext(minibuf_wp->w_dotp);
         
         /* Move back to find UTF-8 character boundary */
         while (byte_offset > 0 && !is_beginning_utf8(text[byte_offset]))
@@ -219,7 +219,7 @@ void minibuf_update(const char *prompt)
     }
     
     /* Display buffer content - CLONED from show_line() logic */
-    text = lp->text;
+    text = ltext(lp);
     len = lp->used;
     i = 0;
     
@@ -342,7 +342,7 @@ void minibuf_get_text(char *dest, int max_len)
     
     /* Copy content */
     for (i = 0; i < lp->used && i < max_len - 1; i++) {
-        dest[i] = lp->text[i];
+        dest[i] = ltext(lp)[i];
     }
     dest[i] = '\0';
 }

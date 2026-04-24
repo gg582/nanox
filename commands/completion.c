@@ -534,7 +534,7 @@ static void collect_buffer_words(const char *prefix)
         int i = 0;
         while (i < len && completion_state.count < MAX_COMPLETIONS) {
             unicode_t uc = 0;
-            int bytes = utf8_to_unicode(lp->text, (unsigned)i, (unsigned)len, &uc);
+            int bytes = utf8_to_unicode(ltext(lp), (unsigned)i, (unsigned)len, &uc);
             if (bytes <= 0)
                 bytes = 1;
 
@@ -543,7 +543,7 @@ static void collect_buffer_words(const char *prefix)
                 i += bytes;
                 while (i < len) {
                     unicode_t next = 0;
-                    int consumed = utf8_to_unicode(lp->text, (unsigned)i, (unsigned)len, &next);
+                    int consumed = utf8_to_unicode(ltext(lp), (unsigned)i, (unsigned)len, &next);
                     if (consumed <= 0)
                         consumed = 1;
                     if (!is_identifier_char(next))
@@ -555,7 +555,7 @@ static void collect_buffer_words(const char *prefix)
                     word_len = MAX_COMPLETION_LEN - 1;
 
                 char tmp[MAX_COMPLETION_LEN];
-                memcpy(tmp, &lp->text[start], (size_t)word_len);
+                memcpy(tmp, &ltext(lp)[start], (size_t)word_len);
                 tmp[word_len] = '\0';
 
                 if ((size_t)word_len >= prefix_len)
@@ -1432,7 +1432,7 @@ static void scan_buffer_for_source_symbols(struct buffer *bp,
             size_t copy = (size_t)len;
             if (pos + copy > total)
                 copy = total - pos;
-            memcpy(buf + pos, lp->text, copy);
+            memcpy(buf + pos, ltext(lp), copy);
             pos += copy;
         }
         if (pos < total)
@@ -1570,7 +1570,7 @@ static int get_owner_symbol_near_cursor(struct line *lp, int prefix_start, char 
     dot_pos = prev_char_start(lp, prefix_start);
     if (dot_pos <= 0)
         return FALSE;
-    if (utf8_to_unicode(lp->text, (unsigned)dot_pos, (unsigned)len, &uc) <= 0)
+    if (utf8_to_unicode(ltext(lp), (unsigned)dot_pos, (unsigned)len, &uc) <= 0)
         return FALSE;
     if (uc != '.')
         return FALSE;
@@ -1580,7 +1580,7 @@ static int get_owner_symbol_near_cursor(struct line *lp, int prefix_start, char 
         int candidate = prev_char_start(lp, owner_start);
         if (candidate == owner_start)
             break;
-        if (utf8_to_unicode(lp->text, (unsigned)candidate, (unsigned)len, &uc) <= 0)
+        if (utf8_to_unicode(ltext(lp), (unsigned)candidate, (unsigned)len, &uc) <= 0)
             break;
         if (!is_identifier_char(uc))
             break;
@@ -1591,7 +1591,7 @@ static int get_owner_symbol_near_cursor(struct line *lp, int prefix_start, char 
     int copy_len = owner_end - owner_start;
     if (copy_len >= (int)outsz)
         copy_len = (int)outsz - 1;
-    memcpy(out, &lp->text[owner_start], (size_t)copy_len);
+    memcpy(out, &ltext(lp)[owner_start], (size_t)copy_len);
     out[copy_len] = '\0';
     return TRUE;
 }
@@ -1617,7 +1617,7 @@ static int resolve_java_class_name(const char *owner, char *out, size_t outsz)
         int len = llength(lp);
         if (len >= (int)sizeof(linebuf))
             len = sizeof(linebuf) - 1;
-        memcpy(linebuf, lp->text, (size_t)len);
+        memcpy(linebuf, ltext(lp), (size_t)len);
         linebuf[len] = '\0';
         char *p = linebuf;
         while (*p == ' ' || *p == '\t')
@@ -2240,7 +2240,7 @@ static int prev_char_start(struct line *lp, int pos)
         return 0;
     do {
         pos--;
-    } while (pos > 0 && !is_beginning_utf8(lp->text[pos]));
+    } while (pos > 0 && !is_beginning_utf8(ltext(lp)[pos]));
     return pos;
 }
 
@@ -2256,7 +2256,7 @@ static int extract_word_prefix(struct line *lp, int offset, char *dest, size_t d
     while (start > 0) {
         int candidate = prev_char_start(lp, start);
         unicode_t uc = 0;
-        int bytes = utf8_to_unicode(lp->text, (unsigned)candidate, (unsigned)len, &uc);
+        int bytes = utf8_to_unicode(ltext(lp), (unsigned)candidate, (unsigned)len, &uc);
         if (bytes <= 0)
             bytes = 1;
         if (!is_identifier_char(uc))
@@ -2270,7 +2270,7 @@ static int extract_word_prefix(struct line *lp, int offset, char *dest, size_t d
     int copy_len = offset - start;
     if (copy_len >= (int)dest_sz)
         copy_len = (int)dest_sz - 1;
-    memcpy(dest, &lp->text[start], (size_t)copy_len);
+    memcpy(dest, &ltext(lp)[start], (size_t)copy_len);
     dest[copy_len] = '\0';
     if (start_out)
         *start_out = start;
@@ -2289,7 +2289,7 @@ static int extract_path_prefix(struct line *lp, int offset, char *dest, size_t d
     while (start > 0) {
         int candidate = prev_char_start(lp, start);
         unicode_t uc = 0;
-        int bytes = utf8_to_unicode(lp->text, (unsigned)candidate, (unsigned)len, &uc);
+        int bytes = utf8_to_unicode(ltext(lp), (unsigned)candidate, (unsigned)len, &uc);
         if (bytes <= 0)
             bytes = 1;
         if (!is_path_char(uc))
@@ -2303,7 +2303,7 @@ static int extract_path_prefix(struct line *lp, int offset, char *dest, size_t d
     int copy_len = offset - start;
     if (copy_len >= (int)dest_sz)
         copy_len = (int)dest_sz - 1;
-    memcpy(dest, &lp->text[start], (size_t)copy_len);
+    memcpy(dest, &ltext(lp)[start], (size_t)copy_len);
     dest[copy_len] = '\0';
     if (start_out)
         *start_out = start;
@@ -2328,7 +2328,7 @@ static size_t completion_calculate_dotted_token_delete_len(const char *match, st
     while (start > 0) {
         int candidate = prev_char_start(lp, start);
         unicode_t uc = 0;
-        int bytes = utf8_to_unicode(lp->text, (unsigned)candidate, (unsigned)len, &uc);
+        int bytes = utf8_to_unicode(ltext(lp), (unsigned)candidate, (unsigned)len, &uc);
         if (bytes <= 0)
             bytes = 1;
         if (!is_identifier_char(uc) && uc != '.' && uc != '$')
@@ -2352,24 +2352,24 @@ static int completion_is_import_include_context(struct line *lp)
 
     int len = llength(lp);
     int i = 0;
-    while (i < len && (lp->text[i] == ' ' || lp->text[i] == '\t'))
+    while (i < len && (ltext(lp)[i] == ' ' || ltext(lp)[i] == '\t'))
         i++;
 
     if (i >= len)
         return FALSE;
 
-    if (i + 8 <= len && memcmp(&lp->text[i], "#include", 8) == 0) {
-        if (i + 8 == len || isspace((unsigned char)lp->text[i + 8]) ||
-            lp->text[i + 8] == '<' || lp->text[i + 8] == '"')
+    if (i + 8 <= len && memcmp(&ltext(lp)[i], "#include", 8) == 0) {
+        if (i + 8 == len || isspace((unsigned char)ltext(lp)[i + 8]) ||
+            ltext(lp)[i + 8] == '<' || ltext(lp)[i + 8] == '"')
             return TRUE;
     }
-    if (i + 7 <= len && memcmp(&lp->text[i], "include", 7) == 0) {
-        if (i + 7 == len || isspace((unsigned char)lp->text[i + 7]) ||
-            lp->text[i + 7] == '<' || lp->text[i + 7] == '"')
+    if (i + 7 <= len && memcmp(&ltext(lp)[i], "include", 7) == 0) {
+        if (i + 7 == len || isspace((unsigned char)ltext(lp)[i + 7]) ||
+            ltext(lp)[i + 7] == '<' || ltext(lp)[i + 7] == '"')
             return TRUE;
     }
-    if (i + 6 <= len && memcmp(&lp->text[i], "import", 6) == 0) {
-        if (i + 6 == len || isspace((unsigned char)lp->text[i + 6]))
+    if (i + 6 <= len && memcmp(&ltext(lp)[i], "import", 6) == 0) {
+        if (i + 6 == len || isspace((unsigned char)ltext(lp)[i + 6]))
             return TRUE;
     }
     return FALSE;
@@ -2387,7 +2387,7 @@ static int completion_has_terminator_ahead(struct line *lp, int offset, char ter
         offset = len;
 
     for (int i = offset; i < len; i++) {
-        unsigned char c = (unsigned char)lp->text[i];
+        unsigned char c = (unsigned char)ltext(lp)[i];
         if (c == ' ' || c == '\t')
             continue;
         return c == (unsigned char)terminator;

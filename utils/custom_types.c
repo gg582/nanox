@@ -126,7 +126,7 @@ static void rebuild_custom_types(struct buffer *bp)
     struct line *lp = lforw(bp->b_linep);
 
     while (lp != bp->b_linep) {
-        const unsigned char *text = lp->text;
+        const unsigned char *text = ltext(lp);
         int len = llength(lp);
         int i = 0;
 

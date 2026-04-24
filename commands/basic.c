@@ -34,7 +34,7 @@ static int getgoal(struct line *dlp)
     dbo = 0;
     while (dbo != len) {
         unicode_t c;
-        int width = utf8_to_unicode(dlp->text, dbo, len, &c);
+        int width = utf8_to_unicode(ltext(dlp), dbo, len, &c);
 
         col = next_column(col, c, tab_width);
         if (col > curgoal)
