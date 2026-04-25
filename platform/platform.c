@@ -118,10 +118,16 @@ void nanox_get_user_config_dir(char *out, size_t cap) {
 
 void nanox_path_join(char *out, size_t cap, const char *a, const char *b) {
     if (cap == 0) return; // Cannot write to a zero-sized buffer
-    out[0] = '\0'; // Initialize out to an empty string
-
-    // Safely copy 'a'
-    size_t written = snprintf(out, cap, "%s", a);
+    
+    size_t written = 0;
+    if (out != a) {
+        out[0] = '\0'; // Initialize out to an empty string
+        // Safely copy 'a'
+        written = snprintf(out, cap, "%s", a ? a : "");
+    } else {
+        // out and a are the same, just find the length
+        written = strnlen(out, cap);
+    }
 
     // Check for truncation during copy of 'a'
     if (written >= cap) {
