@@ -18,7 +18,9 @@ void mymemory_shutdown(void);
 MemoryHandle my_handle_alloc(size_t size);
 MemoryHandle my_handle_calloc(size_t nmemb, size_t size);
 MemoryHandle my_handle_realloc(MemoryHandle h, size_t size);
+void my_handle_ref(MemoryHandle h);
 void my_handle_free(MemoryHandle h);
+int my_handle_ref_count(MemoryHandle h);
 
 /* 
  * Dereference macro/function for data access.
@@ -32,6 +34,7 @@ void* restrict handle_deref(MemoryHandle h);
  * Returns 1 on success, 0 on failure (e.g., no compression benefit).
  */
 int mymemory_freeze(void *p);
+void mymemory_freeze_timeout(void);
 
 /* Force trigger memory compaction (sliding) for optimization/debugging */
 void mymemory_compact(void);

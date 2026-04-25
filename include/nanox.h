@@ -34,6 +34,7 @@ struct nanox_config {
     bool use_auto_doc_completion;
     bool nonr;
     bool no_function_slot;
+    int cold_storage_timeout;
 };
 
 extern struct nanox_config nanox_cfg;

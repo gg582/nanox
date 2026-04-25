@@ -39,6 +39,7 @@ struct line {
 extern void lfree(struct line *lp);
 extern void lmark_dirty(struct line *lp);
 extern void lchange(int flag);
+extern int l_unshare(struct line *lp);
 extern int insspace(int f, int n);
 extern int linstr(char *instr);
 extern int linsert(int n, int c);

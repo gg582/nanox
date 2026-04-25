@@ -220,6 +220,7 @@ static void config_defaults(void)
     nanox_cfg.use_auto_doc_completion = true;
     nanox_cfg.nonr = false;
     nanox_cfg.no_function_slot = false;
+    nanox_cfg.cold_storage_timeout = 240;
 }
 
 static bool parse_bool(const char *value, bool *out)
@@ -296,6 +297,12 @@ static void parse_edit_option(const char *key, const char *value)
     } else if (strcasecmp(key, "use_auto_doc_completion") == 0) {
         if (!parse_bool(value, &nanox_cfg.use_auto_doc_completion))
             mark_config_error();
+    } else if (strcasecmp(key, "cold_storage_timeout") == 0) {
+        int timeout = atoi(value);
+        if (timeout < 0)
+            mark_config_error();
+        else
+            nanox_cfg.cold_storage_timeout = timeout;
     }
 }
 

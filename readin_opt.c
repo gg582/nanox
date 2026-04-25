@@ -89,52 +89,112 @@ int readin(char *fname, int lockfl)
     char *buffer = malloc(128 * 1024);
     if (!buffer) { fclose(fp); s = FIOMEM; goto msg_out; }
 
+    #define COMPRESS_LINES 128
+    char *chunk_buf = malloc(1024 * 1024 * 16); // up to 16MB per 128 lines just in case
+    if (!chunk_buf) { free(buffer); fclose(fp); s = FIOMEM; goto msg_out; }
+    
+    int chunk_lines = 0;
+    size_t chunk_bytes = 0;
+    size_t line_offsets[COMPRESS_LINES];
+    size_t line_lengths[COMPRESS_LINES];
+    size_t current_line_start = 0;
+
     size_t bytes_read;
     while ((bytes_read = fread(buffer, 1, 128 * 1024, fp)) > 0) {
-        MemoryHandle hChunk = my_handle_alloc(bytes_read);
-        if (!hChunk) { s = FIOMEM; break; }
-        memcpy(handle_deref(hChunk), buffer, bytes_read);
-        
-        if (nline > 100) mymemory_freeze(hChunk);
-
         size_t offset = 0;
         while (offset < bytes_read) {
-            size_t line_end = offset;
-            while (line_end < bytes_read && buffer[line_end] != '\n' && buffer[line_end] != '\r') {
-                line_end++;
-            }
-
-            int used = (int)(line_end - offset);
-            lp1 = (struct line *)malloc(sizeof(struct line));
-            if (!lp1) { s = FIOMEM; break; }
-
-            lp1->l_handle = hChunk;
-            lp1->l_offset = (uint32_t)offset;
-            lp1->used = (uint16_t)used;
-            lp1->size = (uint16_t)used;
-
-            lp2 = lback(curbp->b_linep);
-            lp2->next = lp1;
-            lp1->next = curbp->b_linep;
-            lp1->prev = lp2;
-            curbp->b_linep->prev = lp1;
-
-            nline++;
-            offset = line_end;
-            if (offset < bytes_read && buffer[offset] == '\r') offset++;
-            if (offset < bytes_read && buffer[offset] == '\n') {
-                if (offset - 1 >= 0 && buffer[offset - 1] == '\r') {
-                   /* it was \r\n, skip \n */
-                   offset++;
+            char c = buffer[offset++];
+            if (c == '\n' || c == '\r') {
+                if (offset < bytes_read) {
+                    if ((c == '\r' && buffer[offset] == '\n') || (c == '\n' && buffer[offset] == '\r')) {
+                        offset++;
+                    }
                 } else {
-                   /* it was just \n, skip it */
-                   offset++;
+                    int next_c = fgetc(fp);
+                    if ((c == '\r' && next_c == '\n') || (c == '\n' && next_c == '\r')) {
+                        // consumed
+                    } else if (next_c != EOF) {
+                        ungetc(next_c, fp);
+                    }
                 }
+
+                line_offsets[chunk_lines] = current_line_start;
+                line_lengths[chunk_lines] = chunk_bytes - current_line_start;
+                chunk_lines++;
+
+                if (chunk_lines == COMPRESS_LINES) {
+                    MemoryHandle hChunk = my_handle_alloc(chunk_bytes);
+                    if (!hChunk) { s = FIOMEM; break; }
+                    if (chunk_bytes > 0) memcpy(handle_deref(hChunk), chunk_buf, chunk_bytes);
+                    
+                    for (int i = 0; i < COMPRESS_LINES; i++) {
+                        lp1 = (struct line *)malloc(sizeof(struct line));
+                        if (!lp1) { s = FIOMEM; break; }
+                        lp1->l_handle = hChunk;
+                        my_handle_ref(hChunk);
+                        lp1->l_offset = (uint32_t)line_offsets[i];
+                        lp1->used = (uint16_t)line_lengths[i];
+                        lp1->size = (uint16_t)line_lengths[i];
+
+                        lp2 = lback(curbp->b_linep);
+                        lp2->next = lp1;
+                        lp1->next = curbp->b_linep;
+                        lp1->prev = lp2;
+                        curbp->b_linep->prev = lp1;
+                        nline++;
+                    }
+                    if (s == FIOMEM) break;
+                    
+                    mymemory_freeze(hChunk);
+                    my_handle_free(hChunk); // release initial alloc ref
+                    
+                    chunk_lines = 0;
+                    chunk_bytes = 0;
+                    current_line_start = 0;
+                } else {
+                    current_line_start = chunk_bytes;
+                }
+            } else {
+                chunk_buf[chunk_bytes++] = c;
             }
         }
         if (s == FIOMEM) break;
     }
     
+    if (s != FIOMEM && (chunk_bytes > current_line_start || chunk_lines > 0)) {
+        if (chunk_bytes > current_line_start) {
+            line_offsets[chunk_lines] = current_line_start;
+            line_lengths[chunk_lines] = chunk_bytes - current_line_start;
+            chunk_lines++;
+        }
+        if (chunk_lines > 0) {
+            MemoryHandle hChunk = my_handle_alloc(chunk_bytes);
+            if (!hChunk) { s = FIOMEM; }
+            else {
+                if (chunk_bytes > 0) memcpy(handle_deref(hChunk), chunk_buf, chunk_bytes);
+                for (int i = 0; i < chunk_lines; i++) {
+                    lp1 = (struct line *)malloc(sizeof(struct line));
+                    if (!lp1) { s = FIOMEM; break; }
+                    lp1->l_handle = hChunk;
+                    my_handle_ref(hChunk);
+                    lp1->l_offset = (uint32_t)line_offsets[i];
+                    lp1->used = (uint16_t)line_lengths[i];
+                    lp1->size = (uint16_t)line_lengths[i];
+
+                    lp2 = lback(curbp->b_linep);
+                    lp2->next = lp1;
+                    lp1->next = curbp->b_linep;
+                    lp1->prev = lp2;
+                    curbp->b_linep->prev = lp1;
+                    nline++;
+                }
+                mymemory_freeze(hChunk);
+                my_handle_free(hChunk);
+            }
+        }
+    }
+    
+    free(chunk_buf);
     free(buffer);
     fclose(fp);
 

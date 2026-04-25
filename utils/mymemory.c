@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
+#include "../include/nanox.h"
 
 #define ARENA_INITIAL_SIZE (1024 * 1024 * 8)
 #define CHUNK_SIZE (128 * 1024)
@@ -15,9 +17,11 @@ struct HandleSlot {
     void* actual_ptr;       /* 8 bytes */
     uint32_t raw_size;      /* 4 bytes */
     uint32_t comp_size;     /* 4 bytes */
+    uint32_t ref_count;     /* 4 bytes */
     uint8_t state;          /* 1 byte */
     uint8_t is_active;      /* 1 byte */
-    uint8_t _padding[6];    /* 6 bytes manual padding for 8-byte alignment */
+    uint8_t _padding[2];    /* 2 bytes */
+    uint64_t last_hot_time; /* 8 bytes */
 };
 
 typedef struct BlockHeader {
@@ -55,6 +59,8 @@ static struct HandleSlot* get_new_proxy(void* actual, size_t size) {
             proxy_table[i].raw_size = (uint32_t)size;
             proxy_table[i].state = STATE_HOT;
             proxy_table[i].comp_size = 0;
+            proxy_table[i].ref_count = 1;
+            proxy_table[i].last_hot_time = (uint64_t)time(NULL);
             return &proxy_table[i];
         }
     }
@@ -133,6 +139,12 @@ void myfree(void* p) {
     struct HandleSlot *slot = (struct HandleSlot*)p;
     if (!slot->is_active) return;
 
+    if (slot->ref_count > 1) {
+        slot->ref_count--;
+        return;
+    }
+    slot->ref_count = 0;
+
     if (slot->state == STATE_COLD) {
         free(slot->actual_ptr);
         slot->is_active = 0;
@@ -150,6 +162,18 @@ void myfree(void* p) {
             break;
         }
     }
+}
+
+void my_handle_ref(MemoryHandle h) {
+    if (!h) return;
+    struct HandleSlot *slot = (struct HandleSlot*)h;
+    if (slot->is_active) slot->ref_count++;
+}
+
+int my_handle_ref_count(MemoryHandle h) {
+    if (!h) return 0;
+    struct HandleSlot *slot = (struct HandleSlot*)h;
+    return slot->is_active ? (int)slot->ref_count : 0;
 }
 
 void mymemory_compact(void) {
@@ -186,6 +210,7 @@ void mymemory_compact(void) {
 void* restrict _mymemory_deref(void* handle) {
     if (!handle) return NULL;
     struct HandleSlot *s = (struct HandleSlot*)handle;
+    s->last_hot_time = (uint64_t)time(NULL);
     if (s->state == STATE_HOT) return s->actual_ptr;
 
     void *new_hot_handle = mymalloc(s->raw_size);
@@ -258,6 +283,19 @@ MemoryHandle my_handle_realloc(MemoryHandle h, size_t size) {
 }
 void my_handle_free(MemoryHandle h) { myfree((void*)h); }
 void* restrict handle_deref(MemoryHandle h) { return _mymemory_deref((void*)h); }
+
+void mymemory_freeze_timeout(void) {
+    if (nanox_cfg.cold_storage_timeout <= 0) return;
+    uint64_t now = (uint64_t)time(NULL);
+    for (int i = 0; i < MAX_PROXIES; i++) {
+        if (proxy_table[i].is_active && proxy_table[i].state == STATE_HOT) {
+            if (now >= proxy_table[i].last_hot_time && 
+                (now - proxy_table[i].last_hot_time) > (uint64_t)nanox_cfg.cold_storage_timeout) {
+                mymemory_freeze(&proxy_table[i]);
+            }
+        }
+    }
+}
 
 void mymemory_shutdown(void) {
     while (arena_head) {

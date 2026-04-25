@@ -17,6 +17,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "estruct.h"
 #include "edef.h"
@@ -61,6 +62,22 @@ struct line *lalloc(int used)
     lp->hl_end_state = (HighlightState){0};
     lp->l_diag = 0;
     return lp;
+}
+
+int l_unshare(struct line *lp) {
+    if (lp->l_offset == 0 && my_handle_ref_count(lp->l_handle) == 1)
+        return TRUE;
+    
+    int newsize = (lp->size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
+    if (newsize == 0) newsize = BLOCK_SIZE;
+    MemoryHandle new_h = my_handle_alloc(newsize);
+    if (!new_h) return FALSE;
+    memcpy(handle_deref(new_h), ltext(lp), lp->used);
+    my_handle_free(lp->l_handle);
+    lp->l_handle = new_h;
+    lp->l_offset = 0;
+    lp->size = newsize;
+    return TRUE;
 }
 
 /*
@@ -257,6 +274,7 @@ int linsert_byte(int n, int c)
         curwp->w_doto = n;
         return TRUE;
     }
+    if (!l_unshare(lp1)) return FALSE;
     doto = curwp->w_doto;           /* Save for later.      */
     if (lp1->used + n > lp1->size) {    /* Hard: reallocate     */
         int newsize = (lp1->used + n + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
@@ -536,6 +554,7 @@ int ldelete(long n, int kflag)
 			--n;
 			continue;
 		}
+        if (!l_unshare(dotp)) return FALSE;
 		lchange(WFHARD);
 		cp1 = (char *)&ltext(dotp)[doto];	/* Scrunch text.        */
 		cp2 = cp1 + chunk;
@@ -714,6 +733,7 @@ int ldelnewline(void)
             lfree(lp1);
         return TRUE;
     }
+    if (!l_unshare(lp1)) return FALSE;
     if (lp2->used <= lp1->size - lp1->used) {
         cp1 = (char *)&ltext(lp1)[lp1->used];
         cp2 = (char *)&ltext(lp2)[0];
@@ -918,6 +938,7 @@ int linsert_block(const char *block, int len)
                     curwp->w_doto = segment_len;
                 } else {
                     /* Normal case: insert into line */
+                    if (!l_unshare(lp1)) return FALSE;
                     if (lp1->used + segment_len > lp1->size) {
                         /* Reallocate */
                         int newsize = (lp1->used + segment_len + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);

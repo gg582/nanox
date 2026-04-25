@@ -71,6 +71,7 @@
 #include "edef.h"
 #include "version.h"
 #include "nanox.h"                  /* Added for Nanox specific declarations */
+#include "../utils/mymemory.h"
 #include "completion.h"
 #include "scraper.h"
 #include "command_mode.h"           /* F1 command mode */
@@ -363,6 +364,7 @@ int main(int argc, char **argv)
     lastflag = 0;                /* Fake last flags. */
 
  loop:
+    mymemory_freeze_timeout();
     /* Execute the "command" macro...normally null. */
     saveflag = lastflag;            /* Preserve lastflag through this. */
     execute(META | SPEC | 'C', FALSE, 1);
