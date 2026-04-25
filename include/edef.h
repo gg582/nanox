@@ -37,6 +37,7 @@ char *modename[] = {        /* mode names                   */
 char modecode[] = "WCSEVOMYA";    /* letters to represent modes   */
 int numlocks = 0;        /* number of locks active       */
 char *lname[NLOCKS];        /* names of locked files        */
+int lowned[NLOCKS];         /* owned (TRUE) or overriden (FALSE) */
 int gflags = GFREAD;        /* global control flag          */
 int rval = 0;            /* return value of a subprocess */
 int overlap = 0;        /* overlap on next/prev page    */
@@ -156,6 +157,7 @@ extern char *modename[];    /* mode names                   */
 extern char modecode[];        /* letters to represent modes   */
 extern int numlocks;        /* number of locks active       */
 extern char *lname[];        /* names of locked files        */
+extern int lowned[];         /* owned (TRUE) or overriden (FALSE) */
 extern int gflags;        /* global control flag          */
 extern int rval;        /* return value of a subprocess */
 extern int overlap;        /* overlap on next/prev page    */

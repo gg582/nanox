@@ -142,3 +142,4 @@ struct magic tapcm[NPAT];
 int kused = 0;
 int numlocks = 0;
 char *lname[NLOCKS];
+int lowned[NLOCKS];

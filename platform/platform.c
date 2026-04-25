@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <ctype.h>
+#include <dirent.h>
 
 #ifdef USE_WINDOWS
 #include <windows.h>
@@ -19,6 +21,40 @@
 
 const char *nanox_getenv(const char *name) {
     return getenv(name);
+}
+
+int nanox_process_count(void) {
+#ifdef USE_WINDOWS
+    return 1; // Not implemented for Windows
+#else
+    DIR *dir = opendir("/proc");
+    if (!dir) return 1;
+
+    struct dirent *ent;
+    int count = 0;
+    while ((ent = readdir(dir)) != NULL) {
+        if (!isdigit(ent->d_name[0])) continue;
+
+        char path[512];
+        snprintf(path, sizeof(path), "/proc/%s/comm", ent->d_name);
+        FILE *fp = fopen(path, "r");
+        if (fp) {
+            char comm[256];
+            if (fgets(comm, sizeof(comm), fp)) {
+                size_t len = strlen(comm);
+                while (len > 0 && (comm[len-1] == '\n' || comm[len-1] == '\r')) {
+                    comm[--len] = '\0';
+                }
+                if (strcmp(comm, "nanox") == 0) {
+                    count++;
+                }
+            }
+            fclose(fp);
+        }
+    }
+    closedir(dir);
+    return count;
+#endif
 }
 
 void nanox_get_user_data_dir(char *out, size_t cap) {

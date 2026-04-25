@@ -10,5 +10,6 @@ void nanox_path_join(char *out, size_t cap, const char *a, const char *b);
 bool nanox_file_exists(const char *path);
 void nanox_normalize_path(char *path);
 const char *nanox_getenv(const char *name);
+int nanox_process_count(void);
 
 #endif /* PLATFORM_H_ */
