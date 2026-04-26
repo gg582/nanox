@@ -54,6 +54,11 @@ F9-F12 : File Slots     F8/^Y : Paste           ------------------
   - Displays the current buffer's filename. 'realpath' shows the absolute path.
 * ^R (Ctrl+R) / sed-replace
   - Starts a sed-style replacement: s/pattern/replacement/flags (g: global, i: case-insensitive).
+* multi-cursor:
+  - Use `cursor create <N>` in command mode to spawn multiple cursors.
+  - Switch active cursor with `cursor select <N>`.
+  - Return to normal with `cursor single`.
+
 * viblock-edit / viblock-replace
   - Starts visual block mode for rectangular editing or replacement.
 * viblock-flip <range1> <range2>

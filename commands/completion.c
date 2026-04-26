@@ -19,6 +19,7 @@
 #include "line.h"
 #include "highlight.h"
 #include "completion.h"
+#include "lsp_facade.h"
 #include "util.h"
 #include "utf8.h"
 #include "scraper.h"
@@ -163,7 +164,7 @@ static void start_async_java_class_symbols_load(void);
 
 static void completion_consider_candidate(const char *candidate, const char *prefix);
 static int completion_fuzzy_score(const char *candidate, const char *query);
-static int completion_should_use_lsp(void);
+int completion_should_use_lsp(void);
 static void completion_preview_reset(void)
 {
     completion_preview_state.active = 0;
@@ -1035,7 +1036,7 @@ static int is_c_like_file(const char *fname)
     return has_extension(fname, exts, sizeof(exts) / sizeof(exts[0]));
 }
 
-static int is_java_file(const char *fname)
+int is_java_file(const char *fname)
 {
     static const char *exts[] = { ".java" };
     if (fname == NULL || *fname == '\0')
@@ -1043,7 +1044,7 @@ static int is_java_file(const char *fname)
     return has_extension(fname, exts, sizeof(exts) / sizeof(exts[0]));
 }
 
-static int is_python_file(const char *fname)
+int is_python_file(const char *fname)
 {
     static const char *exts[] = { ".py" };
     if (fname == NULL || *fname == '\0')
@@ -1051,7 +1052,7 @@ static int is_python_file(const char *fname)
     return has_extension(fname, exts, sizeof(exts) / sizeof(exts[0]));
 }
 
-static int is_node_file(const char *fname)
+int is_node_file(const char *fname)
 {
     static const char *exts[] = { ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs" };
     if (fname == NULL || *fname == '\0')
@@ -1549,7 +1550,7 @@ static void runtime_completion_callback(const char *symbol, void *data)
         completion_consider_candidate(symbol, ctx->prefix);
 }
 
-static void add_runtime_module_matches(scraper_lang_t lang, const char *module, const char *prefix)
+void add_runtime_module_matches(scraper_lang_t lang, const char *module, const char *prefix)
 {
     if (!module || !*module || !prefix)
         return;
@@ -1557,7 +1558,7 @@ static void add_runtime_module_matches(scraper_lang_t lang, const char *module, 
     scraper_iterate_symbols(lang, module, runtime_completion_callback, &ctx);
 }
 
-static int get_owner_symbol_near_cursor(struct line *lp, int prefix_start, char *out, size_t outsz)
+int get_owner_symbol_near_cursor(struct line *lp, int prefix_start, char *out, size_t outsz)
 {
     int len;
     int dot_pos;
@@ -1596,7 +1597,7 @@ static int get_owner_symbol_near_cursor(struct line *lp, int prefix_start, char 
     return TRUE;
 }
 
-static int resolve_java_class_name(const char *owner, char *out, size_t outsz)
+int resolve_java_class_name(const char *owner, char *out, size_t outsz)
 {
     struct line *lp;
     char linebuf[256];
@@ -1771,7 +1772,7 @@ static void load_javap_members(java_member_entry_t *entry)
     entry->loaded = 1;
 }
 
-static void add_java_member_matches(const char *class_name, const char *prefix)
+void add_java_member_matches(const char *class_name, const char *prefix)
 {
     java_member_entry_t *entry;
     if (class_name == NULL || prefix == NULL || *prefix == '\0')
@@ -1848,7 +1849,7 @@ typedef struct {
     const char *server_cmd;
 } lsp_dep_entry_t;
 
-static int completion_should_use_lsp(void)
+int completion_should_use_lsp(void)
 {
     if (!nanox_cfg.autocomplete || !nanox_cfg.use_lsp || !curbp || !curbp->b_fname[0])
         return FALSE;
@@ -2648,23 +2649,12 @@ int completion_try_at_cursor(void)
         return FALSE;
 
     completion_update(prefix, ctx);
-    int lsp_active = completion_should_use_lsp();
+    int lsp_active = lsp_facade_is_active();
     add_language_specific_matches(prefix, ctx);
     collect_source_symbol_matches(prefix, ctx);
 
     if (lsp_active && line && ctx == COMPLETION_CONTEXT_DEFAULT) {
-        char owner[MAX_COMPLETION_LEN];
-        if (get_owner_symbol_near_cursor(line, prefix_start, owner, sizeof(owner))) {
-            if (is_java_file(curbp ? curbp->b_fname : NULL)) {
-                char resolved[256];
-                if (resolve_java_class_name(owner, resolved, sizeof(resolved)))
-                    add_java_member_matches(resolved, prefix);
-            } else if (is_python_file(curbp ? curbp->b_fname : NULL)) {
-                add_runtime_module_matches(SCRAPER_LANG_PYTHON, owner, prefix);
-            } else if (is_node_file(curbp ? curbp->b_fname : NULL)) {
-                add_runtime_module_matches(SCRAPER_LANG_NODE, owner, prefix);
-            }
-        }
+        lsp_facade_provide_completions(line, prefix_start, prefix);
     }
 
     if (completion_state.count == 0)

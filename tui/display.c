@@ -366,9 +366,16 @@ static void draw_hint_row(int row, const char *left, const char *status)
                 int len = llength(lp);
                 int col = 0;
             
-                while (i < wp->w_doto) {
+                /* Safety check: ensure w_doto is within line bounds to avoid infinite loop */
+                int target = wp->w_doto;
+                if (target > len)
+                    target = len;
+
+                while (i < target) {
                     unicode_t c;
                     int bytes = utf8_to_unicode((unsigned char *)ltext(lp), i, len, &c);
+                    if (bytes == 0)
+                        break;
                     i += bytes;
                     col = next_column(col, c, tab_width);
                 }
@@ -731,9 +738,16 @@ static int reframe(struct window *wp)
                 int dot_vrow = vrow;
                 int col = 0;
                 int char_idx = 0;
-                while (char_idx < wp->w_doto) {
+                int len = llength(lp);
+                int target = wp->w_doto;
+                if (target > len)
+                    target = len;
+
+                while (char_idx < target) {
                     unicode_t c;
-                    int bytes = utf8_to_unicode((unsigned char *)ltext(lp), char_idx, wp->w_doto, &c);
+                    int bytes = utf8_to_unicode((unsigned char *)ltext(lp), char_idx, len, &c);
+                    if (bytes == 0)
+                        break;
                     int w = get_char_width(c, col);
                     if (col + w > nanox_text_cols()) {
                         dot_vrow++;
@@ -1087,11 +1101,18 @@ void updpos(void)
     curcol = 0;
     i = 0;
     lp = curwp->w_dotp;
-    while (i < curwp->w_doto) {
+    int len = llength(lp);
+    int target = curwp->w_doto;
+    if (target > len)
+        target = len;
+
+    while (i < target) {
         unicode_t c;
         int bytes;
 
-        bytes = utf8_to_unicode((unsigned char *)ltext(lp), i, curwp->w_doto, &c);
+        bytes = utf8_to_unicode((unsigned char *)ltext(lp), i, len, &c);
+        if (bytes == 0)
+            break;
         int w = get_char_width(c, curcol);
         if (curcol + w > nanox_text_cols()) {
             currow++;

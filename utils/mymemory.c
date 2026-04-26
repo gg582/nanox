@@ -9,25 +9,25 @@
 #include "../include/nanox.h"
 
 #define ARENA_INITIAL_SIZE (1024 * 1024 * 8)
-#define CHUNK_SIZE (128 * 1024)
+#define PROXY_CHUNK_SIZE 16384
 
 typedef enum { STATE_HOT, STATE_COLD } block_state_t;
 
 struct HandleSlot {
-    void* actual_ptr;       /* 8 bytes */
-    uint32_t raw_size;      /* 4 bytes */
-    uint32_t comp_size;     /* 4 bytes */
-    uint32_t ref_count;     /* 4 bytes */
-    uint8_t state;          /* 1 byte */
-    uint8_t is_active;      /* 1 byte */
-    uint8_t _padding[2];    /* 2 bytes */
-    uint64_t last_hot_time; /* 8 bytes */
+    void* actual_ptr;
+    uint32_t raw_size;
+    uint32_t comp_size;
+    uint32_t ref_count;
+    uint8_t state;
+    uint8_t is_active;
+    uint8_t _padding[2];
+    uint64_t last_hot_time;
 };
 
 typedef struct BlockHeader {
-    struct HandleSlot *handle; /* 8 bytes */
-    uint32_t size;             /* 4 bytes */
-    uint32_t is_free;          /* 4 bytes */
+    struct HandleSlot *handle;
+    uint32_t size;
+    uint32_t is_free;
 } BlockHeader;
 
 #define HEADER_SIZE (sizeof(BlockHeader))
@@ -43,16 +43,27 @@ typedef struct Arena {
 
 static Arena *arena_head = NULL;
 static struct HandleSlot *proxy_table = NULL;
-#define MAX_PROXIES 262144
+static int proxy_table_capacity = 0;
+
+static int expand_proxy_table(void) {
+    int new_cap = proxy_table_capacity + PROXY_CHUNK_SIZE;
+    struct HandleSlot *new_table = (struct HandleSlot*)realloc(proxy_table, new_cap * sizeof(struct HandleSlot));
+    if (!new_table) return 0;
+
+    memset(new_table + proxy_table_capacity, 0, PROXY_CHUNK_SIZE * sizeof(struct HandleSlot));
+    proxy_table = new_table;
+    proxy_table_capacity = new_cap;
+    return 1;
+}
 
 void mymemory_init(void) {
     if (!proxy_table) {
-        proxy_table = (struct HandleSlot*)calloc(MAX_PROXIES, sizeof(struct HandleSlot));
+        expand_proxy_table();
     }
 }
 
 static struct HandleSlot* get_new_proxy(void* actual, size_t size) {
-    for (int i = 0; i < MAX_PROXIES; i++) {
+    for (int i = 0; i < proxy_table_capacity; i++) {
         if (!proxy_table[i].is_active) {
             proxy_table[i].is_active = 1;
             proxy_table[i].actual_ptr = actual;
@@ -64,18 +75,22 @@ static struct HandleSlot* get_new_proxy(void* actual, size_t size) {
             return &proxy_table[i];
         }
     }
+
+    if (expand_proxy_table()) {
+        return get_new_proxy(actual, size);
+    }
     return NULL;
 }
 
 static Arena* create_arena(size_t req) {
     size_t s = (req + sizeof(Arena) + 4096) & ~4095;
     if (s < ARENA_INITIAL_SIZE) s = ARENA_INITIAL_SIZE;
-    
+
     Arena *a = (Arena*)malloc(sizeof(Arena));
     if (!a) return NULL;
     a->data = (char*)malloc(s);
     if (!a->data) { free(a); return NULL; }
-    
+
     a->total_size = s;
     a->used_count = 0;
     a->next = arena_head;
@@ -86,7 +101,7 @@ static Arena* create_arena(size_t req) {
     h->is_free = 1;
     h->handle = NULL;
     *(uint32_t*)(a->data + s - FOOTER_SIZE) = (uint32_t)s;
-    
+
     return a;
 }
 
@@ -100,7 +115,7 @@ static void* arena_alloc(Arena *a, size_t size, struct HandleSlot **out_slot) {
                 uint32_t old_size = h->size;
                 h->size = (uint32_t)total_needed;
                 h->is_free = 0;
-                
+
                 BlockHeader *next_h = (BlockHeader*)(curr + total_needed);
                 next_h->size = old_size - (uint32_t)total_needed;
                 next_h->is_free = 1;
@@ -110,9 +125,10 @@ static void* arena_alloc(Arena *a, size_t size, struct HandleSlot **out_slot) {
                 h->is_free = 0;
             }
             *(uint32_t*)(curr + h->size - FOOTER_SIZE) = h->size;
-            
+
             a->used_count++;
             struct HandleSlot *slot = get_new_proxy(curr + HEADER_SIZE, size);
+            if (!slot) return NULL;
             h->handle = slot;
             *out_slot = slot;
             return curr + HEADER_SIZE;
@@ -215,18 +231,18 @@ void* restrict _mymemory_deref(void* handle) {
 
     void *new_hot_handle = mymalloc(s->raw_size);
     if (!new_hot_handle) return NULL;
-    
+
     struct HandleSlot *new_s = (struct HandleSlot*)new_hot_handle;
     LZ4_decompress_safe((char*)s->actual_ptr, (char*)new_s->actual_ptr, (int)s->comp_size, (int)s->raw_size);
-    
+
     free(s->actual_ptr);
     s->actual_ptr = new_s->actual_ptr;
     s->state = STATE_HOT;
-    
+
     BlockHeader *h = (BlockHeader*)((char*)s->actual_ptr - HEADER_SIZE);
     h->handle = s;
     new_s->is_active = 0;
-    
+
     return s->actual_ptr;
 }
 
@@ -240,7 +256,7 @@ int mymemory_freeze(void* p) {
     if (!comp_buf) return 0;
 
     int actual_comp = LZ4_compress_default((char*)s->actual_ptr, comp_buf, (int)s->raw_size, max_comp);
-    
+
     if (actual_comp > 0) {
         void *old_ptr = s->actual_ptr;
         s->actual_ptr = realloc(comp_buf, actual_comp);
@@ -251,7 +267,7 @@ int mymemory_freeze(void* p) {
         BlockHeader *h = (BlockHeader*)((char*)old_ptr - HEADER_SIZE);
         h->is_free = 1;
         h->handle = NULL;
-        
+
         for (Arena *a = arena_head; a; a = a->next) {
             if ((char*)h >= a->data && (char*)h < a->data + a->total_size) {
                 a->used_count--;
@@ -265,7 +281,7 @@ int mymemory_freeze(void* p) {
 }
 
 MemoryHandle my_handle_alloc(size_t size) { return (MemoryHandle)mymalloc(size); }
-MemoryHandle my_handle_calloc(size_t nmemb, size_t size) { 
+MemoryHandle my_handle_calloc(size_t nmemb, size_t size) {
     MemoryHandle h = (MemoryHandle)mymalloc(nmemb * size);
     if (h) memset(handle_deref(h), 0, nmemb * size);
     return h;
@@ -287,9 +303,9 @@ void* restrict handle_deref(MemoryHandle h) { return _mymemory_deref((void*)h); 
 void mymemory_freeze_timeout(void) {
     if (nanox_cfg.cold_storage_timeout <= 0) return;
     uint64_t now = (uint64_t)time(NULL);
-    for (int i = 0; i < MAX_PROXIES; i++) {
+    for (int i = 0; i < proxy_table_capacity; i++) {
         if (proxy_table[i].is_active && proxy_table[i].state == STATE_HOT) {
-            if (now >= proxy_table[i].last_hot_time && 
+            if (now >= proxy_table[i].last_hot_time &&
                 (now - proxy_table[i].last_hot_time) > (uint64_t)nanox_cfg.cold_storage_timeout) {
                 mymemory_freeze(&proxy_table[i]);
             }
@@ -305,12 +321,13 @@ void mymemory_shutdown(void) {
         free(a);
     }
     if (proxy_table) {
-        for (int i = 0; i < MAX_PROXIES; i++) {
+        for (int i = 0; i < proxy_table_capacity; i++) {
             if (proxy_table[i].is_active && proxy_table[i].state == STATE_COLD) {
                 free(proxy_table[i].actual_ptr);
             }
         }
         free(proxy_table);
         proxy_table = NULL;
+        proxy_table_capacity = 0;
     }
 }

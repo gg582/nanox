@@ -532,10 +532,16 @@ int getccol(int bflg)
     int len = llength(dlp);
 
     col = i = 0;
-    while (i < byte_offset) {
-        unicode_t c;
+    int target = byte_offset;
+    if (target > len)
+        target = len;
 
-        i += utf8_to_unicode(ltext(dlp), i, len, &c);
+    while (i < target) {
+        unicode_t c;
+        int bytes = utf8_to_unicode(ltext(dlp), i, len, &c);
+        if (bytes == 0)
+            break;
+        i += bytes;
         if (c != ' ' && c != '\t' && bflg)
             break;
         col = next_column(col, c, tab_width);

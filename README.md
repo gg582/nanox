@@ -34,6 +34,7 @@ Forget the sluggishness of Electron apps or the heavy startup times of LSP-bloat
 ### 🧠 Smart, Predictable, and Out of Your Way
 We’ve ditched complex semantic analysis for lean, convention-driven logic.
 * **Rule-Based Indentation:** Indentation is consistent, fast, and follows established coding conventions without generating massive ASTs, maintaining a microscopic memory footprint.
+* **Multi-Cursor Support:** Manage multiple cursors in command mode using `cursor create <N>`, `cursor select <N>`, and `cursor single` for concurrent multi-line selections.
 * **Fuzzy Autocompletion & LSP Support:** Enjoy blazing-fast built-in fuzzy matching for buffer words, and seamlessly tap into LSP (Language Server Protocol) when you need deep language intelligence.
 * **Cscope Integration:** Navigate massive codebases instantly with native Cscope support.
 * **Integrated Spell Checker:** Built-in Hunspell integration catches typos seamlessly without breaking your flow.
