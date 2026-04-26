@@ -220,7 +220,7 @@ static void config_defaults(void)
     nanox_cfg.use_auto_doc_completion = true;
     nanox_cfg.nonr = false;
     nanox_cfg.no_function_slot = false;
-    nanox_cfg.cold_storage_timeout = 240;
+    nanox_cfg.cold_storage_timeout = 30;
 }
 
 static bool parse_bool(const char *value, bool *out)
