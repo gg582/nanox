@@ -529,6 +529,19 @@ int getstring(char *prompt, char *buf, int nbuf, int eolchar)
         /* change from command form back to character form */
         c = ectoc(c);
 
+        /*
+         * Minibuffer commands and prompts should not accumulate stray C0
+         * control bytes from terminal paste/probe sequences. In particular,
+         * an injected NUL makes the buffer look empty when Enter is pressed.
+         * Keep the editing controls above, but ignore any other raw control
+         * input unless the user explicitly quoted it.
+         */
+        if (c < 0x20 && c != '\t' && c != '\n' &&
+            c != 0x08 && c != 0x15 && quotef == FALSE) {
+            TTbeep();
+            continue;
+        }
+
         if ((c == 0x7F || c == 0x08) && quotef == FALSE) {
             if (erase_prev_glyph(buf, &cpos))
                 TTflush();

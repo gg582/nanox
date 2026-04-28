@@ -81,6 +81,8 @@ Nanox now includes powerful tools for structured text and data manipulation:
 | **F9-F12** | Jump to Slot | **Ctrl+F9-F12** | Set Slot |
 | **Ctrl+G** | Goto Line | **Ctrl+V** | Execute Command |
 
+On terminals that bind `Ctrl+V` to bracketed paste, an empty paste now falls back to Command Mode so commands like `nextfile` still open normally.
+
 ---
 
 ## Installation & Build

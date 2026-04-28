@@ -9,6 +9,7 @@ F1 / ^H : Help Menu     ^V : Command Mode       BS : Cancel Range
 F9-F12 : File Slots     F8/^Y : Paste           ------------------
 ===============================================================================
 * ^V means Ctrl+V. Pressing it opens Command Mode in the minibuffer.
+* If your terminal maps Ctrl+V to bracketed paste, an empty paste now falls back to Command Mode.
 * Command Mode flow:
   1. Press ^V, type a command when the "Command Mode:" minibuffer appears, then hit Enter.
   2. Supported commands remain line numbers, help, viblock-edit, viblock-replace, etc.

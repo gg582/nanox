@@ -35,6 +35,7 @@ static int handle_bracketed_paste(void);
 static int kbdflgs;             /* saved keyboard fd flags      */
 static int kbdpoll;             /* in O_NDELAY mode             */
 static int tty_is_raw = FALSE;
+static int pending_input = -1;
 
 static struct termios otermios;         /* original terminal characteristics */
 static struct termios ntermios;         /* charactoristics to use inside */
@@ -209,6 +210,12 @@ int ttgetc(void)
     unicode_t c;
     int count, bytes = 1, expected;
 
+    if (pending_input >= 0) {
+        c = pending_input;
+        pending_input = -1;
+        return c;
+    }
+
     count = TT.nr;
     if (!count) {
         count = read(0, TT.buf, sizeof(TT.buf));
@@ -306,6 +313,7 @@ int handle_bracketed_paste(void)
     extern void paste_slot_init(void);
     extern int paste_slot_add_char(char c);
     extern void paste_slot_clear(void);
+    extern int paste_slot_get_size(void);
     extern void paste_slot_set_active(int active);
     extern void paste_slot_display(void);
     
@@ -374,6 +382,16 @@ int handle_bracketed_paste(void)
         paste_slot_add_char(c);
     }
     
+    /*
+     * Some terminals bind Ctrl+V to bracketed paste. If that arrives with an
+     * empty payload, treat it like the editor's Ctrl+V command-mode shortcut
+     * instead of trapping the user inside an empty paste slot.
+     */
+    if (paste_slot_get_size() == 0) {
+        pending_input = 0x16;
+        return 1;
+    }
+
     /* Activate paste slot window */
     paste_slot_set_active(1);
     paste_slot_display();

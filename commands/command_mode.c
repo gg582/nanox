@@ -57,14 +57,66 @@ static int command_mode_apply_indent_lint(void);
 static int command_mode_total_lines(void);
 static struct line *command_mode_line_at_number(int number);
 
-static void execute_nextfile(int n) {
-    if (n == 0) return;
+static struct buffer *find_buffer_by_path(const char *path)
+{
+    struct buffer *bp;
 
-    int slot = last_slot_index;
+    if (!path || !*path)
+        return NULL;
+
+    for (bp = bheadp; bp != NULL; bp = bp->b_bufp) {
+        if (strcmp(bp->b_fname, path) == 0)
+            return bp;
+    }
+
+    return NULL;
+}
+
+static int find_slot_for_buffer(struct buffer *bp)
+{
     int max_slots = nanox_slot_capacity();
-    struct buffer *start_bp = curbp;
+
+    if (!bp || !bp->b_fname[0])
+        return -1;
+
+    for (int i = 0; i < max_slots; ++i) {
+        if (file_reserve[i][0] && strcmp(file_reserve[i], bp->b_fname) == 0)
+            return i;
+    }
+
+    return -1;
+}
+
+static void execute_nextfile(int n) {
+    if (n == 0) {
+        mlwrite("nextfile step cannot be 0");
+        return;
+    }
+
+    int max_slots = nanox_slot_capacity();
+    int slot = -1;
+    struct buffer *start_bp = NULL;
     struct buffer *curr = start_bp;
     int steps = (n > 0) ? n : -n;
+
+    if (last_slot_index >= 0 && last_slot_index < max_slots && file_reserve[last_slot_index][0]) {
+        start_bp = find_buffer_by_path(file_reserve[last_slot_index]);
+        if (start_bp != NULL)
+            slot = last_slot_index;
+    }
+
+    if (start_bp == NULL) {
+        slot = find_slot_for_buffer(curbp);
+        if (slot >= 0)
+            start_bp = curbp;
+    }
+
+    if (slot < 0 || start_bp == NULL) {
+        mlwrite("nextfile requires an active slot-backed file");
+        return;
+    }
+
+    curr = start_bp;
 
     while (steps > 0) {
         if (n > 0) {
@@ -109,6 +161,7 @@ static void execute_nextfile(int n) {
     if (slot >= 0 && slot < max_slots) {
         mystrscpy(file_reserve[slot], curr->b_fname, PATH_MAX);
     }
+    last_slot_index = slot;
     swbuffer(curr);
     mlwrite("Switched to: %s", curr->b_fname[0] ? curr->b_fname : curr->b_bname);
 }

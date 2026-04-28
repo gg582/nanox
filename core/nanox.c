@@ -627,7 +627,7 @@ static const char *nanox_help_sheet[] = {
 "F1 / ^H : Help Menu     ^V : Command Mode       BS : Cancel Range",
 "F9-F12 : File Slots     F8/^Y : Paste           ------------------",
     "===============================================================================",
-"* Ctrl+V opens command mode (goto/help/viblock-edit/viblock-replace/indent/outdent/lint)",
+"* Ctrl+V opens command mode (empty bracketed paste also falls back here)",
     "* viblock-edit inserts the same text on each selected line",
     "* viblock-replace replaces the whole selected block with one input string",
     "* viblock-set-nr start-end [rev] rewrites numbered list prefixes in range",
