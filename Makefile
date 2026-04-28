@@ -11,9 +11,9 @@ MODULES = core commands io platform utils features tui
 
 # Compiler and flags
 CC ?= gcc
-CFLAGS = -std=c2x -Ofast -g \
+CFLAGS = -std=c2x -O2 -g \
          -Wall -Wextra -Wshadow -Wformat=2 -Wundef -Wconversion \
-         -fstack-protector-strong -fno-common \
+         -fstack-protector-strong -fno-common -ffunction-sections -fdata-sections \
          -Iinclude \
          $(foreach mod,$(MODULES),-I$(mod)) \
          -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=700 -DPOSIX -D_GNU_SOURCE

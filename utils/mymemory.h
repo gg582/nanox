@@ -27,7 +27,7 @@ int my_handle_ref_count(MemoryHandle h);
  * Triggers lazy LZ4 decompression if the memory block is currently COLD.
  * ALWAYS use this right before accessing the data. DO NOT cache the returned pointer.
  */
-void* restrict handle_deref(MemoryHandle h);
+void *handle_deref(MemoryHandle h);
 
 /* 
  * Serialize a HOT memory block into a COLD (LZ4 compressed) state.
