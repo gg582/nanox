@@ -66,6 +66,7 @@ Nanox now includes powerful tools for structured text and data manipulation:
 * **Integrated Color Engine:** Transform color codes (`#hex`, `rgb`) in real-time. Adjust hue/contrast, invert colors, or simulate colorblindness directly within the editor using the `colors` command.
 * **Raw Binary Inspection:** Analyze files at the byte or bit level with `file raw-sig`. Supports offset seeking, endianness switching, and bit-alignment visualization.
 * **Massive File Queuing:** The slot system can expand up to 64 concurrent file slots, allowing you to queue dozens of files and cycle through them seamlessly.
+* **Slot-based File Cycling:** Use the `nextfile [n]` command in Command Mode to cycle through open buffers that are not currently displayed in any slots. This allows you to manage hundreds of open files through a limited number of F9-F12 slots, with each slot maintaining its own independent navigation context.
 
 ---
 

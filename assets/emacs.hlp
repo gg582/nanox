@@ -63,3 +63,10 @@ F9-F12 : File Slots     F8/^Y : Paste           ------------------
   - Starts visual block mode for rectangular editing or replacement.
 * viblock-flip <range1> <range2>
   - Swaps two non-overlapping line ranges (e.g., viblock-flip 1-5 10-15).
+* nextfile [n]
+  - Cycles through buffers that are NOT currently assigned to any slots.
+  - Useful when you have more open files than available slots (F9-F12).
+  - `nextfile` (or `nextfile 1`) moves to the next available file.
+  - `nextfile 2` jumps two available files forward.
+  - `nextfile -1` jumps one available file backward.
+  - Each slot maintains its own file position independently.

@@ -17,6 +17,7 @@
 #include "util.h"
 #include "colorscheme.h"
 #include "raw_sig.h"
+#include "nanox.h"
 
 #define CMD_BUF_SIZE 256
 #define REPLACE_PREVIEW 48
@@ -55,6 +56,62 @@ static int command_mode_handle_flip_command(const char *input);
 static int command_mode_apply_indent_lint(void);
 static int command_mode_total_lines(void);
 static struct line *command_mode_line_at_number(int number);
+
+static void execute_nextfile(int n) {
+    if (n == 0) return;
+
+    int slot = last_slot_index;
+    int max_slots = nanox_slot_capacity();
+    struct buffer *start_bp = curbp;
+    struct buffer *curr = start_bp;
+    int steps = (n > 0) ? n : -n;
+
+    while (steps > 0) {
+        if (n > 0) {
+            /* Forward */
+            curr = curr->b_bufp;
+            if (curr == NULL) curr = bheadp;
+        } else {
+            /* Backward */
+            struct buffer *scan = bheadp;
+            if (curr == bheadp) {
+                while (scan->b_bufp != NULL) scan = scan->b_bufp;
+                curr = scan;
+            } else {
+                while (scan != NULL && scan->b_bufp != curr) scan = scan->b_bufp;
+                curr = scan;
+            }
+        }
+
+        if (curr == start_bp) {
+            mlwrite("No more files available outside slots");
+            return;
+        }
+
+        /* Eligibility check: not internal AND not in any slot (except current if we're moving from it) */
+        if (!(curr->b_flag & BFINVS) && curr->b_fname[0] != '\0') {
+            bool in_any_slot = false;
+            for (int i = 0; i < max_slots; ++i) {
+                if (file_reserve[i][0] && strcmp(file_reserve[i], curr->b_fname) == 0) {
+                    /* If it's in a slot other than our current one, it's not eligible */
+                    if (i != slot) {
+                        in_any_slot = true;
+                        break;
+                    }
+                }
+            }
+            if (!in_any_slot) {
+                steps--;
+            }
+        }
+    }
+
+    if (slot >= 0 && slot < max_slots) {
+        mystrscpy(file_reserve[slot], curr->b_fname, PATH_MAX);
+    }
+    swbuffer(curr);
+    mlwrite("Switched to: %s", curr->b_fname[0] ? curr->b_fname : curr->b_bname);
+}
 
 static void command_mode_write_segment(const char *text, const HighlightStyle *style, int *col)
 {
@@ -267,6 +324,18 @@ static void execute_command(const char *input) {
         return;
     if (command_mode_handle_flip_command(buffer))
         return;
+
+    /* nextfile command */
+    if (strncasecmp(buffer, "nextfile", 8) == 0 && (buffer[8] == ' ' || buffer[8] == '\0')) {
+        int n = 1;
+        char *args = buffer + 8;
+        while (*args && isspace((unsigned char)*args)) args++;
+        if (*args != '\0') {
+            n = atoi(args);
+        }
+        execute_nextfile(n);
+        return;
+    }
 
     /* Check for multi-cursor command */
     if (strncasecmp(buffer, "cursor", 6) == 0 && (buffer[6] == ' ' || buffer[6] == '\0')) {

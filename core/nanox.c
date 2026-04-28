@@ -43,6 +43,7 @@ struct nanox_config nanox_cfg = {
 };
 
 char file_reserve[NANOX_SLOT_MAX][PATH_MAX];
+int last_slot_index = -1;
 
 bool should_redraw_underbar = false;
 
@@ -457,6 +458,7 @@ void nanox_init(void)
 
     highlight_init(path[0] ? path : NULL);
     scraper_init();
+    last_slot_index = -1;
 }
 
 void nanox_set_lamp(enum nanox_lamp_state state)
@@ -810,7 +812,7 @@ int nanox_help_handle_key(int key)
     return TRUE;
 }
 
-static int slot_capacity(void)
+int nanox_slot_capacity(void)
 {
     return nanox_cfg.no_function_slot ? NANOX_SLOT_MAX : 4;
 }
@@ -820,7 +822,7 @@ static const char *slot_name(int slot)
     static char label[32];
     static const char *names[] = { "F9", "F10", "F11", "F12" };
 
-    if (slot < 0 || slot >= slot_capacity())
+    if (slot < 0 || slot >= nanox_slot_capacity())
         return "?";
     if (!nanox_cfg.no_function_slot && slot < 4)
         return names[slot];
@@ -830,7 +832,7 @@ static const char *slot_name(int slot)
 
 static void seed_startup_slots(void)
 {
-    int max_slots = slot_capacity();
+    int max_slots = nanox_slot_capacity();
 
     /* Stop when we run out of visible slots or queued startup files. */
     for (int i = 0; i < max_slots && startup_slot_queue_next < startup_slot_queue_count; ++i) {
@@ -866,7 +868,7 @@ void nanox_queue_startup_file(const char *path)
 
 void nanox_handle_closed_file(const char *path)
 {
-    int max_slots = slot_capacity();
+    int max_slots = nanox_slot_capacity();
 
     if (!path || !*path)
         return;
@@ -889,7 +891,7 @@ static int reserve_set(int slot)
     char msg[PATH_MAX + 64];
     int rc;
 
-    if (slot < 0 || slot >= slot_capacity()) return FALSE;
+    if (slot < 0 || slot >= nanox_slot_capacity()) return FALSE;
 
     snprintf(prompt, sizeof(prompt), "Reserve %s file: ", slot_name(slot));
     rc = minibuf_input(prompt, path, sizeof(path));
@@ -908,7 +910,7 @@ static int reserve_jump(int slot)
     int rc;
     char msg[PATH_MAX + 64];
 
-    if (slot < 0 || slot >= slot_capacity()) return FALSE;
+    if (slot < 0 || slot >= nanox_slot_capacity()) return FALSE;
 
     if (!file_reserve[slot][0]) {
         nanox_set_lamp(NANOX_LAMP_WARN);
@@ -921,6 +923,7 @@ static int reserve_jump(int slot)
         snprintf(msg, sizeof(msg), "Jump %s -> %s", slot_name(slot), file_reserve[slot]);
         minibuf_show(msg);
         nanox_set_lamp(NANOX_LAMP_OFF);
+        last_slot_index = slot;
     } else {
         nanox_set_lamp(NANOX_LAMP_ERROR);
     }
@@ -940,7 +943,7 @@ int reserve_jump_numeric_mode(int f, int n)
     char buf[16];
     char prompt[32];
     int slot;
-    int max_slots = slot_capacity();
+    int max_slots = nanox_slot_capacity();
 
     if (!nanox_cfg.no_function_slot)
         return FALSE;

@@ -40,6 +40,7 @@ struct nanox_config {
 extern struct nanox_config nanox_cfg;
 extern char file_reserve[NANOX_SLOT_MAX][PATH_MAX];
 extern bool should_redraw_underbar;
+extern int last_slot_index;
 
 void nanox_init(void);
 void nanox_apply_config(void);
@@ -59,6 +60,8 @@ bool nanox_help_is_active(void);
 void nanox_help_render(void);
 int nanox_help_command(int f, int n);
 int nanox_help_handle_key(int key);
+
+int nanox_slot_capacity(void);
 
 int reserve_set_1(int f, int n);
 int reserve_set_2(int f, int n);
