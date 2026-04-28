@@ -866,6 +866,18 @@ void nanox_queue_startup_file(const char *path)
     startup_slot_queue[startup_slot_queue_count++] = copy;
 }
 
+size_t nanox_startup_file_count(void)
+{
+    return startup_slot_queue_count;
+}
+
+const char *nanox_startup_file_at(size_t index)
+{
+    if (index >= startup_slot_queue_count)
+        return NULL;
+    return startup_slot_queue[index];
+}
+
 void nanox_handle_closed_file(const char *path)
 {
     int max_slots = nanox_slot_capacity();

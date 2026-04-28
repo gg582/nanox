@@ -87,6 +87,68 @@ static int find_slot_for_buffer(struct buffer *bp)
     return -1;
 }
 
+static bool path_is_reserved_elsewhere(const char *path, int current_slot)
+{
+    int max_slots = nanox_slot_capacity();
+
+    if (!path || !*path)
+        return false;
+
+    for (int i = 0; i < max_slots; ++i) {
+        if (i == current_slot || !file_reserve[i][0])
+            continue;
+        if (strcmp(file_reserve[i], path) == 0)
+            return true;
+    }
+
+    return false;
+}
+
+static const char *find_nextfile_startup_target(const char *start_path, int slot, int n)
+{
+    size_t total = nanox_startup_file_count();
+    size_t start_idx = 0;
+    int direction = (n > 0) ? 1 : -1;
+    int remaining = (n > 0) ? n : -n;
+    bool found_start = false;
+
+    if (!start_path || !*start_path || total == 0)
+        return NULL;
+
+    for (size_t i = 0; i < total; ++i) {
+        const char *path = nanox_startup_file_at(i);
+        if (path && strcmp(path, start_path) == 0) {
+            start_idx = i;
+            found_start = true;
+            break;
+        }
+    }
+
+    if (!found_start)
+        return NULL;
+
+    size_t idx = start_idx;
+    for (size_t scanned = 0; scanned < total * 2; ++scanned) {
+        idx = (direction > 0)
+            ? ((idx + 1) % total)
+            : ((idx + total - 1) % total);
+
+        if (idx == start_idx)
+            break;
+
+        const char *candidate = nanox_startup_file_at(idx);
+        if (!candidate || !*candidate)
+            continue;
+        if (path_is_reserved_elsewhere(candidate, slot))
+            continue;
+
+        if (--remaining == 0)
+            return candidate;
+    }
+
+    return NULL;
+}
+
 static void execute_nextfile(int n) {
     if (n == 0) {
         mlwrite("nextfile step cannot be 0");
@@ -96,22 +158,50 @@ static void execute_nextfile(int n) {
     int max_slots = nanox_slot_capacity();
     int slot = -1;
     struct buffer *start_bp = NULL;
-    struct buffer *curr = start_bp;
+    struct buffer *curr = NULL;
+    const char *start_path = NULL;
+    const char *target_path = NULL;
     int steps = (n > 0) ? n : -n;
 
     if (last_slot_index >= 0 && last_slot_index < max_slots && file_reserve[last_slot_index][0]) {
         start_bp = find_buffer_by_path(file_reserve[last_slot_index]);
-        if (start_bp != NULL)
+        if (start_bp != NULL) {
             slot = last_slot_index;
+            start_path = file_reserve[last_slot_index];
+        }
     }
 
     if (start_bp == NULL) {
         slot = find_slot_for_buffer(curbp);
-        if (slot >= 0)
+        if (slot >= 0) {
             start_bp = curbp;
+            start_path = curbp->b_fname;
+        }
     }
 
-    if (slot < 0 || start_bp == NULL) {
+    if (slot < 0 || start_path == NULL || start_path[0] == '\0') {
+        mlwrite("nextfile requires an active slot-backed file");
+        return;
+    }
+
+    target_path = find_nextfile_startup_target(start_path, slot, n);
+    if (target_path != NULL) {
+        mystrscpy(file_reserve[slot], target_path, PATH_MAX);
+        last_slot_index = slot;
+
+        curr = find_buffer_by_path(target_path);
+        if (curr != NULL) {
+            swbuffer(curr);
+        } else if (getfile(file_reserve[slot], TRUE) != TRUE) {
+            mlwrite("Could not open: %s", file_reserve[slot]);
+            return;
+        }
+
+        mlwrite("Switched to: %s", file_reserve[slot]);
+        return;
+    }
+
+    if (start_bp == NULL) {
         mlwrite("nextfile requires an active slot-backed file");
         return;
     }
@@ -142,17 +232,7 @@ static void execute_nextfile(int n) {
 
         /* Eligibility check: not internal AND not in any slot (except current if we're moving from it) */
         if (!(curr->b_flag & BFINVS) && curr->b_fname[0] != '\0') {
-            bool in_any_slot = false;
-            for (int i = 0; i < max_slots; ++i) {
-                if (file_reserve[i][0] && strcmp(file_reserve[i], curr->b_fname) == 0) {
-                    /* If it's in a slot other than our current one, it's not eligible */
-                    if (i != slot) {
-                        in_any_slot = true;
-                        break;
-                    }
-                }
-            }
-            if (!in_any_slot) {
+            if (!path_is_reserved_elsewhere(curr->b_fname, slot)) {
                 steps--;
             }
         }

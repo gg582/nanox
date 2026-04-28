@@ -77,6 +77,8 @@ int reserve_jump_fallback_3(int f, int n);
 int reserve_jump_fallback_4(int f, int n);
 int reserve_jump_numeric_mode(int f, int n);
 void nanox_queue_startup_file(const char *path);
+size_t nanox_startup_file_count(void);
+const char *nanox_startup_file_at(size_t index);
 int nanox_open_startup_slot(void);
 void nanox_handle_closed_file(const char *path);
 void nanox_request_underbar_redraw(void);
