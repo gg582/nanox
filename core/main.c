@@ -521,6 +521,7 @@ void edinit(char *bname)
         exit(1);
     curbp = bp;                /* Make this current    */
     bp->b_mode |= MDSOFTWRAP;
+    gmode |= MDSOFTWRAP;       /* Default soft wrap for all new buffers */
     curwp = wp;
     wp->w_bufp = bp;            /* Initialize window    */
     bp->b_nwnd = 1;                /* Displayed.            */
