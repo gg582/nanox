@@ -43,6 +43,120 @@ static bool rendering_color_bold = false;
 static bool rendering_color_underline = false;
 static bool rendering_color_italic = false;
 
+static int get_char_width_rel(unicode_t c, int col)
+{
+    if (c == '\t') {
+        int step = tab_width + 1;
+        return step - (col % step);
+    }
+    if (c < 0x20 || c == 0x7f)
+        return 2;
+    return unicode_width(c);
+}
+
+void calculate_visual_pos(struct line *lp, int target_offset, int *vrow, int *vcol, bool wrap)
+{
+    int width = nanox_text_cols();
+    int indent = 0;
+    int row = 0;
+    int col = 0;
+    int i = 0;
+    int len = (lp == NULL) ? 0 : llength(lp);
+    
+    int line_start_idx = 0;
+    int last_wrap_idx = -1;
+
+    if (target_offset < 0) target_offset = 0;
+
+    while (i < len) {
+        if (i == target_offset) {
+            if (vrow) *vrow = row;
+            if (vcol) *vcol = col;
+            return;
+        }
+
+        unicode_t c;
+        int bytes = utf8_to_unicode(ltext(lp), i, len, &c);
+        if (bytes <= 0) bytes = 1;
+
+        int w = get_char_width_rel(c, col);
+
+        if (wrap && col + w > width && i > line_start_idx) {
+            if (last_wrap_idx > line_start_idx) {
+                row++;
+                col = indent;
+                i = last_wrap_idx;
+                line_start_idx = i;
+                last_wrap_idx = -1;
+                continue;
+            } else {
+                row++;
+                col = indent;
+                line_start_idx = i;
+            }
+            w = get_char_width_rel(c, col);
+        }
+
+        if (wrap && (c == ' ' || c == '\t' || c == '-' || c == ',' || c == ';')) {
+            last_wrap_idx = i + bytes;
+        }
+
+        col += w;
+        i += bytes;
+    }
+    
+    if (vrow) *vrow = row;
+    if (vcol) *vcol = col;
+}
+
+void get_offset_at_visual_pos(struct line *lp, int target_vrow, int target_vcol, int *offset)
+{
+    int width = nanox_text_cols();
+    int indent = 0;
+    int row = 0;
+    int col = 0;
+    int i = 0;
+    int len = (lp == NULL) ? 0 : llength(lp);
+    bool wrap = (curwp->w_bufp->b_mode & MDSOFTWRAP) != 0;
+    
+    int line_start_idx = 0;
+    int last_wrap_idx = -1;
+
+    while (i < len) {
+        if (row > target_vrow) break;
+        if (row == target_vrow && col >= target_vcol) break;
+
+        unicode_t c;
+        int bytes = utf8_to_unicode(ltext(lp), i, len, &c);
+        if (bytes <= 0) bytes = 1;
+        int w = get_char_width_rel(c, col);
+
+        if (wrap && col + w > width && i > line_start_idx) {
+            if (last_wrap_idx > line_start_idx) {
+                row++;
+                col = indent;
+                i = last_wrap_idx;
+                line_start_idx = i;
+                last_wrap_idx = -1;
+                continue;
+            } else {
+                row++;
+                col = indent;
+                line_start_idx = i;
+            }
+            w = get_char_width_rel(c, col);
+        }
+
+        if (wrap && (c == ' ' || c == '\t' || c == '-' || c == ',' || c == ';')) {
+            last_wrap_idx = i + bytes;
+        }
+
+        col += w;
+        i += bytes;
+    }
+    if (offset) *offset = i;
+}
+
 static int get_gutter_width(void)
 {
     return !nanox_cfg.nonr ? 8 : 0;
@@ -169,39 +283,15 @@ static void modeline(struct window *wp);
 static void show_line_wrapped(struct window *wp, struct line *lp);
 
 
-static int get_char_width(unicode_t c, int col)
-{
-    if (c == '\t') {
-        int rel_col = col - vt_margin_left;
-        return (tab_width + 1) - ((rel_col + taboff) & tab_width);
-    }
-    if (c < 0x20 || c == 0x7f)
-        return 2;
-    return mystrnlen_raw_w(c);
-}
 
-static int get_line_height(struct line *lp)
+int get_line_height(struct line *lp, bool wrap)
 {
     if (lp == curbp->b_linep)
         return 0;
 
-    int len = llength(lp);
-    int col = 0;
-    int height = 1;
-    int i = 0;
-    while (i < len) {
-        unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)ltext(lp), i, len, &c);
-        int w = get_char_width(c, col);
-        if (col + w > nanox_text_cols()) {
-            height++;
-            col = 4;
-            w = get_char_width(c, col);
-        }
-        col += w;
-        i += bytes;
-    }
-    return height;
+    int vrow;
+    calculate_visual_pos(lp, llength(lp), &vrow, NULL, wrap);
+    return vrow + 1;
 }
 
 void vtputc(int c);
@@ -493,8 +583,6 @@ void vtputc(int c)
     char_width = mystrnlen_raw_w(c);
 
     if (vtcol + char_width > term->t_ncol) {
-        vscreen[vtrow]->v_text[term->t_ncol - 1].ch = '$';
-        vtcol += char_width;
         return;
     }
 
@@ -735,35 +823,15 @@ static int reframe(struct window *wp)
         while (vrow < rows && lp != wp->w_bufp->b_linep) {
             if (lp == wp->w_dotp) {
                 /* Dot is on this line. Calculate its subrow. */
-                int dot_vrow = vrow;
-                int col = 0;
-                int char_idx = 0;
-                int len = llength(lp);
-                int target = wp->w_doto;
-                if (target > len)
-                    target = len;
-
-                while (char_idx < target) {
-                    unicode_t c;
-                    int bytes = utf8_to_unicode((unsigned char *)ltext(lp), char_idx, len, &c);
-                    if (bytes == 0)
-                        break;
-                    int w = get_char_width(c, col);
-                    if (col + w > nanox_text_cols()) {
-                        dot_vrow++;
-                        col = 4;
-                        w = get_char_width(c, col);
-                    }
-                    col += w;
-                    char_idx += bytes;
-                }
+                int subrow;
+                calculate_visual_pos(lp, wp->w_doto, &subrow, NULL, wp->w_bufp->b_mode & MDSOFTWRAP);
                 
-                if (dot_vrow < rows)
+                if (vrow + subrow < rows)
                     return TRUE;
                 else
                     break; /* Need reframe */
             }
-            vrow += get_line_height(lp);
+            vrow += get_line_height(lp, wp->w_bufp->b_mode & MDSOFTWRAP);
             lp = lforw(lp);
         }
     }
@@ -904,10 +972,43 @@ static void show_line(struct window *wp, struct line *lp)
     render_plugin_execute(RENDER_HOOK_POST_LINE, &ctx);
 }
 
+static int find_next_wrap_point(struct line *lp, int start_idx)
+{
+    int width = nanox_text_cols();
+    int col = 0;
+    int i = start_idx;
+    int len = (lp == NULL) ? 0 : llength(lp);
+    int last_space = -1;
+
+    while (i < len) {
+        unicode_t c;
+        int bytes = utf8_to_unicode(ltext(lp), i, len, &c);
+        if (bytes <= 0) bytes = 1;
+        int w = get_char_width_rel(c, col);
+
+        /* If this character doesn't fit, break at the current position 
+         * UNLESS we have a previous space/break point to use.
+         */
+        if (col + w > width && i > start_idx) {
+            if (last_space > start_idx) return last_space;
+            return i;
+        }
+
+        if (c == ' ' || c == '\t' || c == '-' || c == ',' || c == ';') {
+            last_space = i + bytes;
+        }
+
+        col += w;
+        i += bytes;
+    }
+    return len;
+}
+
 static void show_line_wrapped(struct window *wp, struct line *lp)
 {
     int len = llength(lp);
     current_rendering_lp = lp;
+    int indent = 4;
 
     SpanVec spans;
     HighlightState end_state;
@@ -931,8 +1032,20 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
     int current_span_idx = 0;
     int char_idx = 0;
     int text_col = 0;
+    int next_wrap = find_next_wrap_point(lp, 0);
 
     while (char_idx < len) {
+        if (char_idx == next_wrap) {
+            vteeol();
+            vtrow++;
+            if (vtrow >= nanox_text_rows()) break;
+            vscreen[vtrow]->v_flag |= VFCHG;
+            render_gutter(vtrow, 0, lp);
+            vtmove(vtrow, get_gutter_width());
+            text_col = 0;
+            next_wrap = find_next_wrap_point(lp, char_idx);
+        }
+
         int style = HL_NORMAL;
         while (current_span_idx < spans.count) {
             Span *s = (spans.heap_spans) ? &spans.heap_spans[current_span_idx] : &spans.spans[current_span_idx];
@@ -950,20 +1063,9 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
         int bytes = utf8_to_unicode((unsigned char *)ltext(lp), char_idx, len, &c);
         if (bytes <= 0) bytes = 1;
 
-        int w = get_char_width(c, vtcol);
-        if (vtcol + w > term->t_ncol - 2 && char_idx > 0) {
-            vteeol();
-            vtrow++;
-            if (vtrow >= nanox_text_rows()) break;
-            vtcol = vt_margin_left;
-            vscreen[vtrow]->v_flag |= VFCHG;
-            render_gutter(vtrow, 0, lp);
-            for (int i = 0; i < 4; i++) vtputc(' ');
-            /* Re-calculate width at new column (important for tabs) */
-            w = get_char_width(c, vtcol);
-        }
+        int w = get_char_width_rel(c, text_col);
+        int next_text_col = text_col + w;
 
-        int next_text_col = next_column(text_col, c, tab_width);
         if (command_mode_block_selection_contains(lp, text_col, next_text_col))
             style = HL_SELECTION;
 
@@ -1010,7 +1112,7 @@ static void updone(struct window *wp)
     lp = wp->w_linep;
     sline = 0;
     while (lp != wp->w_dotp && sline < rows) {
-        sline += get_line_height(lp);
+        sline += get_line_height(lp, wp->w_bufp->b_mode & MDSOFTWRAP);
         lp = lforw(lp);
     }
 
@@ -1086,42 +1188,20 @@ static void updall(struct window *wp)
 void updpos(void)
 {
     struct line *lp;
-    int i;
     int rows = nanox_text_rows();
 
     /* find the current row */
     lp = curwp->w_linep;
     currow = 0;
     while (lp != curwp->w_dotp && currow < rows) {
-        currow += get_line_height(lp);
+        currow += get_line_height(lp, curwp->w_bufp->b_mode & MDSOFTWRAP);
         lp = lforw(lp);
     }
 
-    /* find the current column and subrow */
-    curcol = 0;
-    i = 0;
-    lp = curwp->w_dotp;
-    int len = llength(lp);
-    int target = curwp->w_doto;
-    if (target > len)
-        target = len;
-
-    while (i < target) {
-        unicode_t c;
-        int bytes;
-
-        bytes = utf8_to_unicode((unsigned char *)ltext(lp), i, len, &c);
-        if (bytes == 0)
-            break;
-        int w = get_char_width(c, curcol);
-        if (curcol + w > nanox_text_cols()) {
-            currow++;
-            curcol = 4;
-            w = get_char_width(c, curcol);
-        }
-        curcol += w;
-        i += bytes;
-    }
+    int vrow, vcol;
+    calculate_visual_pos(curwp->w_dotp, curwp->w_doto, &vrow, &vcol, curwp->w_bufp->b_mode & MDSOFTWRAP);
+    currow += vrow;
+    curcol = vcol;
 
     lbound = 0;
 }

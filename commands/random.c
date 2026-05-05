@@ -18,6 +18,7 @@
 #include "util.h"
 #include "nanox.h"
 #include "completion.h"
+#include "highlight.h"
 
 int tabsize;                    /* Tab size (0: use real tabs) */
 
@@ -1055,6 +1056,26 @@ int insert_newline(int f, int n)
     return TRUE;
 }
 
+static bool is_inside_block_comment(struct line *lp)
+{
+    const HighlightProfile *profile = highlight_get_profile(curbp->b_fname);
+    if (!profile || profile->block_comment_count == 0)
+        return false;
+
+    HighlightState state = {0};
+    struct line *scan = lforw(curbp->b_linep);
+    while (scan != lp && scan != curbp->b_linep) {
+        int len = llength(scan);
+        if (len > 0) {
+            char *text = ltext(scan);
+            highlight_line(text, len, state, profile, NULL, &state);
+        }
+        scan = lforw(scan);
+    }
+
+    return state.depth > 0 && state.stack[state.depth - 1].state == HS_BLOCK_COMMENT;
+}
+
 int cinsert(void)
 {                       /* insert a newline and indentation for C */
     int bracef;             /* was there a brace at the end of line? */
@@ -1068,12 +1089,59 @@ int cinsert(void)
         tptr--;
     bracef = (tptr >= 0 && lgetc(lp, tptr) == '{');
 
+    /* check for /** comment start for auto-completion */
+    int comment_auto_insert = 0;
+    const HighlightProfile *profile = highlight_get_profile(curbp->b_fname);
+    if (profile && !profile->suppress_comment_autocomplete) {
+        /* Look for /** pattern at cursor position */
+        if (doto >= 3) {
+            int idx = doto - 1;
+            /* skip trailing whitespace before cursor */
+            while (idx >= 0 && (lgetc(lp, idx) == ' ' || lgetc(lp, idx) == '\t'))
+                idx--;
+            /* check if we have /** before cursor */
+            if (idx >= 2 && lgetc(lp, idx) == '*' && lgetc(lp, idx-1) == '*' && lgetc(lp, idx-2) == '/') {
+                comment_auto_insert = 1;
+            }
+        }
+        /* Continue * prefix when inside a block comment */
+        if (!comment_auto_insert && is_inside_block_comment(lp)) {
+            /* Don't insert * if current line already closes the block */
+            int has_close = 0;
+            for (int i = 0; i < llength(lp) - 1; i++) {
+                if (lgetc(lp, i) == '*' && lgetc(lp, i + 1) == '/') {
+                    has_close = 1;
+                    break;
+                }
+            }
+            if (!has_close)
+                comment_auto_insert = 1;
+        }
+    }
+
     /* check for dedent if current line starts with a closing block */
     check_indent_dedent();
 
     /* recapture lp and target_indent after possible dedent */
     lp = curwp->w_dotp;
     target_indent = get_indent(lp);
+
+    /* For block comment continuation, align to the /** line's indent */
+    if (comment_auto_insert) {
+        struct line *scan = lp;
+        while (scan != curbp->b_linep) {
+            int len = llength(scan);
+            int i = 0;
+            while (i < len && (lgetc(scan, i) == ' ' || lgetc(scan, i) == '\t'))
+                i++;
+            if (i + 3 <= len && lgetc(scan, i) == '/' &&
+                lgetc(scan, i + 1) == '*' && lgetc(scan, i + 2) == '*') {
+                target_indent = get_indent(scan);
+                break;
+            }
+            scan = lback(scan);
+        }
+    }
 
     /* check for preprocessor macros that should increase indentation */
     int ppf = 0;
@@ -1101,8 +1169,16 @@ int cinsert(void)
     /* and the saved indentation */
     set_indent(target_indent);
 
+    /* add * for /** comment autocomplete */
+    if (comment_auto_insert) {
+        /* Align * with the second * of /** (base indent + 2) */
+        linsert(2, ' ');
+        linsert(1, '*');
+        linsert(1, ' ');
+        curwp->w_doto = llength(curwp->w_dotp);
+    }
     /* and one level of indentation for an open brace or preprocessor block */
-    if (bracef || ppf) {
+    else if (bracef || ppf) {
         int step = (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
         if (step == 8 && !nanox_cfg.soft_tab) linsert(1, '\t');
         else {

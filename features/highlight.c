@@ -130,6 +130,7 @@ static void profile_init(HighlightProfile *p, const char *name)
     p->enable_number_highlight = true;
     p->enable_bracket_highlight = true;
     p->enable_triple_quotes = false;
+    p->suppress_comment_autocomplete = false;
     p->completion_end_line_char = '\0';
     /* Defaults could be more extensive, but usually config overrides */
 }
@@ -353,6 +354,8 @@ static bool load_config_file(const char *path, bool allow_global)
             curr->enable_number_highlight = (strcasecmp(val, "true") == 0);
         } else if (strcmp(key, "enable_bracket_highlight") == 0) {
             curr->enable_bracket_highlight = (strcasecmp(val, "true") == 0);
+        } else if (strcmp(key, "suppress_comment_autocomplete") == 0) {
+            curr->suppress_comment_autocomplete = (strcasecmp(val, "true") == 0);
         }
     }
 
@@ -1340,9 +1343,8 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                 int h = pos;
                 while (h < len && text[h] == '#') h++;
                 if (h > pos && h <= pos + 6 && h < len && isspace((unsigned char)text[h])) {
-                    /* Only highlight the '#' markers, not the text after them */
-                    if (out) add_span(out, pos, h, HL_HEADER);
-                    pos = len; // Treat rest of line as default text
+                    if (out) add_span(out, pos, len, HL_HEADER);
+                    pos = len;
                     continue;
                 }
             }

@@ -55,6 +55,7 @@ typedef struct {
     bool enable_triple_quotes;
     bool enable_number_highlight;
     bool enable_bracket_highlight;
+    bool suppress_comment_autocomplete;
 } HighlightProfile;
 
 typedef struct {

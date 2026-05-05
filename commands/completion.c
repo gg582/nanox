@@ -2693,6 +2693,12 @@ int completion_dropdown_handle_key(int key)
             return 1;
         }
 
+        if (key == (SPEC | 'C')) {
+            completion_dropdown_state.focused = 1;
+            completion_dropdown_apply_selection();
+            return 1;
+        }
+
         completion_dropdown_state.tab_primed = 0;
         if (key == (CONTROL | '[') || key == (CONTROL | 'G')) {
             completion_dropdown_deactivate(0);
@@ -2723,6 +2729,8 @@ int completion_dropdown_handle_key(int key)
         completion_dropdown_apply_selection();
         return 1;
     case (SPEC | 'C'):
+        completion_dropdown_apply_selection();
+        return 1;
     case (SPEC | 'D'):
     case (CONTROL | 'B'):
     case (CONTROL | 'F'):

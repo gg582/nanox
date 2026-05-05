@@ -53,6 +53,11 @@ extern int backpage(int f, int n);
 extern int setmark(int f, int n);
 extern int swapmark(int f, int n);
 
+/* display.c */
+extern void calculate_visual_pos(struct line *lp, int target_offset, int *vrow, int *vcol, bool wrap);
+extern void get_offset_at_visual_pos(struct line *lp, int target_vrow, int target_vcol, int *offset);
+extern int get_line_height(struct line *lp, bool wrap);
+
 /* random.c */
 extern int tabsize;             /* Tab size (0: use real tabs). */
 extern int setfillcol(int f, int n);

@@ -51,11 +51,19 @@ static int getgoal(struct line *dlp)
 
 int gotobol(int f, int n)
 {
-    struct cursor c;
-    cursor_init(&c, curwp->w_dotp, curwp->w_doto);
-    cursor_gotobol(&c);
-    curwp->w_dotp = c.linep;
-    curwp->w_doto = c.offset;
+    if (curwp->w_bufp->b_mode & MDSOFTWRAP) {
+        int vrow, vcol;
+        calculate_visual_pos(curwp->w_dotp, curwp->w_doto, &vrow, &vcol, true);
+        int indent = (vrow == 0) ? 0 : 4;
+        if (vcol <= indent) {
+            curwp->w_doto = 0;
+        } else {
+            get_offset_at_visual_pos(curwp->w_dotp, vrow, indent, &curwp->w_doto);
+        }
+    } else {
+        curwp->w_doto = 0;
+    }
+    curwp->w_flag |= WFMOVE;
     return TRUE;
 }
 
@@ -82,11 +90,20 @@ int backchar(int f, int n)
  */
 int gotoeol(int f, int n)
 {
-    struct cursor c;
-    cursor_init(&c, curwp->w_dotp, curwp->w_doto);
-    cursor_gotoeol(&c);
-    curwp->w_dotp = c.linep;
-    curwp->w_doto = c.offset;
+    if (curwp->w_bufp->b_mode & MDSOFTWRAP) {
+        int vrow, vcol;
+        calculate_visual_pos(curwp->w_dotp, curwp->w_doto, &vrow, &vcol, true);
+        int new_offset;
+        get_offset_at_visual_pos(curwp->w_dotp, vrow, 999, &new_offset);
+        if (new_offset <= curwp->w_doto) {
+            curwp->w_doto = llength(curwp->w_dotp);
+        } else {
+            curwp->w_doto = new_offset;
+        }
+    } else {
+        curwp->w_doto = llength(curwp->w_dotp);
+    }
+    curwp->w_flag |= WFMOVE;
     return TRUE;
 }
 
@@ -175,68 +192,91 @@ int gotoeob(int f, int n)
  */
 int forwline(int f, int n)
 {
-    struct line *dlp;
-
     if (n < 0)
         return backline(f, -n);
 
-    /* if we are on the last line as we start....fail the command */
     if (curwp->w_dotp == curbp->b_linep)
         return FALSE;
 
-    /* if the last command was not note a line move,
-       reset the goal column */
-    if ((lastflag & CFCPCN) == 0)
-        curgoal = getccol(FALSE);
+    bool wrap = (curwp->w_bufp->b_mode & MDSOFTWRAP) != 0;
 
-    /* flag this command as a line move */
+    if ((lastflag & CFCPCN) == 0) {
+        if (wrap) {
+            int vrow, vcol;
+            calculate_visual_pos(curwp->w_dotp, curwp->w_doto, &vrow, &vcol, true);
+            curgoal = vcol;
+        } else {
+            curgoal = getccol(FALSE);
+        }
+    }
+
     thisflag |= CFCPCN;
 
-    /* and move the point down */
-    dlp = curwp->w_dotp;
-    while (n-- && dlp != curbp->b_linep)
-        dlp = lforw(dlp);
+    if (wrap) {
+        int vrow, vcol;
+        calculate_visual_pos(curwp->w_dotp, curwp->w_doto, &vrow, &vcol, true);
+        while (n--) {
+            int height = get_line_height(curwp->w_dotp, wrap);
+            if (vrow + 1 < height) {
+                vrow++;
+            } else {
+                if (lforw(curwp->w_dotp) == curbp->b_linep) break;
+                curwp->w_dotp = lforw(curwp->w_dotp);
+                vrow = 0;
+            }
+        }
+        get_offset_at_visual_pos(curwp->w_dotp, vrow, curgoal, &curwp->w_doto);
+    } else {
+        while (n-- && curwp->w_dotp != curbp->b_linep)
+            curwp->w_dotp = lforw(curwp->w_dotp);
+        curwp->w_doto = getgoal(curwp->w_dotp);
+    }
 
-    /* reseting the current position */
-    curwp->w_dotp = dlp;
-    curwp->w_doto = getgoal(dlp);
     curwp->w_flag |= WFMOVE;
     return TRUE;
 }
 
-/*
- * This function is like "forwline", but goes backwards. The scheme is exactly
- * the same. Check for arguments that are less than zero and call your
- * alternate. Figure out the new line and call "movedot" to perform the
- * motion. No errors are possible. Bound to "C-P".
- */
 int backline(int f, int n)
 {
-    struct line *dlp;
-
     if (n < 0)
         return forwline(f, -n);
 
-    /* if we are on the last line as we start....fail the command */
     if (lback(curwp->w_dotp) == curbp->b_linep)
         return FALSE;
 
-    /* if the last command was not note a line move,
-       reset the goal column */
-    if ((lastflag & CFCPCN) == 0)
-        curgoal = getccol(FALSE);
+    bool wrap = (curwp->w_bufp->b_mode & MDSOFTWRAP) != 0;
 
-    /* flag this command as a line move */
+    if ((lastflag & CFCPCN) == 0) {
+        if (wrap) {
+            int vrow, vcol;
+            calculate_visual_pos(curwp->w_dotp, curwp->w_doto, &vrow, &vcol, true);
+            curgoal = vcol;
+        } else {
+            curgoal = getccol(FALSE);
+        }
+    }
+
     thisflag |= CFCPCN;
 
-    /* and move the point up */
-    dlp = curwp->w_dotp;
-    while (n-- && lback(dlp) != curbp->b_linep)
-        dlp = lback(dlp);
+    if (wrap) {
+        int vrow, vcol;
+        calculate_visual_pos(curwp->w_dotp, curwp->w_doto, &vrow, &vcol, true);
+        while (n--) {
+            if (vrow > 0) {
+                vrow--;
+            } else {
+                if (lback(curwp->w_dotp) == curbp->b_linep) break;
+                curwp->w_dotp = lback(curwp->w_dotp);
+                vrow = get_line_height(curwp->w_dotp, wrap) - 1;
+            }
+        }
+        get_offset_at_visual_pos(curwp->w_dotp, vrow, curgoal, &curwp->w_doto);
+    } else {
+        while (n-- && lback(curwp->w_dotp) != curbp->b_linep)
+            curwp->w_dotp = lback(curwp->w_dotp);
+        curwp->w_doto = getgoal(curwp->w_dotp);
+    }
 
-    /* reseting the current position */
-    curwp->w_dotp = dlp;
-    curwp->w_doto = getgoal(dlp);
     curwp->w_flag |= WFMOVE;
     return TRUE;
 }

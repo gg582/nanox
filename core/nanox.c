@@ -505,7 +505,8 @@ int nanox_text_cols(void)
     int cols = term->t_ncol;
     if (!nanox_cfg.nonr)
         cols -= 8;
-    cols -= 2;
+    /* Use 1 column margin for safety instead of 2 */
+    cols -= 1;
     if (cols < 1)
         cols = 1;
     return cols;
