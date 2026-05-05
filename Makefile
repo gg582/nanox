@@ -37,7 +37,7 @@ ifneq ($(strip $(HUNSPELL_LIBS)),)
 endif
 
 # Linker flags
-LDFLAGS = -flto=auto -fuse-linker-plugin -Wl,--gc-sections
+LDFLAGS = -flto=auto -fuse-linker-plugin
 
 # Source discovery
 # We explicitly list some to maintain control, or use wildcard and filter
