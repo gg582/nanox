@@ -131,8 +131,8 @@ void ncurses_open(void) {
         start_color();
         use_default_colors();
     }
-    ncurses_term.t_nrow = LINES - 1;
-    ncurses_term.t_ncol = COLS;
+    ncurses_term.t_nrow = (LINES > MAXROW) ? MAXROW - 1 : LINES - 1;
+    ncurses_term.t_ncol = (COLS > MAXCOL) ? MAXCOL : COLS;
     ncurses_term.t_mrow = MAXROW;
     ncurses_term.t_mcol = MAXCOL;
 }

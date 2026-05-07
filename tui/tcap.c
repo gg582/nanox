@@ -179,6 +179,8 @@ void tcapopen(void) {
     /* Final safety defaults */
     if (int_row <= 0) int_row = 24;
     if (int_col <= 0) int_col = 80;
+    if (int_row > MAXROW) int_row = MAXROW;
+    if (int_col > MAXCOL) int_col = MAXCOL;
 
     tcap_term.t_nrow = int_row - 1;
     tcap_term.t_ncol = int_col;

@@ -756,8 +756,15 @@ int update(int force)
             updone(wp); /* update EDITed line */
         else if (wp->w_flag & ~WFMOVE)
             updall(wp); /* update all lines */
-        if (wp->w_flag & WFMODE)
+        if (wp->w_flag & WFMODE) {
+            /* Reset colors before drawing modeline to avoid color leakage from syntax highlighting */
+            rendering_color_fg = normal.fg;
+            rendering_color_bg = normal.bg;
+            rendering_color_bold = normal.bold;
+            rendering_color_underline = normal.underline;
+            rendering_color_italic = normal.italic;
             modeline(wp);   /* update modeline */
+        }
         wp->w_flag = 0;
         wp->w_force = 0;
     }
@@ -1434,7 +1441,11 @@ static int updateline(int row, struct video *vp)
 
     /* scan through the line and dump it to the the
        virtual screen array, finding where the last non-space is  */
-    for (int i = 0; i < term->t_ncol; i++) {
+    int col_limit = term->t_ncol;
+    if (col_limit > MAXCOL)
+        col_limit = MAXCOL;
+
+    for (int i = 0; i < col_limit; i++) {
         text_buf[i] = vp->v_text[i].ch;
         /* Exclude dummy cells (ch == 0) from maxchar calculation */
         if (text_buf[i] != 0 && (text_buf[i] != ' ' || vp->v_text[i].bg != -1 || vp->v_text[i].underline || vp->v_text[i].italic))

@@ -59,10 +59,14 @@ int newsize(int f, int n)
         n = term->t_mrow + 1;
 
     /* make sure it's in range */
-    if (n < 3 || n > term->t_mrow + 1) {
+    if (n < 3) {
         mlwrite("%%Screen size out of range");
         return FALSE;
     }
+    if (n > MAXROW)
+        n = MAXROW;
+    if (n > term->t_mrow + 1)
+        n = term->t_mrow + 1;
 
     if (term->t_nrow == n - 1)
         return TRUE;
@@ -90,10 +94,14 @@ int newwidth(int f, int n)
         n = term->t_mcol;
 
     /* make sure it's in range */
-    if (n < 10 || n > term->t_mcol) {
+    if (n < 10) {
         mlwrite("%%Screen width out of range");
         return FALSE;
     }
+    if (n > MAXCOL)
+        n = MAXCOL;
+    if (n > term->t_mcol)
+        n = term->t_mcol;
 
     /* otherwise, just re-width it (no big deal) */
     term->t_ncol = n;
