@@ -969,6 +969,16 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
 
     span_vec_free(&spans);
 
+    /* Fill trailing whitespace using the default style colors */
+    {
+        HighlightStyle normal = colorscheme_get(HL_NORMAL);
+        rendering_color_fg = normal.fg;
+        rendering_color_bg = normal.bg;
+        rendering_color_bold = normal.bold;
+        rendering_color_underline = normal.underline;
+        rendering_color_italic = normal.italic;
+    }
+
     /* 6. Inline Plugins (e.g. Ghost Text, LSP) */
     render_ctx_t ctx = { wp, lp, vtrow, vtcol, 0, 0, HL_NORMAL, 0 };
     render_plugin_execute(RENDER_HOOK_POST_LINE, &ctx);
