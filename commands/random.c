@@ -1522,7 +1522,7 @@ static const char *indent_mode_label(void)
 
 static char indent_start_key(void)
 {
-    return (indent_range_type < 0) ? 'H' : 'J';
+    return (indent_range_type < 0) ? 'H' : 'I';
 }
 
 static void announce_indent_state(const char *action)
@@ -1669,16 +1669,20 @@ static int indent_finalize_range(int type, const char *action)
     return TRUE;
 }
 
-/* Ctrl+J: Set start point for indent */
+/* Ctrl+I: Set start point for indent */
 int indent_start_set(int f, int n)
 {
     return indent_begin_range(f, n, 1, "Indent start set");
 }
 
-/* Ctrl+Shift+J: Set end point for indent */
-int indent_end_set(int f, int n)
+/* Ctrl+Shift+I: Indent current line */
+int indent_line(int f, int n)
 {
-    return indent_finalize_range(1, "Indent end set");
+    if (curbp->b_mode & MDVIEW) return rdonly();
+    adjust_indent(curwp->w_dotp, 1);
+    lchange(WFHARD);
+    mlwrite("[Indent line %ld]", line_number_for(curwp->w_dotp));
+    return TRUE;
 }
 
 /* Ctrl+H: Set start point for outdent */
@@ -1687,7 +1691,22 @@ int outdent_start_set(int f, int n)
     return indent_begin_range(f, n, -1, "Outdent start set");
 }
 
-/* Ctrl+Shift+H: Set end point for outdent */
+/* Ctrl+Shift+H: Outdent current line */
+int outdent_line(int f, int n)
+{
+    if (curbp->b_mode & MDVIEW) return rdonly();
+    adjust_indent(curwp->w_dotp, -1);
+    lchange(WFHARD);
+    mlwrite("[Outdent line %ld]", line_number_for(curwp->w_dotp));
+    return TRUE;
+}
+
+/* indent-end-set and outdent-end-set kept for command-mode compatibility */
+int indent_end_set(int f, int n)
+{
+    return indent_finalize_range(1, "Indent end set");
+}
+
 int outdent_end_set(int f, int n)
 {
     return indent_finalize_range(-1, "Outdent end set");
@@ -1697,7 +1716,7 @@ int outdent_end_set(int f, int n)
 int indent_apply_range(int f, int n)
 {
     if (indent_start_lp == NULL || indent_end_lp == NULL) {
-        mlwrite("[Range not set. Use Ctrl+J (indent) or Ctrl+H (outdent) to mark start, move cursor to end, then Tab or gg]");
+        mlwrite("[Range not set. Use Ctrl+I (indent) or Ctrl+H (outdent) to mark start, move cursor to end, then Tab or gg]");
         return FALSE;
     }
     if (curbp->b_mode & MDVIEW) return rdonly();
@@ -1763,7 +1782,7 @@ int indent_cancel(int f, int n)
 {
     if (indent_start_lp != NULL || indent_end_lp != NULL || indent_selection_active) {
         indent_reset_range();
-        mlwrite("[Indent selection canceled | start with Ctrl+J or Ctrl+H]");
+        mlwrite("[Indent selection canceled | start with Ctrl+I or Ctrl+H]");
         return TRUE;
     }
     return backdel(f, n);

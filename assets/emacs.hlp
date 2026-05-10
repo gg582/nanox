@@ -2,10 +2,10 @@
 =>                      NANOX SYSTEM BINDINGS & SEARCH SPEC
 -------------------------------------------------------------------------------
 FILE & SLOT CONTROL     EDITING & SEARCH        INDENT / OUTDENT
-F2 / ^S : Save File     ^K : Cut Current Line   ^J / ^H : Start Range
-F3 / ^O : Open File     F7 / ^X : Cut(S:End)    ^S+J / ^S+H : End Range
+F2 / ^S : Save File     ^K : Cut Current Line   ^I / ^H : Start Range
+F3 / ^O : Open File     F7 / ^X : Cut(S:End)    ^S+I / ^S+H : Indent/Outdent Line
 F4 / ^Q : Quit nanox    F6 / ^W : Copy(S:End)   gg : Apply Range
-F1 / ^H : Help Menu     ^V : Command Mode       BS : Cancel Range
+F1 : Help Menu          ^V : Command Mode       BS : Cancel Range
 F9-F12 : File Slots     F8/^Y : Paste           ------------------
 ===============================================================================
 * ^V means Ctrl+V. Pressing it opens Command Mode in the minibuffer.
@@ -33,8 +33,10 @@ F9-F12 : File Slots     F8/^Y : Paste           ------------------
 * If nanox config sets no_function_slot = true, the bottom bar switches from F9-12 Slot
   to ^A+num Slot, slot access switches to Ctrl+Alt+number mode, and the slot pool expands
   to 64 entries instead of staying limited to F9-F12.
-* ^S+J: Ctrl+Shift+J, ^S+H: Ctrl+Shift+H (End Range)
-* ^J: Ctrl+J, ^H: Ctrl+H (Start Range)
+* ^S+I: Ctrl+Shift+I (Indent Line), ^S+H: Ctrl+Shift+H (Outdent Line)
+* ^I: Ctrl+I (Indent Start Range), ^H: Ctrl+H (Outdent Start Range)
+* !!!!!! The Tab key sends the same signal as Ctrl+I  !!!!!!
+* !!!!!! so Tab=Start Range and Shift+Tab=Indent Line !!!!!!
 * ^R: Sed Replace
 * gg: Apply the selected indent/outdent to the range
 * BS: Backspace (Cancels current range operation)

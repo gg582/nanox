@@ -29,16 +29,15 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | 'L', insspace },           /* Insert */
     { 0x7F, indent_cancel },            /* Backspace / Cancel Indent */
     { SPEC | 0x7F, forwdel },           /* Delete */
-    { CONTROL | 'I', insert_tab },      /* Tab */
     { CONTROL | 'M', insert_newline },  /* Enter */
     { CONTROL | '@', completion_menu_command }, /* Ctrl+Space: Autocomplete */
 
     /* Indentation/Outdentation */
+    { CONTROL | 'I', indent_start_set },      /* Ctrl+I: Tab / Indent Start */
+    { CONTROL | SHIFT | 'I', indent_line },
     { CONTROL | 'H', outdent_start_set },
-    { CONTROL | SHIFT | 'H', outdent_end_set },
+    { CONTROL | SHIFT | 'H', outdent_line },
     { CONTROL | 'J', joinline },
-    { META | CONTROL | 'J', indent_start_set },
-    { CONTROL | SHIFT | 'J', indent_end_set },
     { 'g', g_prefix_handler },
     { CONTROL | 'V', command_mode_activate_command }, /* Ctrl+V: Command Mode */
 
