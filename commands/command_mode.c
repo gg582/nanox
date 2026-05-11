@@ -48,10 +48,10 @@ static void command_mode_prompt(void);
 static void execute_command(const char *input);
 static void command_mode_trim(char *text);
 static int command_mode_parse_line_range(const char *text, int *start_line, int *end_line);
-static int command_mode_apply_indent_range(int start_line, int end_line, int indent_direction);
-static int command_mode_handle_range_command(const char *input, const char *name, int indent_direction);
+static int command_mode_apply_indent_lint(void);
 static int command_mode_handle_lint_command(const char *input);
 static int command_mode_handle_set_nr_command(const char *input);
+
 static int command_mode_handle_flip_command(const char *input);
 static int command_mode_apply_indent_lint(void);
 static int command_mode_total_lines(void);
@@ -391,34 +391,6 @@ static void command_mode_prompt(void)
     nanox_request_underbar_redraw();
 }
 
-static int command_mode_handle_range_command(const char *input, const char *name, int indent_direction)
-{
-    size_t cmd_len = strlen(name);
-    if (strncasecmp(input, name, cmd_len) != 0)
-        return FALSE;
-
-    const char *range = input + cmd_len;
-    if (*range && !isspace((unsigned char)*range))
-        return FALSE;
-
-    while (*range && isspace((unsigned char)*range))
-        range++;
-
-    if (*range == '\0') {
-        mlwrite("[%s syntax: %s start-end]", name, name);
-        return TRUE;
-    }
-
-    int start_line, end_line;
-    if (!command_mode_parse_line_range(range, &start_line, &end_line)) {
-        mlwrite("[%s range must be start-end]", name);
-        return TRUE;
-    }
-
-    command_mode_apply_indent_range(start_line, end_line, indent_direction);
-    return TRUE;
-}
-
 static int command_mode_handle_lint_command(const char *input)
 {
     char buffer[CMD_BUF_SIZE];
@@ -447,10 +419,6 @@ static void execute_command(const char *input) {
         return;
     }
 
-    if (command_mode_handle_range_command(buffer, "indent", 1))
-        return;
-    if (command_mode_handle_range_command(buffer, "outdent", -1))
-        return;
     if (command_mode_handle_lint_command(buffer))
         return;
     if (command_mode_handle_set_nr_command(buffer))
@@ -878,55 +846,6 @@ static int command_mode_parse_line_range(const char *text, int *start_line, int 
     *start_line = (int)start;
     *end_line = (int)end;
     return TRUE;
-}
-
-static int command_mode_apply_indent_range(int start_line, int end_line, int indent_direction)
-{
-    int total = command_mode_total_lines();
-    if (total <= 0) {
-        mlwrite("Buffer is empty");
-        return FALSE;
-    }
-
-    if (start_line < 1)
-        start_line = 1;
-    if (end_line < 1)
-        end_line = 1;
-    if (start_line > total)
-        start_line = total;
-    if (end_line > total)
-        end_line = total;
-    if (start_line > end_line) {
-        int tmp = start_line;
-        start_line = end_line;
-        end_line = tmp;
-    }
-
-    struct line *start_lp = command_mode_line_at_number(start_line);
-    struct line *end_lp = command_mode_line_at_number(end_line);
-    if (!start_lp || !end_lp) {
-        mlwrite("Invalid line range");
-        return FALSE;
-    }
-
-    struct line *saved_start = indent_start_lp;
-    struct line *saved_end = indent_end_lp;
-    int saved_type = indent_range_type;
-    int saved_active = indent_selection_active;
-
-    indent_start_lp = start_lp;
-    indent_end_lp = end_lp;
-    indent_range_type = indent_direction;
-    indent_selection_active = FALSE;
-
-    int status = indent_apply_range(FALSE, 1);
-
-    indent_start_lp = saved_start;
-    indent_end_lp = saved_end;
-    indent_range_type = saved_type;
-    indent_selection_active = saved_active;
-
-    return status;
 }
 
 static int command_mode_get_indent(const struct line *lp)

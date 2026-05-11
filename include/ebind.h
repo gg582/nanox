@@ -27,18 +27,14 @@ struct key_tab keytab[NBINDS] = {
     { SPEC | '5', backpage },           /* Page Up */
     { SPEC | '6', forwpage },           /* Page Down */
     { SPEC | 'L', insspace },           /* Insert */
-    { 0x7F, indent_cancel },            /* Backspace / Cancel Indent */
+    { 0x7F, backdel },                  /* Backspace */
     { SPEC | 0x7F, forwdel },           /* Delete */
     { CONTROL | 'M', insert_newline },  /* Enter */
     { CONTROL | '@', completion_menu_command }, /* Ctrl+Space: Autocomplete */
 
-    /* Indentation/Outdentation */
-    { CONTROL | 'I', indent_start_set },      /* Ctrl+I: Tab / Indent Start */
-    { CONTROL | SHIFT | 'I', indent_line },
-    { CONTROL | 'H', outdent_start_set },
-    { CONTROL | SHIFT | 'H', outdent_line },
+    /* Basic Editing */
+    { CONTROL | 'I', insert_tab },
     { CONTROL | 'J', joinline },
-    { 'g', g_prefix_handler },
     { CONTROL | 'V', command_mode_activate_command }, /* Ctrl+V: Command Mode */
 
     /* SYSTEM */

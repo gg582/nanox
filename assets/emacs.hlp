@@ -1,29 +1,29 @@
 ===============================================================================
 =>                      NANOX SYSTEM BINDINGS & SEARCH SPEC
 -------------------------------------------------------------------------------
-FILE & SLOT CONTROL     EDITING & SEARCH        INDENT / OUTDENT
-F2 / ^S : Save File     ^K : Cut Current Line   ^I / ^H : Start Range
-F3 / ^O : Open File     F7 / ^X : Cut(S:End)    ^S+I / ^S+H : Indent/Outdent Line
-F4 / ^Q : Quit nanox    F6 / ^W : Copy(S:End)   gg : Apply Range
-F1 : Help Menu          ^V : Command Mode       BS : Cancel Range
-F9-F12 : File Slots     F8/^Y : Paste           ------------------
+FILE & SLOT CONTROL     EDITING & SEARCH        NAVIGATION
+F2 / ^S : Save File     ^K : Cut Current Line   Home / End : BOL / EOB
+F3 / ^O : Open File     F7 / ^X : Cut(S:End)    PgUp/PgDn : Page Up/Dn
+F4 / ^Q : Quit nanox    F6 / ^W : Copy(S:End)   ^G : Goto Line
+F1 : Help Menu          ^V : Command Mode       Tab : Insert Tab
+F9-F12 : File Slots     F8/^Y : Paste           ^J : Join Line
 ===============================================================================
 * ^V means Ctrl+V. Pressing it opens Command Mode in the minibuffer.
 * If your terminal maps Ctrl+V to bracketed paste, an empty paste now falls back to Command Mode.
 * Command Mode flow:
   1. Press ^V, type a command when the "Command Mode:" minibuffer appears, then hit Enter.
   2. Supported commands remain line numbers, help, viblock-edit, viblock-replace, etc.
-  3. New range commands: "indent 8-12" or "outdent 12-8" apply indentation to lines 8 through 12
-     (range order is normalized automatically). Existing mark-based indent/outdent shortcuts still work.
-  4. "lint" (or "tidy") reapplies indentation across the current buffer using the built-in
+  3. "lint" (or "tidy") reapplies indentation across the current buffer using the built-in
      indentation step detector and block-open/block-close heuristics.
-  5. "viblock-set-nr 4-10" rewrites numbering for lines 4..10 as 4,5,6... while preserving
+  4. "viblock-set-nr 4-10" rewrites numbering for lines 4..10 as 4,5,6... while preserving
      indentation/content and auto-detecting common list suffixes like "1. ", "1: ", "1) ".
      Add "rev" (or "reverse") to count backward from the range end.
-  6. "viblock-flip 1-10 11-40" swaps two non-overlapping line ranges.
+  5. "viblock-flip 1-10 11-40" swaps two non-overlapping line ranges.
 * viblock-edit: start at the current cursor, move to the opposite corner, press Enter,
   then type the shared text to insert on every selected line.
+  (Shortcuts: <tab> inserts one tab, <tab-2> inserts two tabs, etc.)
 * viblock-replace: same rectangle workflow, but the whole selected block is replaced once.
+  (Shortcuts: <tab> and <tab-N> also work here.)
 * Slots now use F9-F12 by default. Ctrl+Alt+9, 0, -, = map to F9, F10, F11, F12.
 * Ctrl+Alt+8 (or F8) pastes from the copy/cut buffer if you lack function keys.
 * nx *.txt does not immediately open every file. Files are queued into F9-F12 slots and
@@ -33,13 +33,7 @@ F9-F12 : File Slots     F8/^Y : Paste           ------------------
 * If nanox config sets no_function_slot = true, the bottom bar switches from F9-12 Slot
   to ^A+num Slot, slot access switches to Ctrl+Alt+number mode, and the slot pool expands
   to 64 entries instead of staying limited to F9-F12.
-* ^S+I: Ctrl+Shift+I (Indent Line), ^S+H: Ctrl+Shift+H (Outdent Line)
-* ^I: Ctrl+I (Indent Start Range), ^H: Ctrl+H (Outdent Start Range)
-* !!!!!! The Tab key sends the same signal as Ctrl+I  !!!!!!
-* !!!!!! so Tab=Start Range and Shift+Tab=Indent Line !!!!!!
 * ^R: Sed Replace
-* gg: Apply the selected indent/outdent to the range
-* BS: Backspace (Cancels current range operation)
 * ^K: Kill current line. Prefix with ^U <n> (e.g., ^U 3 ^K) to kill multiple lines at once.
 * After each search match press Y to continue or Enter to open a fresh "Search:" prompt instantly.
 * file raw-sig <bytes|bits> <n> [offset <hex>] [endian be|le] [bits-nr <int>] [align <int>]

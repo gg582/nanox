@@ -133,11 +133,6 @@ int cutln_active = FALSE;          /* CutLn active flag */
 int confirmshell = TRUE;
 int makebackup = TRUE;
 
-struct line *indent_start_lp = NULL;
-struct line *indent_end_lp = NULL;
-int indent_range_type = 0;
-int indent_selection_active = FALSE;
-
 #else
 
 /* for all the other .C files */
@@ -247,10 +242,5 @@ extern int cutln_active;
 extern int confirmshell;
 extern int makebackup;
 extern int removebackup;
-
-extern struct line *indent_start_lp;
-extern struct line *indent_end_lp;
-extern int indent_range_type;
-extern int indent_selection_active;
 
 #endif

@@ -175,6 +175,38 @@ static int block_motion_allowed(fn_t func) {
            func == gotobol || func == gotoeol || func == backpage || func == forwpage;
 }
 
+static void viblock_expand_shortcuts(char *text, size_t size) {
+    char expanded[NSTRING];
+    char *p = text;
+    char *d = expanded;
+    char *end = expanded + sizeof(expanded) - 1;
+
+    while (*p && d < end) {
+        if (strncmp(p, "<tab>", 5) == 0) {
+            if (d < end) {
+                *d++ = '\t';
+                p += 5;
+            } else break;
+        } else if (strncmp(p, "<tab-", 5) == 0) {
+            char *next;
+            int count = (int)strtol(p + 5, &next, 10);
+            if (*next == '>') {
+                p = next + 1;
+                while (count-- > 0 && d < end) {
+                    *d++ = '\t';
+                }
+            } else {
+                *d++ = *p++;
+            }
+        } else {
+            *d++ = *p++;
+        }
+    }
+    *d = '\0';
+    strncpy(text, expanded, size);
+    text[size - 1] = '\0';
+}
+
 int viblock_handle_key(int c, int f, int n) {
     char text[NSTRING];
     fn_t func;
@@ -191,6 +223,7 @@ int viblock_handle_key(int c, int f, int n) {
         }
         status = minibuf_input("viblock input: ", text, sizeof(text));
         if (status == TRUE) {
+            viblock_expand_shortcuts(text, sizeof(text));
             if (!current_strategy->apply(text)) return FALSE;
             mlwrite("%s applied", current_strategy->name);
         } else {

@@ -11,10 +11,8 @@ add_path_entry
 add_runtime_module_matches
 add_span
 add_symbol_token
-adjust_indent
 adjustmode
 amatch
-announce_indent_state
 anycb
 apply_modifier_bits
 apply_regex_to_line
@@ -108,7 +106,6 @@ colorscheme_init
 command_mode_activate
 command_mode_activate_command
 command_mode_apply_indent_lint
-command_mode_apply_indent_range
 command_mode_apply_numbering_range
 command_mode_block_handle_key
 command_mode_block_is_active
@@ -120,7 +117,6 @@ command_mode_get_indent
 command_mode_guess_numbering_suffix
 command_mode_handle_flip_command
 command_mode_handle_lint_command
-command_mode_handle_range_command
 command_mode_handle_set_nr_command
 command_mode_init
 command_mode_is_blank_line
@@ -329,7 +325,6 @@ gotoeob
 gotoeol
 gotoeop
 gotoline
-g_prefix_handler
 gtenv
 gtfun
 gtusr
@@ -353,17 +348,6 @@ highlight_is_enabled
 highlight_line
 ifile
 indent
-indent_apply_range
-indent_begin_range
-indent_cancel
-indent_end_set
-indent_finalize_range
-indent_mode_label
-indent_range_pending
-indent_reset_range
-indent_set_range_from_mark
-indent_start_key
-indent_start_set
 insbrace
 insert_newline
 insert_tab
@@ -547,8 +531,6 @@ normalize_whitespace
 nullproc
 openline
 ostring
-outdent_end_set
-outdent_start_set
 outstring
 ovstring
 parse_attributes

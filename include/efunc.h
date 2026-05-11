@@ -81,17 +81,6 @@ extern int deblank(int f, int n);
 extern int joinline(int f, int n);
 extern int indent(int f, int n);
 
-/* New Indentation/Outdentation functions */
-extern int indent_start_set(int f, int n);
-extern int indent_end_set(int f, int n);
-extern int indent_line(int f, int n);
-extern int outdent_start_set(int f, int n);
-extern int outdent_end_set(int f, int n);
-extern int outdent_line(int f, int n);
-extern int indent_apply_range(int f, int n);
-extern int indent_cancel(int f, int n);
-extern int g_prefix_handler(int f, int n);
-
 extern int handle_markup_char(int c);
 extern int forwdel(int f, int n);
 extern int backdel(int f, int n);
