@@ -20,6 +20,8 @@
 #include "highlight.h"
 #include "completion.h"
 #include "lsp_facade.h"
+#include "lsp_client.h"
+#include "cJSON.h"
 #include "util.h"
 #include "utf8.h"
 #include "scraper.h"
@@ -41,6 +43,8 @@ static completion_dropdown_state_t completion_dropdown_state = { 0, 0, 0, 0, 0, 
 
 static char completion_storage[MAX_COMPLETIONS][MAX_COMPLETION_LEN];
 static int completion_scores[MAX_COMPLETIONS];
+static char completion_sort_texts[MAX_COMPLETIONS][MAX_COMPLETION_LEN];
+static int completion_sort_ranks[MAX_COMPLETIONS];
 static completion_context_t completion_active_ctx = COMPLETION_CONTEXT_DEFAULT;
 static char completion_active_prefix[MAX_COMPLETION_LEN];
 
@@ -102,6 +106,7 @@ typedef struct {
 } completion_preview_state_t;
 
 static completion_preview_state_t completion_preview_state = { 0 };
+static int lsp_pending_reqid = -1;
 
 static java_member_entry_t *java_member_cache = NULL;
 static int java_member_cache_count = 0;
@@ -162,8 +167,12 @@ static void *java_class_symbols_loader(void *arg);
 static void start_async_java_class_symbols_load(void);
 #endif
 
+static void completion_consider_candidate_with_sort(const char *candidate, const char *prefix, const char *sort_text);
 static void completion_consider_candidate(const char *candidate, const char *prefix);
 static int completion_fuzzy_score(const char *candidate, const char *query);
+static int parse_sort_rank(const char *sort_text);
+static int compute_final_score(int fuzzy_score, int sort_rank);
+static void completion_add_match_with_sort_score(const char *word, int score, const char *sort_text);
 int completion_should_use_lsp(void);
 static void completion_preview_reset(void)
 {
@@ -246,6 +255,36 @@ static void completion_preview_apply_selected(void)
         return;
     completion_preview_apply_match(match);
 }
+
+static char *
+buffer_get_text(struct buffer *bp, size_t *outlen)
+{
+    struct line *lp = lforw(bp->b_linep);
+    size_t total = 0;
+    while (lp != bp->b_linep) {
+        total += (size_t)llength(lp) + 1;
+        lp = lforw(lp);
+    }
+    char *buf = malloc(total + 1);
+    if (!buf) return NULL;
+    size_t pos = 0;
+    lp = lforw(bp->b_linep);
+    while (lp != bp->b_linep) {
+        int len = llength(lp);
+        if (len > 0) {
+            memcpy(buf + pos, ltext(lp), len);
+            pos += len;
+        }
+        buf[pos++] = '\n';
+        lp = lforw(lp);
+    }
+    if (pos > 0) pos--;
+    buf[pos] = '\0';
+    if (outlen) *outlen = pos;
+    return buf;
+}
+
+
 
 static void completion_write_utf8_clipped(const char *text, int max_width)
 {
@@ -357,6 +396,7 @@ static void completion_reset_state(void)
     completion_state.is_visible = 0;
     completion_state.scroll_offset = 0;
     memset(completion_scores, 0, sizeof(completion_scores));
+    memset(completion_sort_ranks, -1, sizeof(completion_sort_ranks));
 }
 
 static int completion_word_exists(const char *word)
@@ -368,7 +408,83 @@ static int completion_word_exists(const char *word)
     return FALSE;
 }
 
-static void completion_add_match_with_score(const char *word, int score)
+void
+completion_lsp_poll(void)
+{
+    if (lsp_pending_reqid < 0) return;
+    cJSON *result = NULL;
+    int rc = lsp_poll_completion(lsp_pending_reqid, &result);
+    if (rc == 0) return; /* not yet */
+    lsp_pending_reqid = -1;
+    if (rc < 0 || !result) return;
+
+    cJSON *items = result;
+    cJSON *arr = cJSON_GetObjectItemCaseSensitive(result, "items");
+    if (arr) items = arr;
+
+    cJSON *item;
+    cJSON_ArrayForEach(item, items) {
+        cJSON *lbl = cJSON_GetObjectItemCaseSensitive(item, "label");
+        cJSON *sort = cJSON_GetObjectItemCaseSensitive(item, "sortText");
+        cJSON *textEdit = cJSON_GetObjectItemCaseSensitive(item, "textEdit");
+        cJSON *insertText = cJSON_GetObjectItemCaseSensitive(item, "insertText");
+        const char *word = NULL;
+        if (textEdit && cJSON_IsObject(textEdit)) {
+            cJSON *nt = cJSON_GetObjectItemCaseSensitive(textEdit, "newText");
+            if (nt && cJSON_IsString(nt)) word = nt->valuestring;
+        }
+        if (!word && insertText && cJSON_IsString(insertText))
+            word = insertText->valuestring;
+        if (!word && lbl && cJSON_IsString(lbl))
+            word = lbl->valuestring;
+        if (!word) continue;
+        if (completion_word_exists(word)) continue;
+        int score = completion_fuzzy_score(word, completion_active_prefix);
+        if (score >= 0)
+            completion_add_match_with_sort_score(word, score,
+                sort && cJSON_IsString(sort) ? sort->valuestring : NULL);
+    }
+    cJSON_Delete(result);
+    if (completion_state.count > 0)
+        completion_state.is_visible = 1;
+}
+
+#define SORT_BONUS_BASE 10000
+#define SORT_WEIGHT 100
+#define SORT_BONUS_NO_SORTTEXT (SORT_BONUS_BASE / 2)
+
+static int parse_sort_rank(const char *sort_text)
+{
+    if (!sort_text || !*sort_text)
+        return -1;
+    char *endptr = NULL;
+    long val = strtol(sort_text, &endptr, 10);
+    if (*endptr == '\0')
+        return (int)val;
+    unsigned char c = (unsigned char)sort_text[0];
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'z')
+        return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'Z')
+        return 10 + (c - 'A');
+    return (int)c;
+}
+
+static int compute_final_score(int fuzzy_score, int sort_rank)
+{
+    int bonus;
+    if (sort_rank >= 0) {
+        bonus = SORT_BONUS_BASE - sort_rank * SORT_WEIGHT;
+        if (bonus < 0)
+            bonus = 0;
+    } else {
+        bonus = SORT_BONUS_NO_SORTTEXT;
+    }
+    return fuzzy_score + bonus;
+}
+
+static void completion_add_match_with_sort_score(const char *word, int score, const char *sort_text)
 {
     if (word == NULL || *word == '\0')
         return;
@@ -376,26 +492,33 @@ static void completion_add_match_with_score(const char *word, int score)
         return;
     if (completion_word_exists(word))
         return;
+    int sort_rank = parse_sort_rank(sort_text);
+    int final_score = compute_final_score(score, sort_rank);
     int insert = completion_state.count;
     while (insert > 0) {
         int prev = insert - 1;
         const char *prev_word = completion_state.matches[prev];
-        if (completion_scores[prev] > score)
+        if (completion_scores[prev] > final_score)
             break;
-        if (completion_scores[prev] == score && prev_word && strcmp(prev_word, word) <= 0)
+        if (completion_scores[prev] == final_score && prev_word && strcmp(prev_word, word) <= 0)
             break;
         if (insert < MAX_COMPLETIONS) {
             mystrscpy(completion_storage[insert], completion_storage[prev], MAX_COMPLETION_LEN);
             completion_state.matches[insert] = completion_storage[insert];
             completion_scores[insert] = completion_scores[prev];
+            completion_sort_ranks[insert] = completion_sort_ranks[prev];
+            mystrscpy(completion_sort_texts[insert], completion_sort_texts[prev], MAX_COMPLETION_LEN);
         }
         insert--;
     }
     mystrscpy(completion_storage[insert], word, MAX_COMPLETION_LEN);
     completion_state.matches[insert] = completion_storage[insert];
-    completion_scores[insert] = score;
+    completion_scores[insert] = final_score;
+    completion_sort_ranks[insert] = sort_rank;
+    mystrscpy(completion_sort_texts[insert], sort_text ? sort_text : "", MAX_COMPLETION_LEN);
     completion_state.count++;
 }
+
 
 static int is_identifier_char(unicode_t uc)
 {
@@ -472,7 +595,7 @@ static int completion_fuzzy_score(const char *candidate, const char *query)
     return score;
 }
 
-static void completion_consider_candidate(const char *candidate, const char *prefix)
+static void completion_consider_candidate_with_sort(const char *candidate, const char *prefix, const char *sort_text)
 {
     if (candidate == NULL || prefix == NULL)
         return;
@@ -484,7 +607,12 @@ static void completion_consider_candidate(const char *candidate, const char *pre
     int score = completion_fuzzy_score(candidate, prefix);
     if (score < 0)
         return;
-    completion_add_match_with_score(candidate, score);
+    completion_add_match_with_sort_score(candidate, score, sort_text);
+}
+
+static void completion_consider_candidate(const char *candidate, const char *prefix)
+{
+    completion_consider_candidate_with_sort(candidate, prefix, NULL);
 }
 
 static void collect_keyword_array(const char entries[][MAX_TOKEN_LEN], int count, const char *prefix)
@@ -2649,12 +2777,28 @@ int completion_try_at_cursor(void)
         return FALSE;
 
     completion_update(prefix, ctx);
-    int lsp_active = lsp_facade_is_active();
-    add_language_specific_matches(prefix, ctx);
-    collect_source_symbol_matches(prefix, ctx);
 
-    if (lsp_active && line && ctx == COMPLETION_CONTEXT_DEFAULT) {
-        lsp_facade_provide_completions(line, prefix_start, prefix);
+    int lsp_ready = lsp_ensure_server();
+    if (lsp_ready && line && ctx == COMPLETION_CONTEXT_DEFAULT) {
+        char uri[NFILEN + 8];
+        snprintf(uri, sizeof(uri), "file://%s", curbp->b_fname);
+        size_t tlen;
+        char *txt = buffer_get_text(curbp, &tlen);
+        if (txt) {
+            lsp_notify_didchange(uri, txt);
+            free(txt);
+        }
+        int row = 0;
+        struct line *lp2 = lforw(curbp->b_linep);
+        while (lp2 != curwp->w_dotp && lp2 != curbp->b_linep) {
+            row++;
+            lp2 = lforw(lp2);
+        }
+        lsp_pending_reqid = lsp_request_completion(uri, row, prefix_start);
+    } else {
+        lsp_pending_reqid = -1;
+        add_language_specific_matches(prefix, ctx);
+        collect_source_symbol_matches(prefix, ctx);
     }
 
     if (completion_state.count == 0)

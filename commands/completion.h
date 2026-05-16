@@ -34,4 +34,7 @@ int completion_dropdown_is_active(void);
 int completion_dropdown_handle_key(int key);
 void completion_dropdown_render(void);
 
+/* async LSP completion polling */
+void completion_lsp_poll(void);
+
 #endif /* COMPLETION_H */

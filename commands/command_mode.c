@@ -566,14 +566,30 @@ static int read_sed_chunk(const char **pp, char delim, char *dest, size_t dest_s
                 mlwrite("Unterminated %s", label);
                 return FALSE;
             }
-            c = (unsigned char)*p++;
-            switch (c) {
+            char next = *p++;
+            switch (next) {
             case 'n': c = '\n'; break;
             case 't': c = '\t'; break;
             case 'r': c = '\r'; break;
-            case '\\': c = '\\'; break;
+            case '\\':
+                if (idx + 2 >= dest_sz) {
+                    mlwrite("%s too long", label);
+                    return FALSE;
+                }
+                dest[idx++] = '\\';
+                dest[idx++] = '\\';
+                continue;
             default:
-                break;
+                /* Keep the backslash for regex escapes (\., \(, \), etc.)
+                 * and for escaped delimiters (\/).  PCRE2 will interpret
+                 * them as literal characters. */
+                if (idx + 2 >= dest_sz) {
+                    mlwrite("%s too long", label);
+                    return FALSE;
+                }
+                dest[idx++] = '\\';
+                dest[idx++] = next;
+                continue;
             }
         }
         if (idx + 1 >= dest_sz) {

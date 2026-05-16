@@ -73,6 +73,7 @@
 #include "nanox.h"                  /* Added for Nanox specific declarations */
 #include "../utils/mymemory.h"
 #include "completion.h"
+#include "lsp_client.h"
 #include "scraper.h"
 #include "command_mode.h"           /* F1 command mode */
 
@@ -89,6 +90,7 @@ static void nanox_refresh_ui(void)
         nanox_help_render();
     } else {
         update(FALSE);
+        completion_lsp_poll();
         completion_dropdown_render();
     }
 }
@@ -212,6 +214,7 @@ int main(int argc, char **argv)
     edinit("main");                /* Buffers, windows */
     varinit();                /* user variables */
     nanox_init();            /* Initialize Nanox system */
+    lsp_init();              /* Initialize LSP client */
 
     viewflag = FALSE;            /* view mode defaults off in command line */
     gotoflag = FALSE;            /* set to off to begin with */
@@ -752,6 +755,7 @@ int quit(int f, int n)
 #endif
         nanox_cleanup();
         completion_cleanup();
+        lsp_shutdown();
         scraper_cleanup();
         struct buffer *bp = bheadp;
         while (bp != NULL) {

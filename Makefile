@@ -16,6 +16,7 @@ CFLAGS = -std=c2x -O2 -g \
          -fstack-protector-strong -fno-common -ffunction-sections -fdata-sections \
          -Iinclude \
          $(foreach mod,$(MODULES),-I$(mod)) \
+         -Ideps/cjson \
          -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=700 -DPOSIX -D_GNU_SOURCE
 
 # Feature Flags
@@ -42,6 +43,7 @@ LDFLAGS = -flto=auto -fuse-linker-plugin
 # Source discovery
 # We explicitly list some to maintain control, or use wildcard and filter
 SRC = $(foreach mod,$(MODULES),$(wildcard $(mod)/*.c))
+SRC += deps/cjson/cJSON.c
 
 # If not using ncurses, exclude ncurses.c
 ifneq ($(USE_NCURSES),1)
