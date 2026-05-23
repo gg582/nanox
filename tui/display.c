@@ -1075,6 +1075,38 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
 
     span_vec_free(&spans);
 
+    /* Detect color codes in the line and show preview boxes */
+    ColorInfo colors[MAX_COLORS_PER_LINE];
+    int color_count = highlight_find_colors((const char *)ltext(lp), len, colors, MAX_COLORS_PER_LINE);
+    
+    if (color_count > 0) {
+        /* Add a space separator, then color preview boxes */
+        HighlightStyle normal = colorscheme_get(HL_NORMAL);
+        rendering_color_fg = normal.fg;
+        rendering_color_bg = normal.bg;
+        rendering_color_bold = false;
+        rendering_color_underline = false;
+        
+        vtputc(' ');
+        
+        /* Show color preview boxes (using block character with background color) */
+        for (int i = 0; i < color_count && i < 8; i++) {
+            /* Pack RGB as 0x01RRGGBB for true color */
+            int packed_color = 0x01000000 | (colors[i].r << 16) | (colors[i].g << 8) | colors[i].b;
+            rendering_color_bg = packed_color;
+            rendering_color_fg = packed_color;
+            vtputc(' ');  /* Space with colored background acts as color box */
+            vtputc(' ');
+            
+            /* Reset to normal for separator */
+            rendering_color_bg = normal.bg;
+            rendering_color_fg = normal.fg;
+            if (i < color_count - 1 && i < 7) {
+                vtputc(' ');
+            }
+        }
+    }
+
     /* Fill trailing whitespace using the default style colors */
     {
         HighlightStyle normal = colorscheme_get(HL_NORMAL);
