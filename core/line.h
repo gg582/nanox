@@ -19,8 +19,8 @@ struct line {
     _Atomic(struct line *) next;          /* 8 bytes */
     _Atomic(struct line *) prev;          /* 8 bytes */
     MemoryHandle l_handle;                /* 8 bytes */
-    HighlightState hl_start_state;        /* 104 bytes */
-    HighlightState hl_end_state;          /* 104 bytes */
+    HighlightState hl_start_state;        /* 112 bytes */
+    HighlightState hl_end_state;          /* 112 bytes */
     _Atomic int size;                     /* 4 bytes */
     _Atomic int used;                     /* 4 bytes */
     uint32_t l_offset;                    /* 4 bytes */

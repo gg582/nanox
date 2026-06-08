@@ -671,12 +671,12 @@ static const char *nanox_help_sheet[] = {
     "* LSP & Autocomplete Priority: Sorts completion candidates using semantic",
     "  priority (Snippets > Keywords > Functions). Exact/prefix matches get boosted.",
     "  Cross-Reference: Integrates with Workspace File Tree for a complete IDE experience.",
-    "* Workspace File Tree: Type :openFileTree (or :openFileView) to open left panel,",
-    "  :closeFileTree to close. Type :runFileTree for interactive navigation mode",
+    "* Workspace File Tree: Type openFileTree (or openFileView) to open left panel,",
+    "  closeFileTree to close. Type runFileTree for interactive navigation mode",
     "  (Arrows to move, Enter to toggle/open, Shift+Backspace to go up).",
     "  Cross-Reference: Combines with LSP Autocomplete for fast workspace editing.",
     "* AI Copilot (Ollama): Enable it in ~/.config/nanox/config under [ai]. Press Ctrl+Alt+A",
-    "  or run :ai to complete. 'y' to accept/keep, 'n' (or any key) to reject/revert.",
+    "  or run ai to complete. 'y' to accept/keep, 'n' (or any key) to reject/revert.",
     NULL
 };
 
@@ -1400,7 +1400,7 @@ void file_tree_draw(void)
 
 void command_mode_run_file_tree(void) {
     if (!file_tree_active) {
-        mlwrite("File Tree is not open. Run :openFileTree first.");
+        mlwrite("File Tree is not open. Run openFileTree first.");
         return;
     }
 
@@ -1531,7 +1531,7 @@ static HelpCategory help_categories[] = {
             "  Ctrl+Space      - Trigger Autocomplete",
             "",
             "Use F1 / Ctrl+H at any time to open this menu.",
-            "Use Command Mode (:help or :h) for the full reference manual."
+            "Use Command Mode (help or h) for the full reference manual."
         },
         11
     },
@@ -1548,7 +1548,7 @@ static HelpCategory help_categories[] = {
             "  - Integrates language-specific keywords (Fortran, Rust, Ada, etc.).",
             "",
             "  * NOTE: Seamlessly integrates with the Workspace File Tree",
-            "    (type :openFileTree in Command Mode to view files)."
+            "    (type openFileTree in Command Mode to view files)."
         },
         11
     },
@@ -1557,9 +1557,9 @@ static HelpCategory help_categories[] = {
         {
             "VSCode-Style File Tree Viewer:",
             "",
-            "  - :openFileTree  - Open visual left panel tree view",
-            "  - :closeFileTree - Close left panel tree view",
-            "  - :runFileTree   - Activate interactive navigation mode",
+            "  - openFileTree  - Open visual left panel tree view",
+            "  - closeFileTree - Close left panel tree view",
+            "  - runFileTree   - Activate interactive navigation mode",
             "    * Up/Down Arrow - Select file/directory",
             "    * Enter         - Expand/collapse directory or open file",
             "    * Shift+BackSp  - Go up to parent directory/level",
@@ -1574,7 +1574,7 @@ static HelpCategory help_categories[] = {
         {
             "Command Mode Fast Build:",
             "",
-            "  - Type :build (or build) in Command Mode.",
+            "  - Type build in Command Mode.",
             "  - Searches upward for project build configurations:",
             "    * Cargo.toml   -> runs 'cargo build'",
             "    * Makefile     -> runs 'make'",
@@ -1610,11 +1610,11 @@ static HelpCategory help_categories[] = {
             "    * endpoint=url      - Ollama API url (http://localhost:11434/api/generate)",
             "    * temperature=0.2   - Generation temperature",
             "  - Usage:",
-            "    * Ctrl+Alt+A or :ai - Request completion recommendation",
+            "    * Ctrl+Alt+A or ai - Request completion recommendation",
             "    * Press 'y'         - Accept & keep the suggestion",
             "    * Press 'n'/other   - Reject & revert suggestion"
         },
-        12
+        11
     }
 };
 
@@ -1684,6 +1684,7 @@ void draw_interactive_help(void)
         if (row_idx >= max_r) break;
         struct video *vp = vscreen[row_idx];
         const char *line = cat->lines[l];
+        if (!line) break;
         int c = separator_col + 2;
         int idx = 0;
         while (line[idx] && c < term->t_ncol - 2) {
@@ -1739,14 +1740,10 @@ int nanox_help_command(int f, int n)
             interactive_help_active = false;
             break;
         case SPEC | 'A':
-            if (help_selected_cat > 0) {
-                help_selected_cat--;
-            }
+            help_selected_cat = (help_selected_cat - 1 + (int)HELP_CAT_COUNT) % (int)HELP_CAT_COUNT;
             break;
         case SPEC | 'B':
-            if (help_selected_cat < HELP_CAT_COUNT - 1) {
-                help_selected_cat++;
-            }
+            help_selected_cat = (help_selected_cat + 1) % (int)HELP_CAT_COUNT;
             break;
         default:
             break;

@@ -41,6 +41,32 @@ typedef struct {
 
 static completion_dropdown_state_t completion_dropdown_state = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
+#define MAX_MASTER_COMPLETIONS 1000
+typedef struct {
+    char word[MAX_COMPLETION_LEN];
+    int kind;
+    char sort_text[MAX_COMPLETION_LEN];
+} master_candidate_t;
+
+static master_candidate_t master_candidates[MAX_MASTER_COMPLETIONS];
+static int master_candidates_count = 0;
+
+static void completion_add_master_candidate(const char *word, int kind_val, const char *sort_text)
+{
+    if (word == NULL || *word == '\0')
+        return;
+    if (master_candidates_count >= MAX_MASTER_COMPLETIONS)
+        return;
+    for (int i = 0; i < master_candidates_count; i++) {
+        if (strcmp(master_candidates[i].word, word) == 0)
+            return;
+    }
+    mystrscpy(master_candidates[master_candidates_count].word, word, MAX_COMPLETION_LEN);
+    master_candidates[master_candidates_count].kind = kind_val;
+    mystrscpy(master_candidates[master_candidates_count].sort_text, sort_text ? sort_text : "", MAX_COMPLETION_LEN);
+    master_candidates_count++;
+}
+
 static char completion_storage[MAX_COMPLETIONS][MAX_COMPLETION_LEN];
 static int completion_scores[MAX_COMPLETIONS];
 static char completion_sort_texts[MAX_COMPLETIONS][MAX_COMPLETION_LEN];
@@ -418,6 +444,7 @@ static void completion_reset_state(void)
     completion_state.scroll_offset = 0;
     memset(completion_scores, 0, sizeof(completion_scores));
     memset(completion_sort_ranks, -1, sizeof(completion_sort_ranks));
+    master_candidates_count = 0;
 }
 
 static int completion_word_exists(const char *word)
@@ -445,6 +472,53 @@ completion_lsp_poll(void)
     cJSON *items = result;
     cJSON *arr = cJSON_GetObjectItemCaseSensitive(result, "items");
     if (arr) items = arr;
+
+    if (lsp_pending_line && lsp_pending_prefix_start > 0 && items) {
+        cJSON *first_item;
+        int found_diff = 0;
+        cJSON_ArrayForEach(first_item, items) {
+            cJSON *lbl = cJSON_GetObjectItemCaseSensitive(first_item, "label");
+            cJSON *textEdit = cJSON_GetObjectItemCaseSensitive(first_item, "textEdit");
+            cJSON *insertText = cJSON_GetObjectItemCaseSensitive(first_item, "insertText");
+            const char *word = NULL;
+            if (textEdit && cJSON_IsObject(textEdit)) {
+                cJSON *nt = cJSON_GetObjectItemCaseSensitive(textEdit, "newText");
+                if (nt && cJSON_IsString(nt)) word = nt->valuestring;
+            }
+            if (!word && insertText && cJSON_IsString(insertText))
+                word = insertText->valuestring;
+            if (!word && lbl && cJSON_IsString(lbl))
+                word = lbl->valuestring;
+
+            if (word && *word && completion_active_prefix[0] != '\0') {
+                char *ptr = strstr(word, completion_active_prefix);
+                if (ptr) {
+                    int diff = (int)(ptr - word);
+                    if (diff > 0 && lsp_pending_prefix_start >= diff) {
+                        if (memcmp(&ltext(lsp_pending_line)[lsp_pending_prefix_start - diff], word, (size_t)diff) == 0) {
+                            found_diff = diff;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (found_diff > 0) {
+            lsp_pending_prefix_start -= found_diff;
+            completion_dropdown_state.prefix_len += (size_t)found_diff;
+            int len = llength(lsp_pending_line);
+            int copy_len = (int)completion_dropdown_state.prefix_len;
+            if (copy_len >= MAX_COMPLETION_LEN)
+                copy_len = MAX_COMPLETION_LEN - 1;
+            if (lsp_pending_prefix_start + copy_len > len)
+                copy_len = len - lsp_pending_prefix_start;
+            if (copy_len > 0) {
+                memcpy(completion_active_prefix, &ltext(lsp_pending_line)[lsp_pending_prefix_start], (size_t)copy_len);
+                completion_active_prefix[copy_len] = '\0';
+            }
+        }
+    }
 
     cJSON *item;
     cJSON_ArrayForEach(item, items) {
@@ -574,7 +648,7 @@ static int get_kind_bonus(int kind_val) {
     }
 }
 
-static void completion_add_match_with_sort_score_kind(const char *word, int score, const char *sort_text, int kind_val)
+static void completion_add_match_to_state(const char *word, int score, const char *sort_text, int kind_val)
 {
     if (word == NULL || *word == '\0')
         return;
@@ -610,6 +684,12 @@ static void completion_add_match_with_sort_score_kind(const char *word, int scor
     completion_sort_ranks[insert] = sort_rank;
     mystrscpy(completion_sort_texts[insert], sort_text ? sort_text : "", MAX_COMPLETION_LEN);
     completion_state.count++;
+}
+
+static void completion_add_match_with_sort_score_kind(const char *word, int score, const char *sort_text, int kind_val)
+{
+    completion_add_master_candidate(word, kind_val, sort_text);
+    completion_add_match_to_state(word, score, sort_text, kind_val);
 }
 
 static void completion_add_match_with_sort_score(const char *word, int score, const char *sort_text)
@@ -2985,69 +3065,73 @@ int completion_dropdown_handle_key(int key)
     if (!completion_dropdown_state.active)
         return 0;
 
-    if (!completion_dropdown_state.focused) {
-        if (key == (CONTROL | 'I')) {
-            if (completion_dropdown_state.tab_primed) {
-                completion_dropdown_state.focused = 1;
-                completion_dropdown_state.tab_primed = 0;
-                completion_preview_apply_selected();
-            } else {
-                completion_dropdown_state.tab_primed = 1;
-            }
-            return 1;
-        }
+    /* 1. ESC / Ctrl-G / Ctrl-[ : Cancel completion */
+    if (key == (CONTROL | '[') || key == (CONTROL | 'G')) {
+        completion_dropdown_deactivate(0);
+        return 1;
+    }
 
-        if (key == (SPEC | 'C')) {
-            completion_dropdown_state.focused = 1;
+    /* 2. Enter / Return / Ctrl-M : Commit if focused, else deactivate and pass key */
+    if (key == '\n' || key == '\r' || key == (CONTROL | 'M')) {
+        if (completion_dropdown_state.focused) {
             completion_dropdown_apply_selection();
             return 1;
-        }
-
-        completion_dropdown_state.tab_primed = 0;
-        if (key == (CONTROL | '[') || key == (CONTROL | 'G')) {
+        } else {
             completion_dropdown_deactivate(0);
-            return 1;
+            return 0;
         }
+    }
+
+    /* 3. Navigation: Tab, Ctrl-N, Ctrl-P, Up Arrow, Down Arrow */
+    int is_next = (key == (CONTROL | 'I') || key == '\t' || key == (CONTROL | 'N') || key == (SPEC | 'B') || key == (SPEC | 'N'));
+    int is_prev = (key == (CONTROL | 'P') || key == (SPEC | 'A') || key == (SPEC | 'P') || key == (SPEC | 'Z'));
+
+    if (is_next || is_prev) {
+        if (!completion_dropdown_state.focused) {
+            completion_dropdown_state.focused = 1;
+            if (is_next) {
+                completion_state.selected_index = 0;
+            } else {
+                completion_state.selected_index = completion_state.count - 1;
+            }
+            completion_ensure_visible();
+            completion_preview_apply_selected();
+        } else {
+            if (is_next) {
+                completion_next();
+            } else {
+                completion_prev();
+            }
+            completion_preview_apply_selected();
+        }
+        return 1;
+    }
+
+    /* 4. Cursor movement (Left, Right, Home, End, PgUp, PgDn) : Cancel completion (deactivate without commit) */
+    int is_cursor_move = (key == (SPEC | 'C') || key == (SPEC | 'D') || 
+                          key == (SPEC | 'H') || key == (SPEC | 'F') ||
+                          key == (SPEC | '5') || key == (SPEC | '6'));
+    if (is_cursor_move) {
         completion_dropdown_deactivate(0);
         return 0;
     }
 
-    switch (key) {
-    case (SPEC | 'A'):
-    case (CONTROL | 'P'):
-    case (SPEC | 'P'):
-        completion_prev();
-        completion_preview_apply_selected();
-        return 1;
-    case (SPEC | 'B'):
-    case (CONTROL | 'N'):
-    case (SPEC | 'N'):
-    case (CONTROL | '@'):
-    case (CONTROL | 'I'):
-        completion_next();
-        completion_preview_apply_selected();
-        return 1;
-    case (CONTROL | 'M'):
-    case '\n':
-    case '\r':
-        completion_dropdown_apply_selection();
-        return 1;
-    case (SPEC | 'C'):
-        completion_dropdown_apply_selection();
-        return 1;
-    case (SPEC | 'D'):
-    case (CONTROL | 'B'):
-    case (CONTROL | 'F'):
-        completion_dropdown_deactivate(0);
-        return 0;
-    case (CONTROL | '['):
-    case (CONTROL | 'G'):
-        completion_dropdown_deactivate(0);
-        return 1;
-    default:
-        completion_dropdown_deactivate(0);
+    /* 5. Backspace / Delete / Plain typing characters */
+    int is_backspace = (key == (CONTROL | 'H') || key == 127 || key == 8);
+    int is_delete = (key == (SPEC | 0x7F));
+    int is_plain_char = ((key & (CONTROL | META | SPEC | CTLX)) == 0) && (key >= 32 && key != 127);
+
+    if (is_backspace || is_delete || is_plain_char) {
+        if (completion_dropdown_state.focused) {
+            completion_preview_delete_tail();
+            completion_dropdown_state.focused = 0;
+        }
         return 0;
     }
+
+    /* 6. Any other key: Deactivate and pass to editor */
+    completion_dropdown_deactivate(0);
+    return 0;
 }
 
 void completion_dropdown_render(void)
@@ -3055,4 +3139,81 @@ void completion_dropdown_render(void)
     if (!completion_dropdown_state.active)
         return;
     completion_draw(-1, -1);
+}
+
+void completion_filter_master(const char *prefix)
+{
+    if (prefix == NULL || *prefix == '\0') {
+        completion_state.count = 0;
+        completion_state.selected_index = 0;
+        completion_state.scroll_offset = 0;
+        completion_state.is_visible = 0;
+        return;
+    }
+
+    completion_state.count = 0;
+    completion_state.selected_index = 0;
+    completion_state.scroll_offset = 0;
+    memset(completion_scores, 0, sizeof(completion_scores));
+    memset(completion_sort_ranks, -1, sizeof(completion_sort_ranks));
+
+    mystrscpy(completion_active_prefix, prefix, sizeof(completion_active_prefix));
+
+    for (int i = 0; i < master_candidates_count; i++) {
+        int score = completion_fuzzy_score(master_candidates[i].word, prefix);
+        if (score >= 0) {
+            completion_add_match_to_state(master_candidates[i].word, score,
+                                          master_candidates[i].sort_text, master_candidates[i].kind);
+        }
+    }
+
+    completion_state.is_visible = (completion_state.count > 0);
+}
+
+void completion_post_execute(void)
+{
+    if (!completion_dropdown_state.active)
+        return;
+
+    if (curwp == NULL || curbp == NULL) {
+        completion_dropdown_deactivate(0);
+        return;
+    }
+
+    struct line *lp = curwp->w_dotp;
+    int offset = curwp->w_doto;
+
+    if (lp == NULL || lp != completion_preview_state.line ||
+        offset < completion_preview_state.start_offset) {
+        completion_dropdown_deactivate(0);
+        return;
+    }
+
+    char prefix[MAX_COMPLETION_LEN];
+    completion_context_t ctx = COMPLETION_CONTEXT_DEFAULT;
+    int prefix_start = 0;
+
+    if (!determine_completion_prefix(prefix, sizeof(prefix), &ctx, NULL, &prefix_start, NULL)) {
+        completion_dropdown_deactivate(0);
+        return;
+    }
+
+    if (prefix_start != completion_preview_state.start_offset) {
+        completion_dropdown_deactivate(0);
+        return;
+    }
+
+    completion_filter_master(prefix);
+
+    if (completion_state.count == 0) {
+        completion_dropdown_deactivate(0);
+        return;
+    }
+
+    completion_dropdown_state.prefix_len = strlen(prefix);
+    completion_preview_state.prefix_len = (int)strlen(prefix);
+    completion_preview_state.active = 1;
+
+    completion_dropdown_refresh_geometry();
+    completion_ensure_visible();
 }

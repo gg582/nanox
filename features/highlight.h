@@ -92,7 +92,7 @@ typedef struct {
 typedef struct {
     HighlightStackEntry stack[HL_STATE_STACK_MAX];
     int depth;            /* 4 bytes */
-    char _padding[4];     /* 4 bytes padding for 8-byte alignment */
+    const void *profile;  /* 8 bytes */
 } HighlightState;
 
 void highlight_init(const char *rule_config_path);

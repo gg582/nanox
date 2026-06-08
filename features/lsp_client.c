@@ -28,10 +28,12 @@ static struct {
 	int reqid;
 	char *cmd;
 	pthread_t rthr;
+	int rthr_created;
 	pthread_mutex_t lock;
 	lspmsg_t *msgs;
-	char rbuf[LSP_RBUF_SZ];
+	char *rbuf;
 	size_t rlen;
+	size_t rcap;
 } srv;
 
 /* --- json-rpc helpers --- */
@@ -40,7 +42,11 @@ static void
 lsp_write_raw(const char *s)
 {
 	size_t n = strlen(s);
-	write(srv.wfd, s, n);
+	if (srv.wfd < 0) return;
+	ssize_t res = write(srv.wfd, s, n);
+	if (res < 0) {
+		srv.active = 0;
+	}
 }
 
 static void
@@ -74,7 +80,7 @@ static int
 read_header(size_t *bodylen)
 {
 	for (;;) {
-		char *end = memmem(srv.rbuf, srv.rlen, "\r\n\r\n", 4);
+		char *end = srv.rbuf ? memmem(srv.rbuf, srv.rlen, "\r\n\r\n", 4) : NULL;
 		if (end) {
 			size_t hlen = (size_t)(end + 4 - srv.rbuf);
 			char *p = memmem(srv.rbuf, hlen, "Content-Length:", 15);
@@ -86,8 +92,14 @@ read_header(size_t *bodylen)
 			memmove(srv.rbuf, srv.rbuf + hlen, srv.rlen);
 			return 0;
 		}
-		if (srv.rlen >= LSP_RBUF_SZ - 1) return -1;
-		ssize_t n = read(srv.rfd, srv.rbuf + srv.rlen, LSP_RBUF_SZ - srv.rlen - 1);
+		if (srv.rlen >= srv.rcap - 1) {
+			size_t new_cap = srv.rcap == 0 ? LSP_RBUF_SZ : srv.rcap * 2;
+			char *new_buf = realloc(srv.rbuf, new_cap);
+			if (!new_buf) return -1;
+			srv.rbuf = new_buf;
+			srv.rcap = new_cap;
+		}
+		ssize_t n = read(srv.rfd, srv.rbuf + srv.rlen, srv.rcap - srv.rlen - 1);
 		if (n <= 0) return -1;
 		srv.rlen += (size_t)n;
 		srv.rbuf[srv.rlen] = '\0';
@@ -97,8 +109,19 @@ read_header(size_t *bodylen)
 static int
 read_body(size_t want)
 {
+	if (want >= srv.rcap) {
+		size_t new_cap = srv.rcap == 0 ? LSP_RBUF_SZ : srv.rcap;
+		while (new_cap <= want) {
+			new_cap *= 2;
+		}
+		char *new_buf = realloc(srv.rbuf, new_cap);
+		if (!new_buf) return -1;
+		srv.rbuf = new_buf;
+		srv.rcap = new_cap;
+	}
+
 	while (srv.rlen < want) {
-		ssize_t n = read(srv.rfd, srv.rbuf + srv.rlen, LSP_RBUF_SZ - srv.rlen - 1);
+		ssize_t n = read(srv.rfd, srv.rbuf + srv.rlen, srv.rcap - srv.rlen - 1);
 		if (n <= 0) return -1;
 		srv.rlen += (size_t)n;
 	}
@@ -176,29 +199,51 @@ lsp_init(void)
 	srv.wfd = -1;
 	srv.rfd = -1;
 	pthread_mutex_init(&srv.lock, NULL);
+	signal(SIGPIPE, SIG_IGN);
 }
 
 void
 lsp_shutdown(void)
 {
-	if (!srv.active) return;
+	int was_active = srv.active;
 	srv.active = 0;
 	lsp_open_uri[0] = '\0';
 
 	if (srv.wfd >= 0) {
-		lsp_send_json(mkreq("shutdown", NULL, -1));
+		if (was_active) {
+			lsp_send_json(mkreq("shutdown", NULL, -1));
+		}
 		close(srv.wfd);
 		srv.wfd = -1;
 	}
-	pthread_join(srv.rthr, NULL);
-	if (srv.rfd >= 0) { close(srv.rfd); srv.rfd = -1; }
+
+	if (srv.rfd >= 0) {
+		close(srv.rfd);
+		srv.rfd = -1;
+	}
+
+	if (srv.rthr_created) {
+		pthread_join(srv.rthr, NULL);
+		srv.rthr_created = 0;
+	}
 
 	if (srv.pid > 0) {
 		kill(srv.pid, SIGTERM);
 		waitpid(srv.pid, NULL, 0);
 		srv.pid = 0;
 	}
-	free(srv.cmd); srv.cmd = NULL;
+
+	if (srv.cmd) {
+		free(srv.cmd);
+		srv.cmd = NULL;
+	}
+
+	if (srv.rbuf) {
+		free(srv.rbuf);
+		srv.rbuf = NULL;
+	}
+	srv.rcap = 0;
+	srv.rlen = 0;
 
 	pthread_mutex_lock(&srv.lock);
 	lspmsg_t *m = srv.msgs;
@@ -254,7 +299,9 @@ lsp_ensure_server(void)
 	usleep(150000);
 	lsp_send_json(mkreq("initialized", NULL, -1));
 
-	pthread_create(&srv.rthr, NULL, lsp_reader, NULL);
+	if (pthread_create(&srv.rthr, NULL, lsp_reader, NULL) == 0) {
+		srv.rthr_created = 1;
+	}
 	return 1;
 }
 

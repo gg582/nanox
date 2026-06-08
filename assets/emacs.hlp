@@ -75,12 +75,12 @@ F9-F12 : File Slots     F8/^Y : Paste           ^J : Join Line
   - Cross-Reference: Combines with Workspace File Tree for a complete IDE experience.
 
 * Workspace File Tree:
-  - Command Mode: :openFileTree (or :openFileView) opens a visual left panel, :closeFileTree closes it.
-  - Interactive Mode: :runFileTree enables Arrow keys to navigate, Enter to open, Shift+Backspace to go up.
+  - Command Mode: openFileTree (or openFileView) opens a visual left panel, closeFileTree closes it.
+  - Interactive Mode: runFileTree enables Arrow keys to navigate, Enter to open, Shift+Backspace to go up.
   - Cross-Reference: Use with LSP Autocomplete for fast workspace-wide coding.
 
 * AI Copilot (Ollama Integration):
   - Configuration: Set [ai] enabled=true, model=<model>, endpoint=<url> in ~/.config/nanox/config.
-  - Usage: Press Ctrl+Alt+A or type :ai in Command Mode to request code completions from Ollama.
+  - Usage: Press Ctrl+Alt+A or type ai in Command Mode to request code completions from Ollama.
   - Approval/Rejection: The suggestion is temporarily inserted into the buffer. Press 'y' to accept and keep it, or press 'n' (or any other key) to reject and fully revert it.
 

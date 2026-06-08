@@ -503,7 +503,11 @@ int main(int argc, char **argv)
         goto loop;
     }
 
+    int was_completion_active = completion_dropdown_is_active();
     execute(c, f, n);
+    if (was_completion_active) {
+        completion_post_execute();
+    }
     goto loop;
 }
 

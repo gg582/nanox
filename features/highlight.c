@@ -754,6 +754,14 @@ static void add_span(SpanVec *vec, int start, int end, HighlightStyleID style)
     if (start >= end)
         return;
 
+    if (vec->count > 0) {
+        Span *prev = vec->heap_spans ? &vec->heap_spans[vec->count - 1] : &vec->spans[vec->count - 1];
+        if (prev->end == start && prev->style == style) {
+            prev->end = end;
+            return;
+        }
+    }
+
     Span s = {start, end, style};
 
     if (vec->count < HL_MAX_SPANS) {
@@ -1154,6 +1162,12 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
         out->heap_spans = NULL;
         out->capacity = 0;
     }
+
+    if (profile && start.profile != profile) {
+        start = (HighlightState){0};
+        start.profile = profile;
+    }
+
     *end = start;
 
     // Prevent null pointer access

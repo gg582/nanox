@@ -89,8 +89,6 @@ static int map_color(int c) {
     if (c == -1) return -1;
     if (is_true_color(c))
         c = rgb_to_xterm256(c);
-    if (c < 8) return c;
-    if (c < 16) return c;
     if (c < COLORS) return c;
     return c % COLORS;
 }
@@ -109,14 +107,20 @@ static int get_pair(int fg, int bg) {
         if (pair_table[i].fg == fg && pair_table[i].bg == bg)
             return pair_table[i].pair;
     }
-    if (next_pair < COLOR_PAIRS && next_pair < MAX_PAIRS) {
-        init_pair(next_pair, map_color(fg), map_color(bg));
-        pair_table[next_pair-1].fg = fg;
-        pair_table[next_pair-1].bg = bg;
-        pair_table[next_pair-1].pair = next_pair;
-        return next_pair++;
+    
+    if (next_pair >= COLOR_PAIRS || next_pair >= MAX_PAIRS) {
+        next_pair = 1;
+        memset(pair_table, 0, sizeof(pair_table));
+        if (curwp) {
+            curwp->w_flag |= WFHARD;
+        }
     }
-    return 0;
+    
+    init_pair(next_pair, map_color(fg), map_color(bg));
+    pair_table[next_pair-1].fg = fg;
+    pair_table[next_pair-1].bg = bg;
+    pair_table[next_pair-1].pair = next_pair;
+    return next_pair++;
 }
 
 void ncurses_open(void) {
