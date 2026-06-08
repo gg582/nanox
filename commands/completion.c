@@ -107,6 +107,8 @@ typedef struct {
 
 static completion_preview_state_t completion_preview_state = { 0 };
 static int lsp_pending_reqid = -1;
+static struct line *lsp_pending_line = NULL;
+static int lsp_pending_prefix_start = 0;
 
 static java_member_entry_t *java_member_cache = NULL;
 static int java_member_cache_count = 0;
@@ -167,12 +169,27 @@ static void *java_class_symbols_loader(void *arg);
 static void start_async_java_class_symbols_load(void);
 #endif
 
+typedef struct {
+    char word[128];
+    int count;
+} CompletionHistoryItem;
+
+#define MAX_HISTORY_ITEMS 256
+static CompletionHistoryItem completion_history[MAX_HISTORY_ITEMS];
+static int completion_history_count = 0;
+
+static void completion_record_usage(const char *word);
+static int get_history_bonus(const char *word);
+static int get_kind_bonus(int kind_val);
+
 static void completion_consider_candidate_with_sort(const char *candidate, const char *prefix, const char *sort_text);
 static void completion_consider_candidate(const char *candidate, const char *prefix);
+static void completion_consider_candidate_with_kind(const char *candidate, const char *prefix, int kind_val);
 static int completion_fuzzy_score(const char *candidate, const char *query);
 static int parse_sort_rank(const char *sort_text);
 static int compute_final_score(int fuzzy_score, int sort_rank);
 static void completion_add_match_with_sort_score(const char *word, int score, const char *sort_text);
+static void completion_add_match_with_sort_score_kind(const char *word, int score, const char *sort_text, int kind_val);
 int completion_should_use_lsp(void);
 static void completion_preview_reset(void)
 {
@@ -213,6 +230,10 @@ static void completion_preview_abort(void)
 
 static void completion_preview_commit(void)
 {
+    const char *match = completion_get_selected();
+    if (match) {
+        completion_record_usage(match);
+    }
     completion_preview_state.active = 0;
     completion_preview_state.last_tail_len = 0;
 }
@@ -416,7 +437,10 @@ completion_lsp_poll(void)
     int rc = lsp_poll_completion(lsp_pending_reqid, &result);
     if (rc == 0) return; /* not yet */
     lsp_pending_reqid = -1;
-    if (rc < 0 || !result) return;
+    if (rc < 0 || !result) {
+        completion_dropdown_deactivate(0);
+        return;
+    }
 
     cJSON *items = result;
     cJSON *arr = cJSON_GetObjectItemCaseSensitive(result, "items");
@@ -428,6 +452,8 @@ completion_lsp_poll(void)
         cJSON *sort = cJSON_GetObjectItemCaseSensitive(item, "sortText");
         cJSON *textEdit = cJSON_GetObjectItemCaseSensitive(item, "textEdit");
         cJSON *insertText = cJSON_GetObjectItemCaseSensitive(item, "insertText");
+        cJSON *kind = cJSON_GetObjectItemCaseSensitive(item, "kind");
+        int kind_val = (kind && cJSON_IsNumber(kind)) ? kind->valueint : 0;
         const char *word = NULL;
         if (textEdit && cJSON_IsObject(textEdit)) {
             cJSON *nt = cJSON_GetObjectItemCaseSensitive(textEdit, "newText");
@@ -441,12 +467,22 @@ completion_lsp_poll(void)
         if (completion_word_exists(word)) continue;
         int score = completion_fuzzy_score(word, completion_active_prefix);
         if (score >= 0)
-            completion_add_match_with_sort_score(word, score,
-                sort && cJSON_IsString(sort) ? sort->valuestring : NULL);
+            completion_add_match_with_sort_score_kind(word, score,
+                sort && cJSON_IsString(sort) ? sort->valuestring : NULL, kind_val);
     }
     cJSON_Delete(result);
-    if (completion_state.count > 0)
+    if (completion_state.count > 0) {
         completion_state.is_visible = 1;
+        completion_dropdown_refresh_geometry();
+        completion_ensure_visible();
+        if (lsp_pending_line) {
+            completion_preview_begin(lsp_pending_line, lsp_pending_prefix_start, (int)completion_dropdown_state.prefix_len);
+            if (completion_dropdown_state.focused)
+                completion_preview_apply_selected();
+        }
+    } else {
+        completion_dropdown_deactivate(0);
+    }
 }
 
 #define SORT_BONUS_BASE 10000
@@ -484,7 +520,61 @@ static int compute_final_score(int fuzzy_score, int sort_rank)
     return fuzzy_score + bonus;
 }
 
-static void completion_add_match_with_sort_score(const char *word, int score, const char *sort_text)
+static void completion_record_usage(const char *word) {
+    if (!word || !*word) return;
+    for (int i = 0; i < completion_history_count; i++) {
+        if (strcmp(completion_history[i].word, word) == 0) {
+            completion_history[i].count++;
+            return;
+        }
+    }
+    if (completion_history_count < MAX_HISTORY_ITEMS) {
+        mystrscpy(completion_history[completion_history_count].word, word, 128);
+        completion_history[completion_history_count].count = 1;
+        completion_history_count++;
+    }
+}
+
+static int get_history_bonus(const char *word) {
+    if (!word || !*word) return 0;
+    for (int i = 0; i < completion_history_count; i++) {
+        if (strcmp(completion_history[i].word, word) == 0) {
+            return 1000 + completion_history[i].count * 500;
+        }
+    }
+    return 0;
+}
+
+static int get_kind_bonus(int kind_val) {
+    switch (kind_val) {
+        case 15: // Snippet
+            return 800;
+        case 14: // Keyword
+            return 700;
+        case 3:  // Function
+        case 2:  // Method
+        case 4:  // Constructor
+            return 600;
+        case 6:  // Variable
+        case 5:  // Field
+        case 10: // Property
+        case 21: // Constant
+        case 20: // EnumMember
+            return 500;
+        case 7:  // Class
+        case 8:  // Interface
+        case 22: // Struct
+        case 13: // Enum
+            return 450;
+        case 9:  // Module
+        case 25: // TypeParameter
+            return 300;
+        default:
+            return 0;
+    }
+}
+
+static void completion_add_match_with_sort_score_kind(const char *word, int score, const char *sort_text, int kind_val)
 {
     if (word == NULL || *word == '\0')
         return;
@@ -494,6 +584,9 @@ static void completion_add_match_with_sort_score(const char *word, int score, co
         return;
     int sort_rank = parse_sort_rank(sort_text);
     int final_score = compute_final_score(score, sort_rank);
+    final_score += get_kind_bonus(kind_val);
+    final_score += get_history_bonus(word);
+
     int insert = completion_state.count;
     while (insert > 0) {
         int prev = insert - 1;
@@ -517,6 +610,11 @@ static void completion_add_match_with_sort_score(const char *word, int score, co
     completion_sort_ranks[insert] = sort_rank;
     mystrscpy(completion_sort_texts[insert], sort_text ? sort_text : "", MAX_COMPLETION_LEN);
     completion_state.count++;
+}
+
+static void completion_add_match_with_sort_score(const char *word, int score, const char *sort_text)
+{
+    completion_add_match_with_sort_score_kind(word, score, sort_text, 0);
 }
 
 
@@ -568,6 +666,12 @@ static int completion_fuzzy_score(const char *candidate, const char *query)
     }
 
     int score = 0;
+    if (strcasecmp(candidate, query) == 0) {
+        score += 2000;
+    } else if (strncasecmp(candidate, query, q_len) == 0) {
+        score += 1000;
+    }
+
     size_t qi = 0;
     int consecutive = 0;
     for (size_t i = 0; i < c_len && qi < q_len; i++) {
@@ -615,10 +719,25 @@ static void completion_consider_candidate(const char *candidate, const char *pre
     completion_consider_candidate_with_sort(candidate, prefix, NULL);
 }
 
-static void collect_keyword_array(const char entries[][MAX_TOKEN_LEN], int count, const char *prefix)
+static void completion_consider_candidate_with_kind(const char *candidate, const char *prefix, int kind_val)
+{
+    if (candidate == NULL || prefix == NULL)
+        return;
+    size_t prefix_len = strlen(prefix);
+    if (prefix_len == 0)
+        return;
+    if (strcmp(candidate, prefix) == 0)
+        return;
+    int score = completion_fuzzy_score(candidate, prefix);
+    if (score < 0)
+        return;
+    completion_add_match_with_sort_score_kind(candidate, score, NULL, kind_val);
+}
+
+static void collect_keyword_array_with_kind(const char entries[][MAX_TOKEN_LEN], int count, const char *prefix, int kind_val)
 {
     for (int i = 0; i < count && completion_state.count < MAX_COMPLETIONS; i++) {
-        completion_consider_candidate(entries[i], prefix);
+        completion_consider_candidate_with_kind(entries[i], prefix, kind_val);
         if (completion_state.count >= MAX_COMPLETIONS)
             break;
     }
@@ -633,18 +752,18 @@ static void collect_language_keywords(const char *prefix)
     if (profile == NULL)
         return;
 
-    collect_keyword_array(profile->keywords, profile->keyword_count, prefix);
-    collect_keyword_array(profile->type_keywords, profile->type_keyword_count, prefix);
-    collect_keyword_array(profile->flow_keywords, profile->flow_keyword_count, prefix);
-    collect_keyword_array(profile->preproc_keywords, profile->preproc_keyword_count, prefix);
-    collect_keyword_array(profile->return_keywords, profile->return_keyword_count, prefix);
+    collect_keyword_array_with_kind(profile->keywords, profile->keyword_count, prefix, 14);
+    collect_keyword_array_with_kind(profile->type_keywords, profile->type_keyword_count, prefix, 25);
+    collect_keyword_array_with_kind(profile->flow_keywords, profile->flow_keyword_count, prefix, 14);
+    collect_keyword_array_with_kind(profile->preproc_keywords, profile->preproc_keyword_count, prefix, 14);
+    collect_keyword_array_with_kind(profile->return_keywords, profile->return_keyword_count, prefix, 14);
 }
 
 static void collect_common_keywords(const char *prefix)
 {
     for (size_t i = 0; i < sizeof(common_keywords) / sizeof(common_keywords[0]); i++) {
         const char *word = common_keywords[i];
-        completion_consider_candidate(word, prefix);
+        completion_consider_candidate_with_kind(word, prefix, 14);
     }
 }
 
@@ -2623,6 +2742,7 @@ static void completion_dropdown_apply_selection(void)
 
     match = completion_get_selected();
     if (match != NULL && curwp && curwp->w_dotp) {
+        completion_record_usage(match);
         int original_doto;
 
         original_doto = curwp->w_doto;
@@ -2779,15 +2899,46 @@ int completion_try_at_cursor(void)
     completion_update(prefix, ctx);
 
     int lsp_ready = lsp_ensure_server();
+    int lsp_sent = FALSE;
     if (lsp_ready && line && ctx == COMPLETION_CONTEXT_DEFAULT) {
         char uri[NFILEN + 8];
         snprintf(uri, sizeof(uri), "file://%s", curbp->b_fname);
-        size_t tlen;
-        char *txt = buffer_get_text(curbp, &tlen);
-        if (txt) {
-            lsp_notify_didchange(uri, txt);
-            free(txt);
+
+        if (strcmp(lsp_open_uri, uri) != 0) {
+            if (lsp_open_uri[0] != '\0') {
+                lsp_notify_didclose(lsp_open_uri);
+            }
+            mystrscpy(lsp_open_uri, uri, sizeof(lsp_open_uri));
+            size_t tlen;
+            char *txt = buffer_get_text(curbp, &tlen);
+            const char *langid = "c";
+            const char *py_exts[] = { ".py" };
+            const char *go_exts[] = { ".go" };
+            const char *rs_exts[] = { ".rs" };
+            const char *java_exts[] = { ".java" };
+            const char *js_exts[] = { ".js" };
+            const char *ts_exts[] = { ".ts" };
+            const char *cpp_exts[] = { ".cpp", ".cc", ".cxx" };
+
+            if (has_extension(curbp->b_fname, py_exts, 1)) langid = "python";
+            else if (has_extension(curbp->b_fname, go_exts, 1)) langid = "go";
+            else if (has_extension(curbp->b_fname, rs_exts, 1)) langid = "rust";
+            else if (has_extension(curbp->b_fname, java_exts, 1)) langid = "java";
+            else if (has_extension(curbp->b_fname, js_exts, 1)) langid = "javascript";
+            else if (has_extension(curbp->b_fname, ts_exts, 1)) langid = "typescript";
+            else if (has_extension(curbp->b_fname, cpp_exts, 3)) langid = "cpp";
+
+            lsp_notify_didopen(uri, langid, txt ? txt : "");
+            if (txt) free(txt);
+        } else {
+            size_t tlen;
+            char *txt = buffer_get_text(curbp, &tlen);
+            if (txt) {
+                lsp_notify_didchange(uri, txt);
+                free(txt);
+            }
         }
+
         int row = 0;
         struct line *lp2 = lforw(curbp->b_linep);
         while (lp2 != curwp->w_dotp && lp2 != curbp->b_linep) {
@@ -2795,14 +2946,23 @@ int completion_try_at_cursor(void)
             lp2 = lforw(lp2);
         }
         lsp_pending_reqid = lsp_request_completion(uri, row, prefix_start);
-    } else {
+        if (lsp_pending_reqid >= 0) {
+            lsp_pending_line = line;
+            lsp_pending_prefix_start = prefix_start;
+            lsp_sent = TRUE;
+        }
+    }
+
+    if (!lsp_sent) {
         lsp_pending_reqid = -1;
         add_language_specific_matches(prefix, ctx);
         collect_source_symbol_matches(prefix, ctx);
+        if (line) {
+            lsp_facade_provide_completions(line, prefix_start, prefix);
+        }
+        if (completion_state.count == 0)
+            return FALSE;
     }
-
-    if (completion_state.count == 0)
-        return FALSE;
 
     size_t prefix_len = strlen(prefix);
 

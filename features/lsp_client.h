@@ -6,6 +6,8 @@ struct cJSON;
 void lsp_init(void);
 void lsp_shutdown(void);
 
+extern char lsp_open_uri[512];
+
 /* start server matching current buffer; returns 1 if ready */
 int lsp_ensure_server(void);
 

@@ -18,6 +18,9 @@
 #include "colorscheme.h"
 #include "raw_sig.h"
 #include "nanox.h"
+#include <unistd.h>
+#include <sys/stat.h>
+#include <limits.h>
 
 #define CMD_BUF_SIZE 256
 #define REPLACE_PREVIEW 48
@@ -358,7 +361,7 @@ static void execute_help(void) {
     update(TRUE);
     
     /* Call existing help function */
-    nanox_help_command(FALSE, 1);
+    nanox_traditional_help_command(FALSE, 1);
 }
 
 
@@ -404,6 +407,157 @@ static int command_mode_handle_lint_command(const char *input)
     return TRUE;
 }
 
+static int command_mode_handle_build_command(void) {
+    char dir[PATH_MAX];
+    char check_path[PATH_MAX + 64];
+    char cmd_str[PATH_MAX * 2 + 128];
+    int found = FALSE;
+
+    if (curbp->b_fname && curbp->b_fname[0]) {
+        char abs_path[PATH_MAX];
+        if (realpath(curbp->b_fname, abs_path)) {
+            char *last_slash = strrchr(abs_path, '/');
+            if (last_slash) {
+                if (last_slash == abs_path) {
+                    strcpy(dir, "/");
+                } else {
+                    *last_slash = '\0';
+                    strcpy(dir, abs_path);
+                }
+            } else {
+                if (getcwd(dir, sizeof(dir)) == NULL)
+                    dir[0] = '\0';
+            }
+        } else {
+            char *last_slash = strrchr(curbp->b_fname, '/');
+            if (last_slash) {
+                size_t len = last_slash - curbp->b_fname;
+                if (len >= sizeof(dir)) len = sizeof(dir) - 1;
+                memcpy(dir, curbp->b_fname, len);
+                dir[len] = '\0';
+            } else {
+                if (getcwd(dir, sizeof(dir)) == NULL)
+                    dir[0] = '\0';
+            }
+        }
+    } else {
+        if (getcwd(dir, sizeof(dir)) == NULL)
+            dir[0] = '\0';
+    }
+
+    if (dir[0] != '\0') {
+        char last_dir[PATH_MAX] = "";
+        while (strcmp(dir, last_dir) != 0) {
+            strcpy(last_dir, dir);
+
+            // 1. Cargo.toml -> cargo build
+            snprintf(check_path, sizeof(check_path), "%s/Cargo.toml", dir);
+            if (access(check_path, F_OK) == 0) {
+                snprintf(cmd_str, sizeof(cmd_str), "cd \"%s\" && cargo build", dir);
+                found = TRUE;
+                break;
+            }
+
+            // 2. Makefile or makefile -> make
+            snprintf(check_path, sizeof(check_path), "%s/Makefile", dir);
+            if (access(check_path, F_OK) == 0) {
+                snprintf(cmd_str, sizeof(cmd_str), "cd \"%s\" && make", dir);
+                found = TRUE;
+                break;
+            }
+            snprintf(check_path, sizeof(check_path), "%s/makefile", dir);
+            if (access(check_path, F_OK) == 0) {
+                snprintf(cmd_str, sizeof(cmd_str), "cd \"%s\" && make", dir);
+                found = TRUE;
+                break;
+            }
+
+            // 3. CMakeLists.txt -> cmake build
+            snprintf(check_path, sizeof(check_path), "%s/CMakeLists.txt", dir);
+            if (access(check_path, F_OK) == 0) {
+                char build_dir[PATH_MAX + 16];
+                snprintf(build_dir, sizeof(build_dir), "%s/build", dir);
+                struct stat st;
+                if (stat(build_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
+                    snprintf(cmd_str, sizeof(cmd_str), "cd \"%s\" && cmake --build build", dir);
+                } else {
+                    snprintf(cmd_str, sizeof(cmd_str), "cd \"%s\" && cmake -B build && cmake --build build", dir);
+                }
+                found = TRUE;
+                break;
+            }
+
+            // Climb up
+            char *last_slash = strrchr(dir, '/');
+            if (last_slash) {
+                if (last_slash == dir) {
+                    strcpy(dir, "/");
+                } else {
+                    *last_slash = '\0';
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Fallback: single file compilation based on extension
+    if (!found && curbp->b_fname && curbp->b_fname[0]) {
+        const char *ext = strrchr(curbp->b_fname, '.');
+        if (ext) {
+            char basename_no_ext[PATH_MAX];
+            strcpy(basename_no_ext, curbp->b_fname);
+            char *ext_dot = strrchr(basename_no_ext, '.');
+            if (ext_dot) *ext_dot = '\0';
+
+            if (strcmp(ext, ".rs") == 0) {
+                snprintf(cmd_str, sizeof(cmd_str), "rustc \"%s\"", curbp->b_fname);
+                found = TRUE;
+            } else if (strcmp(ext, ".c") == 0) {
+                snprintf(cmd_str, sizeof(cmd_str), "gcc -o \"%s\" \"%s\"", basename_no_ext, curbp->b_fname);
+                found = TRUE;
+            } else if (strcmp(ext, ".cpp") == 0 || strcmp(ext, ".cc") == 0 || strcmp(ext, ".cxx") == 0) {
+                snprintf(cmd_str, sizeof(cmd_str), "g++ -o \"%s\" \"%s\"", basename_no_ext, curbp->b_fname);
+                found = TRUE;
+            } else if (strcmp(ext, ".go") == 0) {
+                snprintf(cmd_str, sizeof(cmd_str), "go build \"%s\"", curbp->b_fname);
+                found = TRUE;
+            } else if (strcmp(ext, ".f") == 0 || strcmp(ext, ".f90") == 0 || strcmp(ext, ".f95") == 0 ||
+                       strcmp(ext, ".f03") == 0 || strcmp(ext, ".f08") == 0 || strcmp(ext, ".for") == 0) {
+                snprintf(cmd_str, sizeof(cmd_str), "gfortran -o \"%s\" \"%s\"", basename_no_ext, curbp->b_fname);
+                found = TRUE;
+            }
+        }
+    }
+
+    if (!found) {
+        mlwrite("No build configuration (Cargo.toml, Makefile, CMakeLists.txt) or supported single source file found.");
+        return FALSE;
+    }
+
+    // Execute build command
+    mlwrite("Running build: %s", cmd_str);
+    TTflush();
+    TTclose();
+    TTkclose();
+
+    int ret = system(cmd_str);
+    (void)ret;
+
+    fflush(stdout);
+    TTopen();
+
+    mlputs("(End) Press Space/Enter to continue");
+    TTflush();
+    int s;
+    while ((s = tgetc()) != '\r' && s != '\n' && s != ' ') ;
+
+    TTkopen();
+    sgarbf = TRUE;
+    nanox_request_underbar_redraw();
+    return TRUE;
+}
+
 static void execute_command(const char *input) {
     if (input == NULL || *input == '\0') {
         mlwrite("Empty command");
@@ -419,17 +573,59 @@ static void execute_command(const char *input) {
         return;
     }
 
-    if (command_mode_handle_lint_command(buffer))
+    char *cmd = buffer;
+    if (cmd[0] == ':') {
+        cmd++;
+        while (*cmd && isspace((unsigned char)*cmd)) cmd++;
+    }
+
+    if (command_mode_handle_lint_command(cmd))
         return;
-    if (command_mode_handle_set_nr_command(buffer))
+    if (command_mode_handle_set_nr_command(cmd))
         return;
-    if (command_mode_handle_flip_command(buffer))
+    if (command_mode_handle_flip_command(cmd))
         return;
 
+    /* Check for build command */
+    if (strcasecmp(cmd, "build") == 0) {
+        command_mode_handle_build_command();
+        return;
+    }
+
+    /* Check for AI copilot completion command */
+    if (strcasecmp(cmd, "ai") == 0 || strcasecmp(cmd, "aiComplete") == 0) {
+        extern int ai_complete(int f, int n);
+        ai_complete(FALSE, 1);
+        return;
+    }
+
+    /* Check for file tree commands */
+    if (strcasecmp(cmd, "openFileTree") == 0 || strcasecmp(cmd, "openFileView") == 0) {
+        extern bool file_tree_active;
+        extern void file_tree_init_workspace(void);
+        file_tree_active = true;
+        file_tree_init_workspace();
+        sgarbf = TRUE;
+        update(TRUE);
+        return;
+    }
+    if (strcasecmp(cmd, "closeFileTree") == 0 || strcasecmp(cmd, "closeFileView") == 0) {
+        extern bool file_tree_active;
+        file_tree_active = false;
+        sgarbf = TRUE;
+        update(TRUE);
+        return;
+    }
+    if (strcasecmp(cmd, "runFileTree") == 0) {
+        extern void command_mode_run_file_tree(void);
+        command_mode_run_file_tree();
+        return;
+    }
+
     /* nextfile command */
-    if (strncasecmp(buffer, "nextfile", 8) == 0 && (buffer[8] == ' ' || buffer[8] == '\0')) {
+    if (strncasecmp(cmd, "nextfile", 8) == 0 && (cmd[8] == ' ' || cmd[8] == '\0')) {
         int n = 1;
-        char *args = buffer + 8;
+        char *args = cmd + 8;
         while (*args && isspace((unsigned char)*args)) args++;
         if (*args != '\0') {
             n = atoi(args);
@@ -439,8 +635,8 @@ static void execute_command(const char *input) {
     }
 
     /* Check for multi-cursor command */
-    if (strncasecmp(buffer, "cursor", 6) == 0 && (buffer[6] == ' ' || buffer[6] == '\0')) {
-        char *args = buffer + 6;
+    if (strncasecmp(cmd, "cursor", 6) == 0 && (cmd[6] == ' ' || cmd[6] == '\0')) {
+        char *args = cmd + 6;
         while (*args && isspace((unsigned char)*args)) args++;
         
         if (strncasecmp(args, "create", 6) == 0) {
@@ -472,8 +668,8 @@ static void execute_command(const char *input) {
     }
 
     /* file command */
-    if (strncasecmp(buffer, "file", 4) == 0 && (buffer[4] == ' ' || buffer[4] == '\0')) {
-        const char *args = buffer + 4;
+    if (strncasecmp(cmd, "file", 4) == 0 && (cmd[4] == ' ' || cmd[4] == '\0')) {
+        const char *args = cmd + 4;
         while (*args && isspace((unsigned char)*args)) args++;
         if (strncasecmp(args, "raw-sig", 7) == 0 && (args[7] == ' ' || args[7] == '\0')) {
             const char *sig_args = args + 7;
@@ -484,8 +680,8 @@ static void execute_command(const char *input) {
     }
 
     /* filename command */
-    if (strncasecmp(buffer, "filename", 8) == 0) {
-        char *args = buffer + 8;
+    if (strncasecmp(cmd, "filename", 8) == 0) {
+        char *args = cmd + 8;
         while (*args && isspace((unsigned char)*args))
             args++;
         if (strcasecmp(args, "realpath") == 0) {
@@ -505,7 +701,7 @@ static void execute_command(const char *input) {
     
     /* Check if it's a number (goto line) */
     int is_number = 1;
-    for (char *p = buffer; *p; ++p) {
+    for (char *p = cmd; *p; ++p) {
         if (!isdigit((unsigned char)*p)) {
             is_number = 0;
             break;
@@ -513,28 +709,28 @@ static void execute_command(const char *input) {
     }
     
     if (is_number) {
-        int line_num = atoi(buffer);
+        int line_num = atoi(cmd);
         execute_goto_line(line_num);
     }
     /* Check for colors command */
-    else if (strncasecmp(buffer, "colors", 6) == 0 && (buffer[6] == ' ' || buffer[6] == '\0')) {
-        const char *args = buffer + 6;
+    else if (strncasecmp(cmd, "colors", 6) == 0 && (cmd[6] == ' ' || cmd[6] == '\0')) {
+        const char *args = cmd + 6;
         while (*args && isspace((unsigned char)*args)) args++;
         extern int command_mode_handle_colors_command(const char *input);
         command_mode_handle_colors_command(args);
     }
     /* Check for Help command (case insensitive) */
-    else if (strcasecmp(buffer, "help") == 0 || strcasecmp(buffer, "h") == 0) {
+    else if (strcasecmp(cmd, "help") == 0 || strcasecmp(cmd, "h") == 0) {
         execute_help();
     }
-    else if (strcasecmp(buffer, "viblock-edit") == 0 || strcasecmp(buffer, "viblock edit") == 0) {
+    else if (strcasecmp(cmd, "viblock-edit") == 0 || strcasecmp(cmd, "viblock edit") == 0) {
         viblock_start(BLOCK_MODE_EDIT, 0);
     }
-    else if (strcasecmp(buffer, "viblock-replace") == 0 || strcasecmp(buffer, "viblock replace") == 0) {
+    else if (strcasecmp(cmd, "viblock-replace") == 0 || strcasecmp(cmd, "viblock replace") == 0) {
         viblock_start(BLOCK_MODE_REPLACE, 0);
     }
     else {
-        mlwrite("Unknown command: %s", buffer);
+        mlwrite("Unknown command: %s", cmd);
     }
 }
 

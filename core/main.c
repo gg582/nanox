@@ -594,7 +594,7 @@ int execute(int c, int f, int n)
             handle_markup_char(c);
 
         /* check for CMODE fence matching */
-        if ((c == '}' || c == ')' || c == ']') && (curbp->b_mode & MDCMOD) != 0)
+        if (c == '}' || c == ')' || c == ']')
             fmatch(c);
 
         /* check auto-save mode */

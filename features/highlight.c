@@ -30,6 +30,15 @@ static HighlightProfile profiles[MAX_PROFILES];
 static int profile_count = 0;
 static bool initialized = false;
 
+static inline int kw_match(const HighlightProfile *profile, const char *word1, const char *word2)
+{
+    if (profile && profile->case_insensitive) {
+        return strcasecmp(word1, word2) == 0;
+    } else {
+        return strcmp(word1, word2) == 0;
+    }
+}
+
 typedef struct {
     bool compiled;
     regex_t regex;
@@ -137,18 +146,31 @@ static void profile_init(HighlightProfile *p, const char *name)
 
 static HighlightProfile *prepare_profile(const char *name)
 {
+    HighlightProfile *p = NULL;
     for (int i = 0; i < profile_count; i++) {
         if (strcasecmp(profiles[i].name, name) == 0) {
             profile_init(&profiles[i], name);
-            return &profiles[i];
+            p = &profiles[i];
+            break;
         }
     }
-    if (profile_count < MAX_PROFILES) {
+    if (!p && profile_count < MAX_PROFILES) {
         HighlightProfile *slot = &profiles[profile_count++];
         profile_init(slot, name);
-        return slot;
+        p = slot;
     }
-    return NULL;
+    if (p) {
+        if (strcasecmp(name, "fortran") == 0 || strcasecmp(name, "sql") == 0 ||
+            strcasecmp(name, "ini") == 0 || strcasecmp(name, "cmake") == 0 ||
+            strcasecmp(name, "powershell") == 0 || strcasecmp(name, "makefile") == 0 ||
+            strcasecmp(name, "cmd") == 0 || strcasecmp(name, "batch") == 0 ||
+            strcasecmp(name, "ada") == 0 || strcasecmp(name, "cobol") == 0 ||
+            strcasecmp(name, "delphi") == 0 || strcasecmp(name, "vhdl") == 0 ||
+            strcasecmp(name, "visual_basic") == 0) {
+            p->case_insensitive = true;
+        }
+    }
+    return p;
 }
 
 /* Helper to trim whitespace */
@@ -356,6 +378,8 @@ static bool load_config_file(const char *path, bool allow_global)
             curr->enable_bracket_highlight = (strcasecmp(val, "true") == 0);
         } else if (strcmp(key, "suppress_comment_autocomplete") == 0) {
             curr->suppress_comment_autocomplete = (strcasecmp(val, "true") == 0);
+        } else if (strcmp(key, "case_insensitive") == 0) {
+            curr->case_insensitive = (strcasecmp(val, "true") == 0);
         }
     }
 
@@ -1474,20 +1498,20 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                         /* Check for specific preprocessor types (with prefix if present in word) */
                         bool found_spec = false;
                         for (int i = 0; i < profile->preproc_include_keyword_count; i++) {
-                            if (strcmp(word, profile->preproc_include_keywords[i]) == 0) {
+                            if (kw_match(profile, word, profile->preproc_include_keywords[i])) {
                                 preproc_style = HL_PREPROC_INCLUDE; found_spec = true; break;
                             }
                         }
                         if (!found_spec) {
                             for (int i = 0; i < profile->preproc_define_keyword_count; i++) {
-                                if (strcmp(word, profile->preproc_define_keywords[i]) == 0) {
+                                if (kw_match(profile, word, profile->preproc_define_keywords[i])) {
                                     preproc_style = HL_PREPROC_DEFINE; found_spec = true; break;
                                 }
                             }
                         }
                         if (!found_spec) {
                             for (int i = 0; i < profile->preproc_flow_keyword_count; i++) {
-                                if (strcmp(word, profile->preproc_flow_keywords[i]) == 0) {
+                                if (kw_match(profile, word, profile->preproc_flow_keywords[i])) {
                                     preproc_style = HL_PREPROC_FLOW; found_spec = true; break;
                                 }
                             }
@@ -1501,21 +1525,21 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                             word_with_prefix[word_len + 1] = 0;
                             
                             for (int i = 0; i < profile->preproc_include_keyword_count; i++) {
-                                if (strcmp(word_with_prefix, profile->preproc_include_keywords[i]) == 0) {
+                                if (kw_match(profile, word_with_prefix, profile->preproc_include_keywords[i])) {
                                     preproc_style = HL_PREPROC_INCLUDE; found_spec = true; break;
                                 }
                             }
                             /* ... (other categories) ... */
                             if (!found_spec) {
                                 for (int i = 0; i < profile->preproc_define_keyword_count; i++) {
-                                    if (strcmp(word_with_prefix, profile->preproc_define_keywords[i]) == 0) {
+                                    if (kw_match(profile, word_with_prefix, profile->preproc_define_keywords[i])) {
                                         preproc_style = HL_PREPROC_DEFINE; found_spec = true; break;
                                     }
                                 }
                             }
                             if (!found_spec) {
                                 for (int i = 0; i < profile->preproc_flow_keyword_count; i++) {
-                                    if (strcmp(word_with_prefix, profile->preproc_flow_keywords[i]) == 0) {
+                                    if (kw_match(profile, word_with_prefix, profile->preproc_flow_keywords[i])) {
                                         preproc_style = HL_PREPROC_FLOW; found_spec = true; break;
                                     }
                                 }
@@ -1525,7 +1549,7 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                         /* Backward compatibility: check general preproc_keywords */
                         if (preproc_style == HL_PREPROC) {
                             for (int i = 0; i < profile->preproc_keyword_count; i++) {
-                                if (strcmp(word, profile->preproc_keywords[i]) == 0) {
+                                if (kw_match(profile, word, profile->preproc_keywords[i])) {
                                     preproc_style = HL_PREPROC; break;
                                 }
                             }
@@ -1547,6 +1571,31 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
                 }
                 pos += 3;
                 continue;
+            }
+
+            if (c == '\'') {
+                bool is_char_lit = false;
+                if (pos + 2 < len && text[pos+2] == '\'') {
+                    is_char_lit = true;
+                } else if (pos + 3 < len && text[pos+1] == '\\' && text[pos+3] == '\'') {
+                    is_char_lit = true;
+                } else if (pos + 4 < len && text[pos+1] == '\\' && isdigit((unsigned char)text[pos+2]) && text[pos+4] == '\'') {
+                    is_char_lit = true;
+                }
+                
+                if (is_char_lit) {
+                    int end_char = (pos + 2 < len && text[pos+2] == '\'') ? pos + 2 :
+                                   (pos + 3 < len && text[pos+3] == '\'') ? pos + 3 : pos + 4;
+                    if (out) add_span(out, pos, end_char + 1, HL_STRING);
+                    pos = end_char + 1;
+                    continue;
+                } else {
+                    if (strcmp(profile->name, "rust") == 0) {
+                        if (out) add_span(out, pos, pos + 1, HL_NORMAL);
+                        pos++;
+                        continue;
+                    }
+                }
             }
 
             char *delim_ptr = strchr(profile->string_delims, c);
@@ -1644,34 +1693,34 @@ void highlight_line(const char *text, int len, HighlightState start, const Highl
 
                         /* Order of precedence: Return > Flow > Preproc > Type > Keyword */
                         for (int i = 0; i < profile->return_keyword_count; i++) {
-                            if (strcmp(word, profile->return_keywords[i]) == 0) {
+                            if (kw_match(profile, word, profile->return_keywords[i])) {
                                 style = HL_RETURN; found = true; break;
                             }
                         }
                         if (!found) {
                             for (int i = 0; i < profile->flow_keyword_count; i++) {
-                                if (strcmp(word, profile->flow_keywords[i]) == 0) {
+                                if (kw_match(profile, word, profile->flow_keywords[i])) {
                                     style = HL_FLOW; found = true; break;
                                 }
                             }
                         }
                         if (!found) {
                             for (int i = 0; i < profile->preproc_keyword_count; i++) {
-                                if (strcmp(word, profile->preproc_keywords[i]) == 0) {
+                                if (kw_match(profile, word, profile->preproc_keywords[i])) {
                                     style = HL_PREPROC; found = true; break;
                                 }
                             }
                         }
                         if (!found) {
                             for (int i = 0; i < profile->type_keyword_count; i++) {
-                                if (strcmp(word, profile->type_keywords[i]) == 0) {
+                                if (kw_match(profile, word, profile->type_keywords[i])) {
                                     style = HL_TYPE; found = true; break;
                                 }
                             }
                         }
                         if (!found) {
                             for (int i = 0; i < profile->keyword_count; i++) {
-                                if (strcmp(word, profile->keywords[i]) == 0) {
+                                if (kw_match(profile, word, profile->keywords[i])) {
                                     style = HL_KEYWORD; found = true; break;
                                 }
                             }

@@ -167,6 +167,8 @@ lsp_cmd_for_buf(void)
 	return NULL;
 }
 
+char lsp_open_uri[512] = "";
+
 void
 lsp_init(void)
 {
@@ -181,6 +183,7 @@ lsp_shutdown(void)
 {
 	if (!srv.active) return;
 	srv.active = 0;
+	lsp_open_uri[0] = '\0';
 
 	if (srv.wfd >= 0) {
 		lsp_send_json(mkreq("shutdown", NULL, -1));

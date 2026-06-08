@@ -15,3 +15,14 @@ cold_storage_timeout=30
 
 [search]
 case_sensitive_default=false
+
+[ai]
+# Enable AI Copilot completions. Requires Ollama running locally or remotely.
+enabled=false
+# Ollama model name (e.g. qwen2.5-coder:1.5b, deepseek-coder:1.3b)
+model=qwen2.5-coder:1.5b
+# API endpoint for code generation
+endpoint=http://localhost:11434/api/generate
+# Generation sampling temperature (0.0 to 1.0)
+temperature=0.2
+

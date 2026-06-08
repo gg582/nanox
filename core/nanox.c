@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
 
 #include "estruct.h"
 #include "edef.h"
@@ -23,7 +24,9 @@
 #include "colorscheme.h"
 #include "paste_slot.h"
 #include "scraper.h"
+#include "video.h"
 
+extern struct video **vscreen;
 extern struct terminal *term;
 
 struct nanox_config nanox_cfg = {
@@ -222,6 +225,10 @@ static void config_defaults(void)
     nanox_cfg.nonr = false;
     nanox_cfg.no_function_slot = false;
     nanox_cfg.cold_storage_timeout = 30;
+    nanox_cfg.ai_enabled = false;
+    mystrscpy(nanox_cfg.ai_model, "qwen2.5-coder:1.5b", sizeof(nanox_cfg.ai_model));
+    mystrscpy(nanox_cfg.ai_endpoint, "http://localhost:11434/api/generate", sizeof(nanox_cfg.ai_endpoint));
+    nanox_cfg.ai_temperature = 0.2;
 }
 
 static bool parse_bool(const char *value, bool *out)
@@ -315,6 +322,20 @@ static void parse_search_option(const char *key, const char *value)
     }
 }
 
+static void parse_ai_option(const char *key, const char *value)
+{
+    if (strcasecmp(key, "enabled") == 0) {
+        if (!parse_bool(value, &nanox_cfg.ai_enabled))
+            mark_config_error();
+    } else if (strcasecmp(key, "model") == 0) {
+        mystrscpy(nanox_cfg.ai_model, value, sizeof(nanox_cfg.ai_model));
+    } else if (strcasecmp(key, "endpoint") == 0) {
+        mystrscpy(nanox_cfg.ai_endpoint, value, sizeof(nanox_cfg.ai_endpoint));
+    } else if (strcasecmp(key, "temperature") == 0) {
+        nanox_cfg.ai_temperature = atof(value);
+    }
+}
+
 static void parse_config_line(const char *section, char *line)
 {
     char *equals = strchr(line, '=');
@@ -342,6 +363,8 @@ static void parse_config_line(const char *section, char *line)
         parse_edit_option(key, value);
     else if (strcasecmp(section, "search") == 0)
         parse_search_option(key, value);
+    else if (strcasecmp(section, "ai") == 0)
+        parse_ai_option(key, value);
 }
 
 static void parse_config_file(void)
@@ -642,6 +665,18 @@ static const char *nanox_help_sheet[] = {
     "* Move cursor to end line, then press Tab or gg to apply to the range",
     "* Auto-detects file indentation width (spaces or tabs)",
     "* BS: Backspace cancels current range operation",
+    "===============================================================================",
+    "=>                      LSP & WORKSPACE FILE TREE",
+    "-------------------------------------------------------------------------------",
+    "* LSP & Autocomplete Priority: Sorts completion candidates using semantic",
+    "  priority (Snippets > Keywords > Functions). Exact/prefix matches get boosted.",
+    "  Cross-Reference: Integrates with Workspace File Tree for a complete IDE experience.",
+    "* Workspace File Tree: Type :openFileTree (or :openFileView) to open left panel,",
+    "  :closeFileTree to close. Type :runFileTree for interactive navigation mode",
+    "  (Arrows to move, Enter to toggle/open, Shift+Backspace to go up).",
+    "  Cross-Reference: Combines with LSP Autocomplete for fast workspace editing.",
+    "* AI Copilot (Ollama): Enable it in ~/.config/nanox/config under [ai]. Press Ctrl+Alt+A",
+    "  or run :ai to complete. 'y' to accept/keep, 'n' (or any key) to reject/revert.",
     NULL
 };
 
@@ -760,7 +795,7 @@ void nanox_help_render(void)
     TTsetcolors(-1, -1);
     ttflush();
 }
-int nanox_help_command(int f, int n)
+int nanox_traditional_help_command(int f, int n)
 {
     load_help_file();
     help_active = true;
@@ -1011,6 +1046,720 @@ void nanox_cleanup(void)
         startup_slot_queue_cap = 0;
         startup_slot_queue_next = 0;
     }
+}
+
+#include <dirent.h>
+#include <sys/stat.h>
+
+bool file_tree_active = false;
+int file_tree_width = 25;
+char file_tree_workspace_root[PATH_MAX] = "";
+bool file_tree_interactive = false;
+
+typedef struct FileNode {
+    char name[256];
+    char path[PATH_MAX];
+    bool is_dir;
+    bool is_open;
+    int depth;
+    struct FileNode *parent;
+} FileNode;
+
+#define MAX_TREE_NODES 1024
+static FileNode file_tree_nodes[MAX_TREE_NODES];
+static int file_tree_node_count = 0;
+static int file_tree_scroll = 0;
+static int file_tree_selected = 0;
+
+static void detect_workspace_root(char *root_out, size_t sz)
+{
+    char dir[PATH_MAX];
+    if (file_tree_workspace_root[0] != '\0') {
+        mystrscpy(root_out, file_tree_workspace_root, sz);
+        return;
+    }
+    if (curbp->b_fname && curbp->b_fname[0]) {
+        char abs_path[PATH_MAX];
+        if (realpath(curbp->b_fname, abs_path)) {
+            char *last_slash = strrchr(abs_path, '/');
+            if (last_slash) {
+                *last_slash = '\0';
+                strcpy(dir, abs_path);
+            } else {
+                if (getcwd(dir, sizeof(dir)) == NULL) dir[0] = '\0';
+            }
+        } else {
+            char *last_slash = strrchr(curbp->b_fname, '/');
+            if (last_slash) {
+                size_t len = last_slash - curbp->b_fname;
+                if (len >= sizeof(dir)) len = sizeof(dir) - 1;
+                memcpy(dir, curbp->b_fname, len);
+                dir[len] = '\0';
+            } else {
+                if (getcwd(dir, sizeof(dir)) == NULL) dir[0] = '\0';
+            }
+        }
+    } else {
+        if (getcwd(dir, sizeof(dir)) == NULL) dir[0] = '\0';
+    }
+
+    char last_dir[PATH_MAX] = "";
+    char check_path[PATH_MAX + 32];
+    char workspace[PATH_MAX] = "";
+    strcpy(workspace, dir);
+
+    while (strcmp(dir, last_dir) != 0) {
+        strcpy(last_dir, dir);
+
+        snprintf(check_path, sizeof(check_path), "%s/.git", dir);
+        if (access(check_path, F_OK) == 0) {
+            strcpy(workspace, dir);
+            break;
+        }
+        snprintf(check_path, sizeof(check_path), "%s/Cargo.toml", dir);
+        if (access(check_path, F_OK) == 0) {
+            strcpy(workspace, dir);
+            break;
+        }
+        snprintf(check_path, sizeof(check_path), "%s/Makefile", dir);
+        if (access(check_path, F_OK) == 0) {
+            strcpy(workspace, dir);
+            break;
+        }
+
+        char *last_slash = strrchr(dir, '/');
+        if (last_slash) {
+            if (last_slash == dir) {
+                strcpy(dir, "/");
+            } else {
+                *last_slash = '\0';
+            }
+        } else {
+            break;
+        }
+    }
+    mystrscpy(root_out, workspace, sz);
+    mystrscpy(file_tree_workspace_root, workspace, sizeof(file_tree_workspace_root));
+}
+
+static void file_tree_add_node(const char *name, const char *path, bool is_dir, int depth, FileNode *parent, int insert_pos)
+{
+    if (file_tree_node_count >= MAX_TREE_NODES)
+        return;
+    for (int i = file_tree_node_count; i > insert_pos; i--) {
+        file_tree_nodes[i] = file_tree_nodes[i - 1];
+    }
+    FileNode *node = &file_tree_nodes[insert_pos];
+    mystrscpy(node->name, name, sizeof(node->name));
+    mystrscpy(node->path, path, sizeof(node->path));
+    node->is_dir = is_dir;
+    node->is_open = false;
+    node->depth = depth;
+    node->parent = parent;
+    file_tree_node_count++;
+}
+
+static int compare_nodes(const void *a, const void *b) {
+    const FileNode *na = (const FileNode *)a;
+    const FileNode *nb = (const FileNode *)b;
+    if (na->is_dir != nb->is_dir) {
+        return na->is_dir ? -1 : 1;
+    }
+    return strcasecmp(na->name, nb->name);
+}
+
+void file_tree_expand_dir(int index)
+{
+    FileNode *parent = &file_tree_nodes[index];
+    if (!parent->is_dir || parent->is_open)
+        return;
+
+    DIR *dir = opendir(parent->path);
+    if (!dir)
+        return;
+
+    parent->is_open = true;
+    FileNode children[256];
+    int child_count = 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+        if (entry->d_name[0] == '.')
+            continue;
+
+        char child_path[PATH_MAX];
+        snprintf(child_path, sizeof(child_path), "%s/%s", parent->path, entry->d_name);
+
+        struct stat st;
+        bool is_directory = false;
+        if (stat(child_path, &st) == 0) {
+            is_directory = S_ISDIR(st.st_mode);
+        }
+
+        if (child_count < 256) {
+            mystrscpy(children[child_count].name, entry->d_name, sizeof(children[child_count].name));
+            mystrscpy(children[child_count].path, child_path, sizeof(children[child_count].path));
+            children[child_count].is_dir = is_directory;
+            children[child_count].is_open = false;
+            children[child_count].depth = parent->depth + 1;
+            children[child_count].parent = parent;
+            child_count++;
+        }
+    }
+    closedir(dir);
+
+    qsort(children, child_count, sizeof(FileNode), compare_nodes);
+
+    for (int i = 0; i < child_count; i++) {
+        file_tree_add_node(children[i].name, children[i].path, children[i].is_dir, children[i].depth, parent, index + 1 + i);
+    }
+}
+
+void file_tree_collapse_dir(int index)
+{
+    FileNode *parent = &file_tree_nodes[index];
+    if (!parent->is_dir || !parent->is_open)
+        return;
+
+    parent->is_open = false;
+    int next = index + 1;
+    int remove_count = 0;
+    while (next < file_tree_node_count && file_tree_nodes[next].depth > parent->depth) {
+        remove_count++;
+        next++;
+    }
+
+    if (remove_count > 0) {
+        for (int i = index + 1; i < file_tree_node_count - remove_count; i++) {
+            file_tree_nodes[i] = file_tree_nodes[i + remove_count];
+        }
+        file_tree_node_count -= remove_count;
+    }
+}
+
+void file_tree_init_workspace(void)
+{
+    char root[PATH_MAX];
+    detect_workspace_root(root, sizeof(root));
+
+    file_tree_node_count = 0;
+    file_tree_selected = 0;
+    file_tree_scroll = 0;
+
+    DIR *dir = opendir(root);
+    if (!dir)
+        return;
+
+    FileNode children[256];
+    int child_count = 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+        if (entry->d_name[0] == '.')
+            continue;
+
+        char child_path[PATH_MAX];
+        snprintf(child_path, sizeof(child_path), "%s/%s", root, entry->d_name);
+
+        struct stat st;
+        bool is_directory = false;
+        if (stat(child_path, &st) == 0) {
+            is_directory = S_ISDIR(st.st_mode);
+        }
+
+        if (child_count < 256) {
+            mystrscpy(children[child_count].name, entry->d_name, sizeof(children[child_count].name));
+            mystrscpy(children[child_count].path, child_path, sizeof(children[child_count].path));
+            children[child_count].is_dir = is_directory;
+            children[child_count].is_open = false;
+            children[child_count].depth = 0;
+            children[child_count].parent = NULL;
+            child_count++;
+        }
+    }
+    closedir(dir);
+
+    qsort(children, child_count, sizeof(FileNode), compare_nodes);
+
+    for (int i = 0; i < child_count; i++) {
+        file_tree_add_node(children[i].name, children[i].path, children[i].is_dir, children[i].depth, NULL, i);
+    }
+}
+
+void file_tree_draw(void)
+{
+    if (!file_tree_active)
+        return;
+
+    int visible_rows = term->t_nrow - 2;
+    int count = file_tree_node_count;
+
+    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+    HighlightStyle comment = colorscheme_get(HL_COMMENT);
+    HighlightStyle keyword = colorscheme_get(HL_KEYWORD);
+
+    for (int r = 0; r < visible_rows && r < term->t_nrow; r++) {
+        struct video *vp = vscreen[r];
+        for (int c = 0; c < file_tree_width; c++) {
+            vp->v_text[c].ch = ' ';
+            vp->v_text[c].fg = normal.fg;
+            vp->v_text[c].bg = normal.bg;
+            vp->v_text[c].bold = false;
+            vp->v_text[c].underline = false;
+            vp->v_text[c].italic = false;
+        }
+
+        int idx = file_tree_scroll + r;
+        if (idx < count) {
+            FileNode *node = &file_tree_nodes[idx];
+            int indent = node->depth * 2;
+            int col = 0;
+
+            while (col < indent && col < file_tree_width - 2) {
+                vp->v_text[col].ch = ' ';
+                col++;
+            }
+
+            const char *indicator = "";
+            if (node->is_dir) {
+                indicator = node->is_open ? "▼ " : "▶ ";
+            } else {
+                indicator = "  ";
+            }
+
+            int i = 0;
+            while (indicator[i] && col < file_tree_width - 2) {
+                unicode_t uc;
+                int bytes = utf8_to_unicode((unsigned char *)indicator, i, strlen(indicator), &uc);
+                if (bytes <= 0) break;
+                vp->v_text[col].ch = uc;
+                if (node->is_dir) {
+                    vp->v_text[col].fg = keyword.fg;
+                } else {
+                    vp->v_text[col].fg = comment.fg;
+                }
+                col++;
+                i += bytes;
+            }
+
+            if (node->is_dir) {
+                const char *ficon = "📁 ";
+                int fi = 0;
+                while (ficon[fi] && col < file_tree_width - 2) {
+                    unicode_t uc;
+                    int bytes = utf8_to_unicode((unsigned char *)ficon, fi, strlen(ficon), &uc);
+                    if (bytes <= 0) break;
+                    vp->v_text[col].ch = uc;
+                    vp->v_text[col].fg = keyword.fg;
+                    col++;
+                    fi += bytes;
+                }
+            } else {
+                const char *ficon = "📄 ";
+                int fi = 0;
+                while (ficon[fi] && col < file_tree_width - 2) {
+                    unicode_t uc;
+                    int bytes = utf8_to_unicode((unsigned char *)ficon, fi, strlen(ficon), &uc);
+                    if (bytes <= 0) break;
+                    vp->v_text[col].ch = uc;
+                    vp->v_text[col].fg = comment.fg;
+                    col++;
+                    fi += bytes;
+                }
+            }
+
+            i = 0;
+            int name_len = strlen(node->name);
+            while (i < name_len && col < file_tree_width - 2) {
+                unicode_t uc;
+                int bytes = utf8_to_unicode((unsigned char *)node->name, i, name_len, &uc);
+                if (bytes <= 0) break;
+                vp->v_text[col].ch = uc;
+                if (idx == file_tree_selected) {
+                    vp->v_text[col].bg = keyword.bg != -1 ? keyword.bg : normal.fg;
+                    vp->v_text[col].fg = keyword.bg != -1 ? keyword.fg : normal.bg;
+                    vp->v_text[col].bold = true;
+                } else {
+                    vp->v_text[col].fg = node->is_dir ? keyword.fg : normal.fg;
+                }
+                col++;
+                i += bytes;
+            }
+        }
+
+        vp->v_text[file_tree_width - 1].ch = 0x2502;
+        vp->v_text[file_tree_width - 1].fg = comment.fg;
+        vp->v_text[file_tree_width - 1].bg = normal.bg;
+        vp->v_flag |= VFCHG;
+    }
+}
+
+void command_mode_run_file_tree(void) {
+    if (!file_tree_active) {
+        mlwrite("File Tree is not open. Run :openFileTree first.");
+        return;
+    }
+
+    file_tree_interactive = true;
+    sgarbf = TRUE;
+    update(TRUE);
+
+    while (file_tree_interactive) {
+        mlwrite("File Tree Mode (Esc: exit, Arrows: select, Enter: open/toggle, Shift+BS: go up)");
+        int c = getcmd();
+        
+        if (c == 0x1B) {
+            file_tree_interactive = false;
+            break;
+        }
+
+        switch (c) {
+        case (SPEC | 'A'):
+            if (file_tree_selected > 0) {
+                file_tree_selected--;
+                if (file_tree_selected < file_tree_scroll)
+                    file_tree_scroll = file_tree_selected;
+            }
+            break;
+
+        case (SPEC | 'B'):
+            if (file_tree_selected < file_tree_node_count - 1) {
+                file_tree_selected++;
+                int visible_rows = term->t_nrow - 3;
+                if (file_tree_selected >= file_tree_scroll + visible_rows)
+                    file_tree_scroll = file_tree_selected - visible_rows + 1;
+            }
+            break;
+
+        case '\n':
+        case '\r':
+        case (CONTROL | 'M'):
+            if (file_tree_selected >= 0 && file_tree_selected < file_tree_node_count) {
+                FileNode *node = &file_tree_nodes[file_tree_selected];
+                if (node->is_dir) {
+                    if (node->is_open) {
+                        file_tree_collapse_dir(file_tree_selected);
+                    } else {
+                        file_tree_expand_dir(file_tree_selected);
+                    }
+                } else {
+                    struct buffer *bp;
+                    extern struct buffer *bheadp;
+                    bp = bheadp;
+                    bool found_buf = false;
+                    while (bp != NULL) {
+                        if (strcmp(bp->b_fname, node->path) == 0) {
+                            swbuffer(bp);
+                            found_buf = true;
+                            break;
+                        }
+                        bp = bp->b_bufp;
+                    }
+                    if (!found_buf) {
+                        getfile(node->path, TRUE);
+                    }
+                    file_tree_interactive = false;
+                }
+            }
+            break;
+
+        case (SHIFT | 0x08):
+        case (SHIFT | 0x7f):
+        case (SHIFT | (CONTROL | 'H')):
+        case (SPEC | '\t'):
+        case (SHIFT | 0x09):
+            if (file_tree_selected >= 0 && file_tree_selected < file_tree_node_count) {
+                FileNode *node = &file_tree_nodes[file_tree_selected];
+                if (node->parent != NULL) {
+                    for (int i = 0; i < file_tree_node_count; i++) {
+                        if (&file_tree_nodes[i] == node->parent) {
+                            file_tree_selected = i;
+                            file_tree_collapse_dir(i);
+                            if (file_tree_selected < file_tree_scroll)
+                                file_tree_scroll = file_tree_selected;
+                            break;
+                        }
+                    }
+                } else {
+                    char cur_root[PATH_MAX];
+                    detect_workspace_root(cur_root, sizeof(cur_root));
+                    char parent_root[PATH_MAX];
+                    char *last_slash = strrchr(cur_root, '/');
+                    if (last_slash) {
+                        if (last_slash == cur_root) {
+                            strcpy(parent_root, "/");
+                        } else {
+                            *last_slash = '\0';
+                            strcpy(parent_root, cur_root);
+                        }
+                        mystrscpy(file_tree_workspace_root, parent_root, sizeof(file_tree_workspace_root));
+                        file_tree_init_workspace();
+                    }
+                }
+            }
+            break;
+        }
+
+        sgarbf = TRUE;
+        update(TRUE);
+    }
+
+    mlwrite("Exited File Tree Mode.");
+}
+
+typedef struct {
+    const char *name;
+    const char *lines[30];
+    int line_count;
+} HelpCategory;
+
+static HelpCategory help_categories[] = {
+    {
+        "1. Basic & Editing",
+        {
+            "Basic Editor Commands:",
+            "",
+            "  Ctrl+S / F2     - Save current file",
+            "  Ctrl+O / F3     - Open/Find file",
+            "  Ctrl+Q / F4     - Quit nanox",
+            "  Ctrl+F / F5     - Find / Search engine",
+            "  Ctrl+V          - Open Command Mode",
+            "  Ctrl+Space      - Trigger Autocomplete",
+            "",
+            "Use F1 / Ctrl+H at any time to open this menu.",
+            "Use Command Mode (:help or :h) for the full reference manual."
+        },
+        11
+    },
+    {
+        "2. LSP & Autocomplete",
+        {
+            "LSP & Keyword Autocompletion:",
+            "",
+            "  - Automatically queries active Language Server Protocols.",
+            "  - Sorts candidates using VSCode/Vim-style semantic priority:",
+            "    * Exact matches & prefix matches are boosted to the top.",
+            "    * Kinds (Snippets, Keywords, Functions) get a higher score.",
+            "    * Selection history (MRU) tracks usage frequency for smart ordering.",
+            "  - Integrates language-specific keywords (Fortran, Rust, Ada, etc.).",
+            "",
+            "  * NOTE: Seamlessly integrates with the Workspace File Tree",
+            "    (type :openFileTree in Command Mode to view files)."
+        },
+        11
+    },
+    {
+        "3. Workspace File Tree",
+        {
+            "VSCode-Style File Tree Viewer:",
+            "",
+            "  - :openFileTree  - Open visual left panel tree view",
+            "  - :closeFileTree - Close left panel tree view",
+            "  - :runFileTree   - Activate interactive navigation mode",
+            "    * Up/Down Arrow - Select file/directory",
+            "    * Enter         - Expand/collapse directory or open file",
+            "    * Shift+BackSp  - Go up to parent directory/level",
+            "",
+            "  * NOTE: Combines workspace-wide navigation with smart LSP",
+            "    completion priority sorting to achieve a full IDE experience."
+        },
+        11
+    },
+    {
+        "4. Fast Build System",
+        {
+            "Command Mode Fast Build:",
+            "",
+            "  - Type :build (or build) in Command Mode.",
+            "  - Searches upward for project build configurations:",
+            "    * Cargo.toml   -> runs 'cargo build'",
+            "    * Makefile     -> runs 'make'",
+            "    * CMakeLists.txt -> runs 'cmake --build build' or cmake -B",
+            "  - Fallback: Compiles single source file directly via",
+            "    gcc (C), g++ (C++), rustc (Rust), go (Go), or gfortran (Fortran)."
+        },
+        9
+    },
+    {
+        "5. Multi-Cursor & Viblock",
+        {
+            "Advanced Editing Features:",
+            "",
+            "  - Multi-Cursor Commands:",
+            "    * cursor create <n> - Spawn <n> cursors",
+            "    * cursor select <n> - Switch cursor focus",
+            "    * cursor single     - Return to single cursor",
+            "  - Viblock (Visual Block Select) Commands:",
+            "    * viblock-edit      - Start block editing",
+            "    * viblock-replace   - Start block replace"
+        },
+        9
+    },
+    {
+        "6. AI Copilot",
+        {
+            "Ollama AI Copilot completions:",
+            "",
+            "  - Set options under [ai] in ~/.config/nanox/config:",
+            "    * enabled=true      - Enable Copilot",
+            "    * model=name        - Ollama model (e.g. qwen2.5-coder:1.5b)",
+            "    * endpoint=url      - Ollama API url (http://localhost:11434/api/generate)",
+            "    * temperature=0.2   - Generation temperature",
+            "  - Usage:",
+            "    * Ctrl+Alt+A or :ai - Request completion recommendation",
+            "    * Press 'y'         - Accept & keep the suggestion",
+            "    * Press 'n'/other   - Reject & revert suggestion"
+        },
+        12
+    }
+};
+
+#define HELP_CAT_COUNT (sizeof(help_categories) / sizeof(help_categories[0]))
+static int help_selected_cat = 0;
+bool interactive_help_active = false;
+
+void draw_interactive_help(void)
+{
+    HighlightStyle normal = colorscheme_get(HL_NORMAL);
+    HighlightStyle comment = colorscheme_get(HL_COMMENT);
+    HighlightStyle keyword = colorscheme_get(HL_KEYWORD);
+
+    int max_r = term->t_nrow - 2;
+
+    for (int r = 0; r <= max_r && r < term->t_nrow; r++) {
+        struct video *vp = vscreen[r];
+        for (int c = 0; c < term->t_ncol; c++) {
+            vp->v_text[c].ch = ' ';
+            vp->v_text[c].fg = normal.fg;
+            vp->v_text[c].bg = normal.bg;
+            vp->v_text[c].bold = false;
+            vp->v_text[c].underline = false;
+            vp->v_text[c].italic = false;
+        }
+        vp->v_flag |= VFCHG;
+    }
+
+    struct video *hdr = vscreen[0];
+    const char *header = " [ Nanox Interactive Help System ]";
+    int col = 0;
+    while (header[col] && col < term->t_ncol) {
+        hdr->v_text[col].ch = header[col];
+        hdr->v_text[col].bold = true;
+        hdr->v_text[col].fg = keyword.fg;
+        col++;
+    }
+
+    int separator_col = 26;
+    for (int r = 2; r < max_r && r < term->t_nrow; r++) {
+        vscreen[r]->v_text[separator_col].ch = 0x2502;
+        vscreen[r]->v_text[separator_col].fg = comment.fg;
+    }
+
+    for (int i = 0; i < HELP_CAT_COUNT; i++) {
+        int row_idx = 2 + i * 2;
+        if (row_idx >= max_r) break;
+        struct video *vp = vscreen[row_idx];
+        const char *name = help_categories[i].name;
+        int c = 2;
+        while (name[c - 2] && c < separator_col - 1) {
+            vp->v_text[c].ch = name[c - 2];
+            if (i == help_selected_cat) {
+                vp->v_text[c].bg = keyword.bg != -1 ? keyword.bg : normal.fg;
+                vp->v_text[c].fg = keyword.bg != -1 ? keyword.fg : normal.bg;
+                vp->v_text[c].bold = true;
+            } else {
+                vp->v_text[c].fg = normal.fg;
+            }
+            c++;
+        }
+    }
+
+    HelpCategory *cat = &help_categories[help_selected_cat];
+    for (int l = 0; l < cat->line_count && l < max_r - 2; l++) {
+        int row_idx = 2 + l;
+        if (row_idx >= max_r) break;
+        struct video *vp = vscreen[row_idx];
+        const char *line = cat->lines[l];
+        int c = separator_col + 2;
+        int idx = 0;
+        while (line[idx] && c < term->t_ncol - 2) {
+            unicode_t uc;
+            int bytes = utf8_to_unicode((unsigned char *)line, idx, strlen(line), &uc);
+            if (bytes <= 0) break;
+            vp->v_text[c].ch = uc;
+            vp->v_text[c].fg = (l == 0) ? keyword.fg : normal.fg;
+            vp->v_text[c].bold = (l == 0);
+            c++;
+            idx += bytes;
+        }
+    }
+
+    struct video *ftr = vscreen[max_r];
+    for (int c = 0; c < term->t_ncol; c++) {
+        ftr->v_text[c].ch = '-';
+        ftr->v_text[c].fg = comment.fg;
+    }
+    const char *footer = " [ Up/Down: Navigate | Esc/F1: Exit Help ]";
+    col = 2;
+    while (footer[col - 2] && col < term->t_ncol - 2) {
+        ftr->v_text[col].ch = footer[col - 2];
+        ftr->v_text[col].bold = true;
+        ftr->v_text[col].fg = comment.fg;
+        col++;
+    }
+}
+
+int nanox_help_command(int f, int n)
+{
+    interactive_help_active = true;
+    help_selected_cat = 0;
+    sgarbf = TRUE;
+    update(TRUE);
+
+    while (interactive_help_active) {
+        mlwrite("Interactive Help Menu (Esc/F1: Exit, Up/Down: Select)");
+        int c = getcmd();
+
+        int base_key = c;
+        if (c & SPEC) {
+            base_key = SPEC | (c & 0xFF);
+        }
+
+        switch (base_key) {
+        case CONTROL | 'G':
+        case CONTROL | '[':
+        case 27:
+        case SPEC | 'P':
+        case 0x7F:
+        case CONTROL | 'H':
+            interactive_help_active = false;
+            break;
+        case SPEC | 'A':
+            if (help_selected_cat > 0) {
+                help_selected_cat--;
+            }
+            break;
+        case SPEC | 'B':
+            if (help_selected_cat < HELP_CAT_COUNT - 1) {
+                help_selected_cat++;
+            }
+            break;
+        default:
+            break;
+        }
+
+        sgarbf = TRUE;
+        update(TRUE);
+    }
+
+    mlwrite("");
+    sgarbf = TRUE;
+    update(TRUE);
+    return TRUE;
 }
 
 bool nanox_help_is_active(void) {

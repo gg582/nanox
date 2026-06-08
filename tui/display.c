@@ -140,7 +140,12 @@ void get_offset_at_visual_pos(struct line *lp, int target_vrow, int target_vcol,
 
 static int get_gutter_width(void)
 {
-    return !nanox_cfg.nonr ? 8 : 0;
+    extern bool file_tree_active;
+    extern int file_tree_width;
+    int w = !nanox_cfg.nonr ? 8 : 0;
+    if (file_tree_active)
+        w += file_tree_width;
+    return w;
 }
 
 static void gutter_plugin_fn(render_ctx_t *ctx) {
@@ -726,6 +731,18 @@ void highlight_incremental_step(struct buffer *bp)
 int update(int force)
 {
     struct window *wp;
+    extern bool interactive_help_active;
+    if (interactive_help_active) {
+        extern void draw_interactive_help(void);
+        draw_interactive_help();
+        if (sgarbf != FALSE)
+            updgar();
+        updupd(force);
+        movecursor(term->t_nrow, 0);
+        TTflush();
+        displaying = FALSE;
+        return TRUE;
+    }
 
     if (force == FALSE && kbdmode == PLAY)
         return TRUE;
@@ -773,6 +790,9 @@ int update(int force)
         modeline(curwp);
         should_redraw_underbar = false;
     }
+
+    extern void file_tree_draw(void);
+    file_tree_draw();
 
     /* recalc the current hardware cursor location */
     updpos();

@@ -35,6 +35,10 @@ struct nanox_config {
     bool nonr;
     bool no_function_slot;
     int cold_storage_timeout;
+    bool ai_enabled;
+    char ai_model[64];
+    char ai_endpoint[128];
+    double ai_temperature;
 };
 
 extern struct nanox_config nanox_cfg;
@@ -59,6 +63,7 @@ void nanox_notify_message(const char *text);
 bool nanox_help_is_active(void);
 void nanox_help_render(void);
 int nanox_help_command(int f, int n);
+int nanox_traditional_help_command(int f, int n);
 int nanox_help_handle_key(int key);
 
 int nanox_slot_capacity(void);

@@ -225,6 +225,7 @@ extern int nanox_hint_top_row(void);
 extern int nanox_hint_bottom_row(void);
 extern bool nanox_help_is_active(void);
 extern int nanox_help_command(int f, int n);
+extern int nanox_traditional_help_command(int f, int n);
 extern int nanox_help_handle_key(int key);
 extern void nanox_cleanup(void);
 extern void nanox_message_prefix(const char *input, char *output, size_t outsz);
@@ -474,3 +475,7 @@ extern char *undolock(char *fname);
 
 /* cscope.c */
 extern int cscope_complete(int f, int n);
+
+/* ai.c */
+extern int ai_complete(int f, int n);
+

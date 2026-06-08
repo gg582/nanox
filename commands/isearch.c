@@ -378,6 +378,8 @@ int minibuf_input(const char *prompt, char *dest, int max_len)
             /* Abort with Ctrl+G */
             mlerase();
             completion_hide();
+            sgarbf = TRUE;
+            nanox_request_underbar_redraw();
             return FALSE;
             
         case IS_NEWLINE:
@@ -388,6 +390,8 @@ int minibuf_input(const char *prompt, char *dest, int max_len)
             minibuf_clear();
             mlerase();
             completion_hide();
+            sgarbf = TRUE;
+            nanox_request_underbar_redraw();
             if (dest[0] == '\0')
                 return FALSE;
             return TRUE;
@@ -405,6 +409,8 @@ int minibuf_input(const char *prompt, char *dest, int max_len)
         case 0x1B: /* ESC - cancel */
             mlerase();
             completion_hide();
+            sgarbf = TRUE;
+            nanox_request_underbar_redraw();
             return FALSE;
             
         case (SPEC | 'A'): /* Up Arrow */
@@ -530,6 +536,8 @@ int risearch(int f, int n)
     }
     
     matchlen = strlen(pat);
+    sgarbf = TRUE;
+    nanox_request_underbar_redraw();
     return TRUE;
 }
 
@@ -554,6 +562,8 @@ int fisearch(int f, int n)
     }
     
     matchlen = strlen(pat);
+    sgarbf = TRUE;
+    nanox_request_underbar_redraw();
     return TRUE;
 }
 

@@ -16,7 +16,6 @@ CFLAGS = -std=c2x -O2 -g \
          -fstack-protector-strong -fno-common -ffunction-sections -fdata-sections \
          -Iinclude \
          $(foreach mod,$(MODULES),-I$(mod)) \
-         -Ideps/cjson \
          -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=700 -DPOSIX -D_GNU_SOURCE
 
 # Feature Flags
@@ -28,6 +27,10 @@ endif
 # Libraries discovery
 LIBS = ncursesw pcre2-8 pthread
 LDLIBS = $(shell pkg-config --libs $(LIBS) 2>/dev/null || echo -lncursesw -lpcre2-8 -lpthread) -llz4 -lm
+
+# cJSON dependency (system pkg-config or fallback to submodule)
+LIBCJSON_LIBS := $(shell pkg-config --libs libcjson 2>/dev/null)
+LIBCJSON_CFLAGS := $(shell pkg-config --cflags libcjson 2>/dev/null)
 
 # Hunspell support
 HUNSPELL_CFLAGS := $(shell pkg-config --cflags hunspell 2>/dev/null)
@@ -43,7 +46,14 @@ LDFLAGS = -flto=auto -fuse-linker-plugin
 # Source discovery
 # We explicitly list some to maintain control, or use wildcard and filter
 SRC = $(foreach mod,$(MODULES),$(wildcard $(mod)/*.c))
-SRC += deps/cjson/cJSON.c
+
+ifneq ($(strip $(LIBCJSON_LIBS)),)
+    CFLAGS += $(LIBCJSON_CFLAGS)
+    LDLIBS += $(LIBCJSON_LIBS)
+else
+    CFLAGS += -Ideps/cjson
+    SRC += deps/cjson/cJSON.c
+endif
 
 # If not using ncurses, exclude ncurses.c
 ifneq ($(USE_NCURSES),1)
