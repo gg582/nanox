@@ -1809,8 +1809,8 @@ int paste_slot_handle_key(int c)
     extern int sgarbf;
     int action_taken = FALSE;
 
-    /* Check for 'p' or 'P' key or Enter - insert paste */
-    if (c == 'p' || c == 'P' || c == '\r' || c == '\n' || c == 13) {
+    /* Check for 'p' or 'P' key - insert paste */
+    if (c == 'p' || c == 'P') {
         /* Insert the paste slot content */
         paste_slot_insert();
         action_taken = TRUE;

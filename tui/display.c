@@ -801,6 +801,11 @@ int update(int force)
     if (sgarbf != FALSE)
         updgar();
 
+    if (check_paste_slot_active() && highlight_is_enabled())
+        paste_slot_draw_inline_preview(currow,
+                                       curcol + get_gutter_width() - lbound,
+                                       get_gutter_width());
+
     /* update the virtual screen to the physical screen */
     updupd(force);
 

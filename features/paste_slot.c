@@ -15,11 +15,13 @@
 #include "edef.h"
 #include "efunc.h"
 #include "highlight.h"
+#include "line.h"
 #include "utf8.h"
 #include "util.h"
 #include "video.h"
 
 extern void vtputc(int c);
+extern struct video **vscreen;
 
 /* Paste slot buffer */
 static char *paste_slot_buffer = NULL;
@@ -76,84 +78,130 @@ static void paste_slot_puts(struct video *vp, int *col, int max_col,
     }
 }
 
-static int paste_slot_display_colored(void)
+static void paste_slot_clear_inline_row(int row, int start_col, HighlightStyle style)
 {
-    extern int updupd(int force);
-    extern struct video **vscreen;
+    if (!term || !vscreen || row < 0 || row >= term->t_nrow || !vscreen[row])
+        return;
+    if (start_col < 0)
+        start_col = 0;
+    if (start_col > term->t_ncol)
+        start_col = term->t_ncol;
 
-    if (!term || !vscreen || !highlight_is_enabled())
-        return 0;
-    if (term->t_nrow < 4 || term->t_ncol < 8)
-        return 0;
+    for (int col = start_col; col < term->t_ncol; col++)
+        paste_slot_set_cell(vscreen[row], col, ' ', style);
+    vscreen[row]->v_flag |= VFCHG | VFCOL;
+}
+
+static int paste_slot_draw_bytes(int row, int col, const char *content,
+                                 int start, int len, HighlightStyle style)
+{
+    int pos = start;
+
+    if (!term || !vscreen || !content || row < 0 || row >= term->t_nrow)
+        return col;
+    if (!vscreen[row])
+        return col;
+
+    while (pos < len && col < term->t_ncol) {
+        unicode_t uc;
+        int bytes = paste_slot_decode(content, pos, len, &uc);
+        int width;
+
+        if (bytes <= 0)
+            break;
+        if (uc == '\n' || uc == '\r')
+            break;
+
+        width = mystrnlen_raw_w(uc);
+        if (width <= 0)
+            width = 1;
+        if (col + width > term->t_ncol)
+            break;
+
+        paste_slot_set_cell(vscreen[row], col, uc, style);
+        for (int i = 1; i < width && col + i < term->t_ncol; i++)
+            paste_slot_set_cell(vscreen[row], col + i, 0, style);
+        col += width;
+        pos += bytes;
+    }
+
+    vscreen[row]->v_flag |= VFCHG | VFCOL;
+    return col;
+}
+
+void paste_slot_draw_inline_preview(int start_row, int start_col, int text_left_col)
+{
+    if (!term || !vscreen || !curwp || !curwp->w_dotp || !highlight_is_enabled())
+        return;
+    if (paste_slot_buffer == NULL || paste_slot_size <= 0 || !paste_slot_active)
+        return;
+    if (start_row < 0 || start_row >= term->t_nrow)
+        return;
 
     HighlightStyle normal = colorscheme_get(HL_NORMAL);
-    HighlightStyle border = colorscheme_get(HL_COMMENT);
     HighlightStyle green = normal;
     green.fg = 2;
     green.bold = true;
 
-    int rows = term->t_nrow;
-    int cols = term->t_ncol;
-
-    for (int r = 0; r < rows; r++) {
-        struct video *vp = vscreen[r];
-        if (!vp)
-            return 0;
-        for (int c = 0; c < cols; c++)
-            paste_slot_set_cell(vp, c, ' ', normal);
-        vp->v_flag |= VFCHG | VFCOL;
-    }
-
-    for (int c = 0; c < cols; c++) {
-        paste_slot_set_cell(vscreen[0], c, '-', border);
-        paste_slot_set_cell(vscreen[rows - 2], c, '-', border);
-    }
-
-    int col = 2;
-    paste_slot_puts(vscreen[0], &col, cols - 1, "Paste Preview", green);
-
-    const char *content = paste_slot_buffer ? paste_slot_buffer : "";
+    bool cleared[MAXROW + 1] = { false };
+    const char *content = paste_slot_buffer;
     int content_len = paste_slot_size;
-    int byte_pos = 0;
-    int row = 2;
+    int row = start_row;
+    int col = start_col;
+    int pos = 0;
+    int suffix_start = curwp->w_doto;
+    int suffix_len = llength(curwp->w_dotp);
+    const char *suffix = (const char *)ltext(curwp->w_dotp);
 
-    while (byte_pos < content_len && row < rows - 2) {
-        col = 2;
-        while (byte_pos < content_len && col < cols - 2) {
-            unsigned char c = (unsigned char)content[byte_pos];
+    if (text_left_col < 0)
+        text_left_col = 0;
+    if (start_col < text_left_col)
+        start_col = text_left_col;
+    col = start_col;
+    if (suffix_start < 0)
+        suffix_start = 0;
+    if (suffix_start > suffix_len)
+        suffix_start = suffix_len;
 
-            if (c == '\n' || c == '\r') {
-                if (c == '\r' && byte_pos + 1 < content_len &&
-                    content[byte_pos + 1] == '\n')
-                    byte_pos++;
-                byte_pos++;
-                break;
-            }
-
-            unicode_t uc;
-            int bytes = paste_slot_decode(content, byte_pos, content_len, &uc);
-            int width = mystrnlen_raw_w(uc);
-            if (bytes <= 0)
-                break;
-            if (width <= 0)
-                width = 1;
-            if (col + width > cols - 2)
-                break;
-
-            paste_slot_set_cell(vscreen[row], col, uc, green);
-            col += width;
-            byte_pos += bytes;
+    while (pos < content_len && row < term->t_nrow - 1) {
+        if (!cleared[row]) {
+            paste_slot_clear_inline_row(row, (row == start_row) ? start_col : text_left_col, normal);
+            cleared[row] = true;
         }
-        row++;
+
+        while (pos < content_len && row < term->t_nrow - 1) {
+            unsigned char ch = (unsigned char)content[pos];
+            if (ch == '\n' || ch == '\r')
+                break;
+            col = paste_slot_draw_bytes(row, col, content, pos, content_len, green);
+            while (pos < content_len && content[pos] != '\n' && content[pos] != '\r')
+                pos++;
+            break;
+        }
+
+        if (pos < content_len && (content[pos] == '\n' || content[pos] == '\r')) {
+            if (content[pos] == '\r' && pos + 1 < content_len && content[pos + 1] == '\n')
+                pos++;
+            pos++;
+            row++;
+            col = text_left_col;
+        }
     }
 
-    col = 2;
-    paste_slot_puts(vscreen[rows - 1], &col, cols - 1,
-                    "Press 'p' to paste, ESC/Ctrl+G/BS to cancel", green);
+    if (row < term->t_nrow - 1) {
+        if (!cleared[row])
+            paste_slot_clear_inline_row(row, (row == start_row) ? start_col : text_left_col, normal);
+        paste_slot_draw_bytes(row, col, suffix, suffix_start, suffix_len, normal);
+    }
 
-    updupd(TRUE);
-    TTflush();
-    return 1;
+    if (term->t_nrow > 0 && vscreen[term->t_nrow - 1]) {
+        int footer_col = 0;
+        paste_slot_clear_inline_row(term->t_nrow - 1, 0, normal);
+        paste_slot_puts(vscreen[term->t_nrow - 1], &footer_col, term->t_ncol,
+                        "Paste preview: press 'p' to paste, ESC/Ctrl+G/BS to cancel",
+                        green);
+        vscreen[term->t_nrow - 1]->v_flag |= VFCHG | VFCOL;
+    }
 }
 
 /* Initialize paste slot buffer */
@@ -257,8 +305,14 @@ void paste_slot_display(void)
     int byte_pos = 0;
     char *title = " PASTE SLOT ";
 
-    if (paste_slot_display_colored())
+    if (highlight_is_enabled()) {
+        if (curwp)
+            curwp->w_flag |= WFHARD | WFMODE;
+        sgarbf = TRUE;
+        update(TRUE);
+        mlwrite("Paste preview: press 'p' to paste, ESC/Ctrl+G/BS to cancel");
         return;
+    }
 
     if (!term || !vscreen || term->t_nrow < 4 || term->t_ncol < 8)
         return;

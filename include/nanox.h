@@ -95,5 +95,6 @@ void nanox_cleanup(void);
 /* Paste slot functions */
 int paste_slot_handle_key(int c);
 int check_paste_slot_active(void);
+void paste_slot_draw_inline_preview(int start_row, int start_col, int text_left_col);
 
 #endif /* NANOX_H_ */
