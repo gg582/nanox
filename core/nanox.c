@@ -652,6 +652,7 @@ static const char *nanox_help_sheet[] = {
 "F9-F12 : File Slots     F8/^Y : Paste           ------------------",
     "===============================================================================",
 "* Ctrl+V opens command mode (empty bracketed paste also falls back here)",
+    "* Terminal paste in color mode opens a green preview; press p to insert it",
     "* viblock-edit inserts the same text on each selected line",
     "* viblock-replace replaces the whole selected block with one input string",
     "* viblock-set-nr start-end [rev] rewrites numbered list prefixes in range",
@@ -1529,11 +1530,12 @@ static HelpCategory help_categories[] = {
             "  Ctrl+F / F5     - Find / Search engine",
             "  Ctrl+V          - Open Command Mode",
             "  Ctrl+Space      - Trigger Autocomplete",
+            "  Paste preview   - Press p to insert, Esc/Ctrl+G/BS to cancel",
             "",
             "Use F1 / Ctrl+H at any time to open this menu.",
             "Use Command Mode (help or h) for the full reference manual."
         },
-        11
+        12
     },
     {
         "2. LSP & Autocomplete",
@@ -1624,14 +1626,21 @@ bool interactive_help_active = false;
 
 void draw_interactive_help(void)
 {
+    if (!term || !vscreen || term->t_nrow <= 0 || term->t_ncol <= 0)
+        return;
+
     HighlightStyle normal = colorscheme_get(HL_NORMAL);
     HighlightStyle comment = colorscheme_get(HL_COMMENT);
     HighlightStyle keyword = colorscheme_get(HL_KEYWORD);
 
     int max_r = term->t_nrow - 2;
+    if (max_r < 0)
+        return;
 
     for (int r = 0; r <= max_r && r < term->t_nrow; r++) {
         struct video *vp = vscreen[r];
+        if (!vp)
+            return;
         for (int c = 0; c < term->t_ncol; c++) {
             vp->v_text[c].ch = ' ';
             vp->v_text[c].fg = normal.fg;
@@ -1644,6 +1653,8 @@ void draw_interactive_help(void)
     }
 
     struct video *hdr = vscreen[0];
+    if (!hdr)
+        return;
     const char *header = " [ Nanox Interactive Help System ]";
     int col = 0;
     while (header[col] && col < term->t_ncol) {
@@ -1654,7 +1665,16 @@ void draw_interactive_help(void)
     }
 
     int separator_col = 26;
+    if (separator_col >= term->t_ncol)
+        separator_col = term->t_ncol / 3;
+    if (separator_col < 8)
+        separator_col = 8;
+    if (separator_col >= term->t_ncol)
+        separator_col = term->t_ncol - 1;
+
     for (int r = 2; r < max_r && r < term->t_nrow; r++) {
+        if (!vscreen[r])
+            return;
         vscreen[r]->v_text[separator_col].ch = 0x2502;
         vscreen[r]->v_text[separator_col].fg = comment.fg;
     }
@@ -1663,6 +1683,8 @@ void draw_interactive_help(void)
         int row_idx = 2 + i * 2;
         if (row_idx >= max_r) break;
         struct video *vp = vscreen[row_idx];
+        if (!vp)
+            return;
         const char *name = help_categories[i].name;
         int c = 2;
         while (name[c - 2] && c < separator_col - 1) {
@@ -1683,14 +1705,20 @@ void draw_interactive_help(void)
         int row_idx = 2 + l;
         if (row_idx >= max_r) break;
         struct video *vp = vscreen[row_idx];
+        if (!vp)
+            return;
         const char *line = cat->lines[l];
         if (!line) break;
         int c = separator_col + 2;
         int idx = 0;
+        int len = (int)strlen(line);
         while (line[idx] && c < term->t_ncol - 2) {
             unicode_t uc;
-            int bytes = utf8_to_unicode((unsigned char *)line, idx, strlen(line), &uc);
-            if (bytes <= 0) break;
+            int bytes = utf8_to_unicode((unsigned char *)line, idx, len, &uc);
+            if (bytes <= 0 || idx + bytes > len) {
+                uc = (unsigned char)line[idx];
+                bytes = 1;
+            }
             vp->v_text[c].ch = uc;
             vp->v_text[c].fg = (l == 0) ? keyword.fg : normal.fg;
             vp->v_text[c].bold = (l == 0);
@@ -1700,6 +1728,8 @@ void draw_interactive_help(void)
     }
 
     struct video *ftr = vscreen[max_r];
+    if (!ftr)
+        return;
     for (int c = 0; c < term->t_ncol; c++) {
         ftr->v_text[c].ch = '-';
         ftr->v_text[c].fg = comment.fg;

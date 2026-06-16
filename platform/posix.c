@@ -358,6 +358,9 @@ int handle_bracketed_paste(void)
                 break;
             }
             TT.nr += count;
+        } else if (TT.nr >= (int)sizeof(TT.buf)) {
+            paste_active = 0;
+            break;
         }
         
         if (TT.nr == 0)
@@ -379,7 +382,12 @@ int handle_bracketed_paste(void)
         TT.nr--;
         memmove(TT.buf, TT.buf + 1, TT.nr);
         
-        paste_slot_add_char(c);
+        if (!paste_slot_add_char((char)c)) {
+            paste_slot_clear();
+            paste_slot_set_active(0);
+            mlwrite("Paste buffer allocation failed");
+            return 1;
+        }
     }
     
     /*
