@@ -606,6 +606,7 @@ static void execute_command(const char *input) {
         file_tree_active = true;
         file_tree_init_workspace();
         sgarbf = TRUE;
+        curwp->w_flag |= WFHARD | WFMODE;
         update(TRUE);
         return;
     }
@@ -613,6 +614,7 @@ static void execute_command(const char *input) {
         extern bool file_tree_active;
         file_tree_active = false;
         sgarbf = TRUE;
+        curwp->w_flag |= WFHARD | WFMODE;
         update(TRUE);
         return;
     }

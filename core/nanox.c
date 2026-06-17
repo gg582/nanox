@@ -810,6 +810,7 @@ void help_close(void)
 {
     help_active = false;
     sgarbf = TRUE;
+    curwp->w_flag |= WFHARD | WFMODE;
     update(TRUE);
 }
 
@@ -1327,7 +1328,7 @@ void file_tree_draw(void)
 
             const char *indicator = "";
             if (node->is_dir) {
-                indicator = node->is_open ? "▼ " : "▶ ";
+                indicator = node->is_open ? "v " : "> ";
             } else {
                 indicator = "  ";
             }
@@ -1347,27 +1348,15 @@ void file_tree_draw(void)
                 i += bytes;
             }
 
-            if (node->is_dir) {
-                const char *ficon = "📁 ";
+            {
+                const char *ficon = node->is_dir ? "[D] " : "[F] ";
                 int fi = 0;
                 while (ficon[fi] && col < file_tree_width - 2) {
                     unicode_t uc;
                     int bytes = utf8_to_unicode((unsigned char *)ficon, fi, strlen(ficon), &uc);
                     if (bytes <= 0) break;
                     vp->v_text[col].ch = uc;
-                    vp->v_text[col].fg = keyword.fg;
-                    col++;
-                    fi += bytes;
-                }
-            } else {
-                const char *ficon = "📄 ";
-                int fi = 0;
-                while (ficon[fi] && col < file_tree_width - 2) {
-                    unicode_t uc;
-                    int bytes = utf8_to_unicode((unsigned char *)ficon, fi, strlen(ficon), &uc);
-                    if (bytes <= 0) break;
-                    vp->v_text[col].ch = uc;
-                    vp->v_text[col].fg = comment.fg;
+                    vp->v_text[col].fg = node->is_dir ? keyword.fg : comment.fg;
                     col++;
                     fi += bytes;
                 }
@@ -1392,7 +1381,7 @@ void file_tree_draw(void)
             }
         }
 
-        vp->v_text[file_tree_width - 1].ch = 0x2502;
+        vp->v_text[file_tree_width - 1].ch = '|';
         vp->v_text[file_tree_width - 1].fg = comment.fg;
         vp->v_text[file_tree_width - 1].bg = normal.bg;
         vp->v_flag |= VFCHG;
@@ -1510,6 +1499,9 @@ void command_mode_run_file_tree(void) {
     }
 
     mlwrite("Exited File Tree Mode.");
+    sgarbf = TRUE;
+    curwp->w_flag |= WFHARD | WFMODE;
+    update(TRUE);
 }
 
 typedef struct {
@@ -1785,6 +1777,7 @@ int nanox_help_command(int f, int n)
 
     mlwrite("");
     sgarbf = TRUE;
+    curwp->w_flag |= WFHARD | WFMODE;
     update(TRUE);
     return TRUE;
 }
