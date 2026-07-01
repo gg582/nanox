@@ -96,30 +96,33 @@ void command_mode_handle_raw_sig(const char *args) {
     }
 
     char out[NSTRING];
-    int pos = 0;
+    size_t pos = 0;
 
     if (strcasecmp(type, "bytes") == 0) {
         unsigned char data[MAX_SIG_BUF];
         if (n > MAX_SIG_BUF) n = MAX_SIG_BUF;
         if (n < 0) n = 0;
-        int nread = (int)fread(data, 1, (size_t)n, fp);
-        
-        pos += snprintf(out + pos, (size_t)((int)sizeof(out) - pos), "[0x%04lX] ", offset);
-        
-        for (int i = 0; i < nread; i++) {
-            pos += snprintf(out + pos, (size_t)((int)sizeof(out) - pos), "%02X ", data[i]);
-            if (align > 0 && (i + 1) % align == 0 && i + 1 < nread) {
-                pos += snprintf(out + pos, (size_t)((int)sizeof(out) - pos), "| ");
+        size_t nread = fread(data, 1, (size_t)n, fp);
+
+        pos += snprintf(out + pos, sizeof(out) - pos, "[0x%04lX] ", offset);
+        if (pos > sizeof(out)) pos = sizeof(out);
+
+        for (size_t i = 0; i < nread; i++) {
+            pos += snprintf(out + pos, sizeof(out) - pos, "%02X ", data[i]);
+            if (pos > sizeof(out)) pos = sizeof(out);
+            if (align > 0 && (int)(i + 1) % align == 0 && i + 1 < nread) {
+                pos += snprintf(out + pos, sizeof(out) - pos, "| ");
+                if (pos > sizeof(out)) pos = sizeof(out);
             }
         }
-        
-        if (pos < (int)sizeof(out) - 4) {
+
+        if (pos < sizeof(out) - 4) {
             strcat(out + pos, "| ");
             pos += 2;
         }
 
-        for (int i = 0; i < nread; i++) {
-            if (pos >= (int)sizeof(out) - 1) break;
+        for (size_t i = 0; i < nread; i++) {
+            if (pos >= sizeof(out) - 1) break;
             unsigned char c = data[i];
             if (c >= 0x20 && c <= 0x7E) out[pos++] = (char)c;
             else out[pos++] = '.';
@@ -128,13 +131,13 @@ void command_mode_handle_raw_sig(const char *args) {
 
         const char *match = NULL;
         for (int i = 0; magic_numbers[i].name; i++) {
-            if (nread >= magic_numbers[i].len && memcmp(data, magic_numbers[i].sig, (size_t)magic_numbers[i].len) == 0) {
+            if ((int)nread >= magic_numbers[i].len && memcmp(data, magic_numbers[i].sig, (size_t)magic_numbers[i].len) == 0) {
                 match = magic_numbers[i].name;
                 break;
             }
         }
         if (match) {
-            snprintf(out + pos, (size_t)((int)sizeof(out) - pos), " (Format: %s)", match);
+            snprintf(out + pos, sizeof(out) - pos, " (Format: %s)", match);
         }
         mlwrite("%s", out);
     } else if (strcasecmp(type, "bits") == 0) {
@@ -146,16 +149,18 @@ void command_mode_handle_raw_sig(const char *args) {
         int bytes_to_read = (n + start_bit + 7) / 8;
         if (bytes_to_read > MAX_SIG_BUF) bytes_to_read = MAX_SIG_BUF;
         if (bytes_to_read < 0) bytes_to_read = 0;
-        int nread = (int)fread(data, 1, (size_t)bytes_to_read, fp);
+        size_t nread = fread(data, 1, (size_t)bytes_to_read, fp);
 
-        pos += snprintf(out + pos, (size_t)((int)sizeof(out) - pos), "[0x%04lX] ", offset);
+        pos += snprintf(out + pos, sizeof(out) - pos, "[0x%04lX] ", offset);
+        if (pos > sizeof(out)) pos = sizeof(out);
         if (bits_nr > 0 && n == 1) {
              pos = snprintf(out, sizeof(out), "[0x%04lX] bit[%d]: ", offset, bits_nr);
+             if (pos > sizeof(out)) pos = sizeof(out);
         }
 
         unsigned long long val = 0;
         int bits_left = n;
-        int curr_byte = 0;
+        size_t curr_byte = 0;
         int curr_bit = start_bit;
 
         while (bits_left > 0 && curr_byte < nread) {
@@ -165,8 +170,8 @@ void command_mode_handle_raw_sig(const char *args) {
             else
                 bit = (data[curr_byte] >> (7 - curr_bit)) & 1;
 
-            if (pos < (int)sizeof(out) - 2) out[pos++] = bit ? '1' : '0';
-            
+            if (pos < sizeof(out) - 2) out[pos++] = bit ? '1' : '0';
+
             if (endian_le)
                 val |= ((unsigned long long)bit << (n - bits_left));
             else
@@ -176,14 +181,14 @@ void command_mode_handle_raw_sig(const char *args) {
             if (curr_bit == 8) {
                 curr_bit = 0;
                 curr_byte++;
-                if (bits_left > 1 && pos < (int)sizeof(out) - 2) out[pos++] = ' ';
+                if (bits_left > 1 && pos < sizeof(out) - 2) out[pos++] = ' ';
             }
             bits_left--;
         }
         out[pos] = '\0';
-        
+
         if (n > 1) {
-            snprintf(out + pos, (size_t)((int)sizeof(out) - pos), " (Dec: %llu)", val);
+            snprintf(out + pos, sizeof(out) - pos, " (Dec: %llu)", val);
         }
         mlwrite("%s", out);
     } else {

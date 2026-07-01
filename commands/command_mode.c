@@ -263,7 +263,7 @@ static void command_mode_write_segment(const char *text, const HighlightStyle *s
 
     while (idx < len && *col < term->t_ncol) {
         unicode_t uc;
-        int consumed = utf8_to_unicode((unsigned char *)bytes, idx, len, &uc);
+        int consumed = utf8_to_unicode(bytes, idx, len, &uc);
         if (consumed <= 0)
             break;
         int width = mystrnlen_raw_w(uc);
@@ -1066,9 +1066,9 @@ static int command_mode_get_indent(const struct line *lp)
 {
     int col = 0;
     int i;
-    int len = llength((struct line *)lp);
+    int len = llength(lp);
     for (i = 0; i < len; ++i) {
-        int c = lgetc((struct line *)lp, i);
+        int c = lgetc(lp, i);
         if (c != ' ' && c != '\t')
             break;
         if (c == '\t')
@@ -1082,9 +1082,9 @@ static int command_mode_get_indent(const struct line *lp)
 static int command_mode_is_blank_line(const struct line *lp)
 {
     int i;
-    int len = llength((struct line *)lp);
+    int len = llength(lp);
     for (i = 0; i < len; ++i) {
-        int c = lgetc((struct line *)lp, i);
+        int c = lgetc(lp, i);
         if (c != ' ' && c != '\t')
             return FALSE;
     }
@@ -1134,13 +1134,13 @@ static int command_mode_detect_indent_step(void)
 static int command_mode_line_starts_with_closing_block(const struct line *lp)
 {
     int i = 0;
-    int len = llength((struct line *)lp);
+    int len = llength(lp);
     char word[32];
     int wlen = 0;
     char *ext = strrchr(curbp->b_fname, '.');
 
     while (i < len) {
-        int c = lgetc((struct line *)lp, i);
+        int c = lgetc(lp, i);
         if (c != ' ' && c != '\t')
             break;
         i++;
@@ -1149,13 +1149,13 @@ static int command_mode_line_starts_with_closing_block(const struct line *lp)
         return FALSE;
 
     {
-        int c = lgetc((struct line *)lp, i);
+        int c = lgetc(lp, i);
         if (c == '}' || c == ')' || c == ']')
             return TRUE;
     }
 
     while (i < len && wlen < (int)sizeof(word) - 1) {
-        int c = lgetc((struct line *)lp, i);
+        int c = lgetc(lp, i);
         if (c == ' ' || c == '\t' || c == '\n' ||
             c == '(' || c == '{' || c == '[' || c == ')' || c == '}' || c == ']')
             break;
@@ -1187,10 +1187,10 @@ static int command_mode_line_starts_with_closing_block(const struct line *lp)
 static int command_mode_line_ends_with_open_block(const struct line *lp)
 {
     int i;
-    int len = llength((struct line *)lp);
+    int len = llength(lp);
 
     for (i = len - 1; i >= 0; --i) {
-        int c = lgetc((struct line *)lp, i);
+        int c = lgetc(lp, i);
         if (c == ' ' || c == '\t')
             continue;
         return (c == '{' || c == '(' || c == '[') ? TRUE : FALSE;
@@ -1714,7 +1714,7 @@ int line_offset_for_column(struct line *lp, int target_col, int *actual_col)
 
     while (idx < len) {
         unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)ltext(lp), idx, len, &c);
+        int bytes = utf8_to_unicode(ltext(lp), idx, len, &c);
         int next_col;
 
         if (bytes <= 0)

@@ -1,5 +1,6 @@
 #include "mymemory.h"
 
+#include <limits.h>
 #include <lz4.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -40,7 +41,7 @@ static int expand_proxy_table(void)
 {
     int new_cap = proxy_table_capacity + PROXY_CHUNK_SIZE;
     struct HandleSlot *new_table =
-        (struct HandleSlot *)realloc(proxy_table, (size_t)new_cap * sizeof(struct HandleSlot));
+        realloc(proxy_table, (size_t)new_cap * sizeof(struct HandleSlot));
 
     if (new_table == NULL)
         return 0;
@@ -87,7 +88,10 @@ static int thaw_handle(struct HandleSlot *slot)
     if (slot->state == STATE_HOT)
         return 1;
 
-    hot_buf = (char *)malloc(slot->raw_size == 0 ? 1u : (size_t)slot->raw_size);
+    if (slot->comp_size > INT_MAX || slot->raw_size > INT_MAX)
+        return 0;
+
+    hot_buf = malloc(slot->raw_size == 0 ? 1u : (size_t)slot->raw_size);
     if (hot_buf == NULL)
         return 0;
 
@@ -151,7 +155,7 @@ MemoryHandle my_handle_calloc(size_t nmemb, size_t size)
 
 MemoryHandle my_handle_realloc(MemoryHandle h, size_t size)
 {
-    struct HandleSlot *slot = (struct HandleSlot *)h;
+    struct HandleSlot *slot = h;
     void *new_ptr;
     size_t alloc_size = size == 0 ? 1u : size;
 
@@ -176,7 +180,7 @@ MemoryHandle my_handle_realloc(MemoryHandle h, size_t size)
 
 void my_handle_ref(MemoryHandle h)
 {
-    struct HandleSlot *slot = (struct HandleSlot *)h;
+    struct HandleSlot *slot = h;
 
     if (slot != NULL && slot->is_active)
         slot->ref_count++;
@@ -184,7 +188,7 @@ void my_handle_ref(MemoryHandle h)
 
 void my_handle_free(MemoryHandle h)
 {
-    struct HandleSlot *slot = (struct HandleSlot *)h;
+    struct HandleSlot *slot = h;
 
     if (slot == NULL || !slot->is_active)
         return;
@@ -199,7 +203,7 @@ void my_handle_free(MemoryHandle h)
 
 int my_handle_ref_count(MemoryHandle h)
 {
-    struct HandleSlot *slot = (struct HandleSlot *)h;
+    struct HandleSlot *slot = h;
 
     if (slot == NULL || !slot->is_active)
         return 0;
@@ -208,7 +212,7 @@ int my_handle_ref_count(MemoryHandle h)
 
 void *handle_deref(MemoryHandle h)
 {
-    struct HandleSlot *slot = (struct HandleSlot *)h;
+    struct HandleSlot *slot = h;
 
     if (slot == NULL || !slot->is_active)
         return NULL;
@@ -231,9 +235,11 @@ int mymemory_freeze(void *p)
         return 0;
     if (slot->raw_size < COLD_MIN_BYTES)
         return 0;
+    if (slot->raw_size > INT_MAX)
+        return 0;
 
     max_comp = LZ4_compressBound((int)slot->raw_size);
-    comp_buf = (char *)malloc((size_t)max_comp);
+    comp_buf = malloc((size_t)max_comp);
     if (comp_buf == NULL)
         return 0;
 
@@ -245,7 +251,7 @@ int mymemory_freeze(void *p)
         return 0;
     }
 
-    shrunk_buf = (char *)realloc(comp_buf, (size_t)actual_comp);
+    shrunk_buf = realloc(comp_buf, (size_t)actual_comp);
     if (shrunk_buf == NULL)
         shrunk_buf = comp_buf;
 

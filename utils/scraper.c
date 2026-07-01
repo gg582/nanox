@@ -47,7 +47,9 @@ static pthread_cond_t job_cond = PTHREAD_COND_INITIALIZER;
 static pthread_t worker_thread;
 static int worker_started = 0;
 
-static const char python_script[] =
+/* Non-const arrays: execv() requires writable pointers, but the interpreters
+ * do not modify these script buffers. */
+static char python_script[] =
     "import importlib,sys\n"
     "mod=sys.argv[1]\n"
     "try:\n"
@@ -57,7 +59,7 @@ static const char python_script[] =
     "except Exception:\n"
     "    pass\n";
 
-static const char node_script[] =
+static char node_script[] =
     "const mod=process.argv[1];\n"
     "try {\n"
     "  const m=require(mod);\n"
@@ -302,19 +304,30 @@ static int run_child_process(const char *prog, char *const argv[],
 static int run_language_command(scraper_lang_t lang, const char *module,
                                 char *buffer, size_t bufsz)
 {
+    char *module_copy;
+    int rc;
+
     if (!module || !*module)
         return -1;
+
+    module_copy = strdup(module);
+    if (module_copy == NULL)
+        return -1;
+
     if (lang == SCRAPER_LANG_PYTHON) {
-        char *const argv[] = { "python3", "-c", (char *)python_script,
-                               (char *)module, NULL };
-        return run_child_process("python3", argv, buffer, bufsz);
+        char *const argv[] = { "python3", "-c", python_script,
+                               module_copy, NULL };
+        rc = run_child_process("python3", argv, buffer, bufsz);
+    } else if (lang == SCRAPER_LANG_NODE) {
+        char *const argv[] = { "node", "-e", node_script,
+                               module_copy, NULL };
+        rc = run_child_process("node", argv, buffer, bufsz);
+    } else {
+        rc = -1;
     }
-    if (lang == SCRAPER_LANG_NODE) {
-        char *const argv[] = { "node", "-e", (char *)node_script,
-                               (char *)module, NULL };
-        return run_child_process("node", argv, buffer, bufsz);
-    }
-    return -1;
+
+    free(module_copy);
+    return rc;
 }
 
 typedef struct {

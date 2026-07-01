@@ -242,7 +242,7 @@ char *gtenv(char *vname)
     case EVRAM:
         return itoa((int)(envram / 1024l));
     case EVFLICKER:
-        return ltos(flickcode);
+        return ltos(FALSE);
     case EVCURWIDTH:
         return itoa(term->t_ncol);
     case EVCBUFNAME:
@@ -514,7 +514,6 @@ int svar(struct variable_description *var, char *value)
         case EVRAM:
             break;
         case EVFLICKER:
-            flickcode = stol(value);
             break;
         case EVCURWIDTH:
             status = newwidth(TRUE, atoi(value));

@@ -49,7 +49,7 @@ int lockchk(char *fname)
         return ABORT;
 
     /* we have now locked or overriden it, add it to our table */
-    lname[numlocks] = (char *)malloc(strlen(fname) + 1);
+    lname[numlocks] = malloc(strlen(fname) + 1);
     if (lname[numlocks] == NULL) {  /* malloc failure */
         if (status == TRUE) undolock(fname);        /* free the lock if we own it */
         mlwrite("Cannot lock, out of memory");

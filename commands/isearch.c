@@ -194,7 +194,7 @@ void minibuf_update(const char *prompt)
     
     /* Output prompt - each byte with proper UTF-8 handling */
     if (prompt) {
-        unsigned char *p = (unsigned char *)prompt;
+        const unsigned char *p = (const unsigned char *)prompt;
         int plen = strlen(prompt);
         int pi = 0;
         while (pi < plen) {
@@ -277,7 +277,7 @@ void minibuf_show(const char *msg)
     int col = 0;
     int i, len;
     unicode_t c;
-    unsigned char *text;
+    const unsigned char *text;
     
     /* Move to bottom line */
     movecursor(term->t_nrow, 0);
@@ -289,7 +289,7 @@ void minibuf_show(const char *msg)
     }
     
     /* Display message content with proper UTF-8 handling */
-    text = (unsigned char *)msg;
+    text = (const unsigned char *)msg;
     len = strlen(msg);
     i = 0;
     
@@ -431,7 +431,7 @@ int minibuf_input(const char *prompt, char *dest, int max_len)
                     int sel_len = strlen(selected);
                     while (i < sel_len) {
                         unicode_t uc;
-                        int bytes = utf8_to_unicode((unsigned char *)selected, i, sel_len, &uc);
+                        int bytes = utf8_to_unicode((const unsigned char *)selected, i, sel_len, &uc);
                         if (bytes <= 0) break;
                         minibuf_insert_char(uc);
                         i += bytes;

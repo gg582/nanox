@@ -633,7 +633,13 @@ typedef struct {
 
 static int word_freq_compare(const void *a, const void *b)
 {
-    return ((WordFreq *)b)->count - ((WordFreq *)a)->count;
+    const WordFreq *wa = a;
+    const WordFreq *wb = b;
+    if (wb->count > wa->count)
+        return 1;
+    if (wb->count < wa->count)
+        return -1;
+    return 0;
 }
 
 static void extract_dynamic_profile(struct buffer *bp)

@@ -1200,7 +1200,7 @@ static char *clearbits(void)
     char *cclmap;
     int i;
 
-    if ((cclmap = cclstart = (char *)malloc(HIBYTE)) != NULL) {
+    if ((cclmap = cclstart = malloc(HIBYTE)) != NULL) {
         for (i = 0; i < HIBYTE; i++)
             *cclmap++ = 0;
     }

@@ -10,7 +10,6 @@ char golabel[NPAT] = "";            /* current line to go to        */
 int execlevel = 0;          /* execution IF level           */
 int eolexist = TRUE;            /* does clear to EOL exist      */
 int revexist = FALSE;           /* does reverse video exist?    */
-int flickcode = FALSE;          /* do flicker supression?       */
 char *modename[] = {            /* name of modes                */
     "WRAP", "CMODE", "SPELL", "EXACT", "VIEW", "OVER",
     "MAGIC", "ASAVE", "UTF-8"

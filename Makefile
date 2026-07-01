@@ -13,6 +13,7 @@ MODULES = core commands io platform utils features tui
 CC ?= gcc
 CFLAGS = -std=c2x -O2 -g \
          -Wall -Wextra -Wshadow -Wformat=2 -Wundef -Wconversion \
+         -Wcast-qual -Wcast-align -Wpointer-arith \
          -fstack-protector-strong -fno-common -ffunction-sections -fdata-sections \
          -Iinclude \
          $(foreach mod,$(MODULES),-I$(mod)) \
@@ -60,8 +61,7 @@ ifneq ($(USE_NCURSES),1)
     SRC := $(filter-out tui/ncurses.c,$(SRC))
 endif
 
-# Always exclude orig_display.c
-SRC := $(filter-out tui/orig_display.c,$(SRC))
+
 
 OBJ = $(SRC:%.c=$(BUILD_DIR)/%.o)
 DEP = $(OBJ:.o=.d)

@@ -14,7 +14,7 @@
  * NOTE 2! Invalid and overlong UTF-8 is converted to U+FFFD while advancing
  * by one byte so callers can recover safely.
  */
-unsigned utf8_to_unicode(unsigned char *line, unsigned index, unsigned len, unicode_t *res)
+unsigned utf8_to_unicode(const unsigned char *line, unsigned index, unsigned len, unicode_t *res)
 {
     if (!line || !res || index >= len)
         return 0;

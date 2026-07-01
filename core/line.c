@@ -43,7 +43,7 @@ struct line *lalloc(int used)
     size = (used + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
     if (size == 0)              /* Assume that is an empty. */
         size = BLOCK_SIZE;      /* Line is for type-in. */
-    if ((lp = (struct line *)malloc(sizeof(struct line))) == NULL) {
+    if ((lp = malloc(sizeof(struct line))) == NULL) {
         mlwrite("(OUT OF MEMORY)");
         return NULL;
     }
@@ -126,7 +126,7 @@ void lfree(struct line *lp)
     lp->next->prev = lp->prev;
     if (lp->l_handle != NULL)
         my_handle_free(lp->l_handle);
-    free((char *)lp);
+    free(lp);
 }
 
 /*
@@ -412,8 +412,8 @@ int lover(char *ostr)
  */
 int lnewline(void)
 {
-	char *cp1;
-	char *cp2;
+	unsigned char *cp1;
+	unsigned char *cp2;
 	struct line *lp1;
 	struct line *lp2;
 	struct line *lp3;
@@ -457,9 +457,9 @@ int lnewline(void)
 	if ((lp2 = lalloc(lp1->used - doto)) == NULL)
 		return FALSE;
 
-	cp1 = (char *)&ltext(lp1)[doto];
-	cp2 = (char *)&ltext(lp2)[0];
-	while (cp1 != (char *)&ltext(lp1)[lp1->used])
+	cp1 = &ltext(lp1)[doto];
+	cp2 = &ltext(lp2)[0];
+	while (cp1 != &ltext(lp1)[lp1->used])
 		*cp2++ = *cp1++;
 
 	lp2->next = lp1->next;		/* Link in new line */
@@ -530,8 +530,8 @@ int ldelchar(long n, int kflag)
  */
 int ldelete(long n, int kflag)
 {
-	char *cp1;
-	char *cp2;
+	unsigned char *cp1;
+	unsigned char *cp2;
 	struct line *dotp;
 	int doto;
 	int chunk;
@@ -556,18 +556,17 @@ int ldelete(long n, int kflag)
 		}
         if (!l_unshare(dotp)) return FALSE;
 		lchange(WFHARD);
-		cp1 = (char *)&ltext(dotp)[doto];	/* Scrunch text.        */
+		cp1 = &ltext(dotp)[doto];	/* Scrunch text.        */
 		cp2 = cp1 + chunk;
 		if (kflag != FALSE) {		/* Kill?                */
 			while (cp1 != cp2) {
-				/* Cast to unsigned char to prevent sign extension */
-				if (kinsert((unsigned char)*cp1) == FALSE)
+				if (kinsert(*cp1) == FALSE)
 					return FALSE;
 				++cp1;
 			}
-			cp1 = (char *)&ltext(dotp)[doto];
+			cp1 = &ltext(dotp)[doto];
 		}
-		while (cp2 != (char *)&ltext(dotp)[dotp->used])
+		while (cp2 != &ltext(dotp)[dotp->used])
 			*cp1++ = *cp2++;
 		dotp->used -= chunk;
 		
@@ -715,8 +714,8 @@ int joinline(int f, int n)
  */
 int ldelnewline(void)
 {
-    char *cp1;
-    char *cp2;
+    unsigned char *cp1;
+    unsigned char *cp2;
     struct line *lp1;
     struct line *lp2;
     struct line *lp3;
@@ -735,9 +734,9 @@ int ldelnewline(void)
     }
     if (!l_unshare(lp1)) return FALSE;
     if (lp2->used <= lp1->size - lp1->used) {
-        cp1 = (char *)&ltext(lp1)[lp1->used];
-        cp2 = (char *)&ltext(lp2)[0];
-        while (cp2 != (char *)&ltext(lp2)[lp2->used])
+        cp1 = &ltext(lp1)[lp1->used];
+        cp2 = &ltext(lp2)[0];
+        while (cp2 != &ltext(lp2)[lp2->used])
             *cp1++ = *cp2++;
         wp = curwp;
         if (wp->w_linep == lp2)
@@ -756,17 +755,17 @@ int ldelnewline(void)
         if (curbp->b_hl_dirty_line == lp2)
             curbp->b_hl_dirty_line = lp1;
         if (lp2->l_handle) my_handle_free(lp2->l_handle);
-        free((char *)lp2);
+        free(lp2);
         return TRUE;
     }
     if ((lp3 = lalloc(lp1->used + lp2->used)) == NULL)
         return FALSE;
-    cp1 = (char *)&ltext(lp1)[0];
-    cp2 = (char *)&ltext(lp3)[0];
-    while (cp1 != (char *)&ltext(lp1)[lp1->used])
+    cp1 = &ltext(lp1)[0];
+    cp2 = &ltext(lp3)[0];
+    while (cp1 != &ltext(lp1)[lp1->used])
         *cp2++ = *cp1++;
-    cp1 = (char *)&ltext(lp2)[0];
-    while (cp1 != (char *)&ltext(lp2)[lp2->used])
+    cp1 = &ltext(lp2)[0];
+    while (cp1 != &ltext(lp2)[lp2->used])
         *cp2++ = *cp1++;
     lp1->prev->next = lp3;
     lp3->next = lp2->next;
@@ -790,9 +789,9 @@ int ldelnewline(void)
     if (curbp->b_hl_dirty_line == lp1 || curbp->b_hl_dirty_line == lp2)
         curbp->b_hl_dirty_line = lp3;
     if (lp1->l_handle) my_handle_free(lp1->l_handle);
-    free((char *)lp1);
+    free(lp1);
     if (lp2->l_handle) my_handle_free(lp2->l_handle);
-    free((char *)lp2);
+    free(lp2);
     return TRUE;
 }
 

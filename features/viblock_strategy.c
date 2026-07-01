@@ -25,7 +25,7 @@ static int block_visual_column(struct line *lp, int offset) {
     int len = lp ? llength(lp) : 0;
     while (lp && idx < offset && idx < len) {
         unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)ltext(lp), idx, len, &c);
+        int bytes = utf8_to_unicode(ltext(lp), idx, len, &c);
         if (bytes <= 0) break;
         col = next_column(col, c, tab_width);
         idx += bytes;

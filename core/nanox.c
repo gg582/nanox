@@ -95,7 +95,7 @@ static int get_visual_row_count(const char *line, int width)
 
         while (idx < len) {
              unicode_t u;
-             unsigned bytes = utf8_to_unicode((unsigned char*)line, idx, len, &u);
+             unsigned bytes = utf8_to_unicode((const unsigned char*)line, idx, len, &u);
              if (bytes == 0) bytes = 1;
              int w = unicode_width(u);
              if (w < 0) w = 0;
@@ -109,7 +109,7 @@ static int get_visual_row_count(const char *line, int width)
 
         if (chunk_len == 0 && idx < len) {
              unicode_t u;
-             unsigned bytes = utf8_to_unicode((unsigned char*)line, idx, len, &u);
+             unsigned bytes = utf8_to_unicode((const unsigned char*)line, idx, len, &u);
              chunk_len = bytes;
         }
         current_pos += chunk_len;
@@ -624,7 +624,7 @@ static void help_puts_width(const char *text, int max_cols)
 
     while (idx < len) {
         unicode_t uc;
-        int consumed = utf8_to_unicode((unsigned char *)bytes, idx, len, &uc);
+        int consumed = utf8_to_unicode(bytes, idx, len, &uc);
         if (consumed <= 0)
             break;
 
@@ -1336,7 +1336,7 @@ void file_tree_draw(void)
             int i = 0;
             while (indicator[i] && col < file_tree_width - 2) {
                 unicode_t uc;
-                int bytes = utf8_to_unicode((unsigned char *)indicator, i, strlen(indicator), &uc);
+                int bytes = utf8_to_unicode((const unsigned char *)indicator, i, strlen(indicator), &uc);
                 if (bytes <= 0) break;
                 vp->v_text[col].ch = uc;
                 if (node->is_dir) {
@@ -1353,7 +1353,7 @@ void file_tree_draw(void)
                 int fi = 0;
                 while (ficon[fi] && col < file_tree_width - 2) {
                     unicode_t uc;
-                    int bytes = utf8_to_unicode((unsigned char *)ficon, fi, strlen(ficon), &uc);
+                    int bytes = utf8_to_unicode((const unsigned char *)ficon, fi, strlen(ficon), &uc);
                     if (bytes <= 0) break;
                     vp->v_text[col].ch = uc;
                     vp->v_text[col].fg = node->is_dir ? keyword.fg : comment.fg;
@@ -1366,7 +1366,7 @@ void file_tree_draw(void)
             int name_len = strlen(node->name);
             while (i < name_len && col < file_tree_width - 2) {
                 unicode_t uc;
-                int bytes = utf8_to_unicode((unsigned char *)node->name, i, name_len, &uc);
+                int bytes = utf8_to_unicode((const unsigned char *)node->name, i, name_len, &uc);
                 if (bytes <= 0) break;
                 vp->v_text[col].ch = uc;
                 if (idx == file_tree_selected) {
@@ -1706,7 +1706,7 @@ void draw_interactive_help(void)
         int len = (int)strlen(line);
         while (line[idx] && c < term->t_ncol - 2) {
             unicode_t uc;
-            int bytes = utf8_to_unicode((unsigned char *)line, idx, len, &uc);
+            int bytes = utf8_to_unicode((const unsigned char *)line, idx, len, &uc);
             if (bytes <= 0 || idx + bytes > len) {
                 uc = (unsigned char)line[idx];
                 bytes = 1;

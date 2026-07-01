@@ -37,7 +37,7 @@ static int paste_slot_decode(const char *content, int byte_pos, int content_len,
     if (!content || !uc || byte_pos < 0 || byte_pos >= content_len)
         return 0;
 
-    bytes = utf8_to_unicode((unsigned char *)content, byte_pos, content_len, uc);
+    bytes = utf8_to_unicode((const unsigned char *)content, byte_pos, content_len, uc);
     if (bytes <= 0 || byte_pos + bytes > content_len) {
         *uc = (unsigned char)content[byte_pos];
         return 1;

@@ -284,7 +284,7 @@ static void completion_preview_apply_match(const char *match)
     curwp->w_doto = completion_preview_state.start_offset + completion_preview_state.prefix_len;
 
     if (tail_len > 0) {
-        linsert_block((char *)tail, tail_len);
+        linsert_block(tail, tail_len);
         curwp->w_doto = completion_preview_state.start_offset + completion_preview_state.prefix_len + tail_len;
     }
 
@@ -340,7 +340,7 @@ static void completion_write_utf8_clipped(const char *text, int max_width)
     int idx = 0;
     while (idx < len && used < max_width) {
         unicode_t uc;
-        int bytes = utf8_to_unicode((unsigned char *)text, idx, len, &uc);
+        int bytes = utf8_to_unicode((const unsigned char *)text, idx, len, &uc);
         if (bytes <= 0)
             break;
         int char_width = mystrnlen_raw_w(uc);
@@ -372,7 +372,7 @@ static int completion_write_utf8_ellipsized(const char *text, int max_width)
 
     while (idx < len && used < body_width) {
         unicode_t uc;
-        int bytes = utf8_to_unicode((unsigned char *)text, idx, len, &uc);
+        int bytes = utf8_to_unicode((const unsigned char *)text, idx, len, &uc);
         if (bytes <= 0)
             break;
         int char_width = mystrnlen_raw_w(uc);
@@ -2767,7 +2767,7 @@ static void completion_insert_text(const char *text)
 {
     if (text == NULL || *text == '\0')
         return;
-    linsert_block((char *)text, (int)strlen(text));
+    linsert_block(text, (int)strlen(text));
 }
 
 static void completion_insert_terminator_if_needed(void)

@@ -330,7 +330,7 @@ static void draw_hint_row(int row, const char *left, const char *status)
         
         while (left_i < left_len && display_col < width) {
             unicode_t c;
-            int bytes = utf8_to_unicode((unsigned char *)left, left_i, left_len, &c);
+            int bytes = utf8_to_unicode((const unsigned char *)left, left_i, left_len, &c);
             if (bytes <= 0)
                 break;
                         int char_width = mystrnlen_raw_w(c);
@@ -367,7 +367,7 @@ static void draw_hint_row(int row, const char *left, const char *status)
                     
                     while (status_i < status_len && display_col < width) {
                         unicode_t c;
-                        int bytes = utf8_to_unicode((unsigned char *)status, status_i, status_len, &c);
+                        int bytes = utf8_to_unicode((const unsigned char *)status, status_i, status_len, &c);
                         if (bytes <= 0)
                             break;
                         int char_width = mystrnlen_raw_w(c);
@@ -449,7 +449,7 @@ static void draw_hint_row(int row, const char *left, const char *status)
 
                 while (i < target) {
                     unicode_t c;
-                    int bytes = utf8_to_unicode((unsigned char *)ltext(lp), i, len, &c);
+                    int bytes = utf8_to_unicode(ltext(lp), i, len, &c);
                     if (bytes == 0)
                         break;
                     i += bytes;
@@ -914,7 +914,7 @@ static void show_line(struct window *wp, struct line *lp)
         }
 
         unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)ltext(lp), char_idx, len, &c);
+        int bytes = utf8_to_unicode(ltext(lp), char_idx, len, &c);
         if (bytes <= 0)
             bytes = 1;
         int next_col = next_column(text_col, c, tab_width);
@@ -1075,7 +1075,7 @@ static void show_line_wrapped(struct window *wp, struct line *lp)
         }
 
         unicode_t c;
-        int bytes = utf8_to_unicode((unsigned char *)ltext(lp), char_idx, len, &c);
+        int bytes = utf8_to_unicode(ltext(lp), char_idx, len, &c);
         if (bytes <= 0) bytes = 1;
 
         int w = get_char_width_rel(c, text_col);
@@ -1753,8 +1753,8 @@ void mlwrite(const char *fmt, ...)
     va_end(ap);
     nanox_message_prefix(dest.buf, final, sizeof(final));
     
-    unsigned char *p = (unsigned char *)final;
-    int len = strlen((char *)p);
+    const unsigned char *p = (const unsigned char *)final;
+    int len = strlen(final);
     int i = 0;
     while (i < len) {
         unicode_t uc;

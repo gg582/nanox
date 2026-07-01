@@ -28,7 +28,6 @@ int execlevel = 0;        /* execution IF level            */
 char *patmatch = NULL;        /* string that matched          */
 int eolexist = TRUE;        /* does clear to EOL exist?     */
 int revexist = FALSE;        /* does reverse video exist?    */
-int flickcode = FALSE;        /* do flicker supression?       */
 char *modename[] = {        /* mode names                   */
     "Wrap", "Cmode", "Spell", "Exact", "View", "Over",
     "Magic", "Crypt", "Asave"
@@ -147,7 +146,6 @@ extern int execlevel;        /* execution IF level            */
 extern char *patmatch;        /* string that matched          */
 extern int eolexist;        /* does clear to EOL exist?     */
 extern int revexist;        /* does reverse video exist?    */
-extern int flickcode;        /* do flicker supression?       */
 extern char *modename[];    /* mode names                   */
 extern char modecode[];        /* letters to represent modes   */
 extern int numlocks;        /* number of locks active       */
