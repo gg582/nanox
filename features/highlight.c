@@ -880,7 +880,8 @@ static bool profile_supports_at_annotations(const HighlightProfile *profile)
     return (strcasecmp(name, "java") == 0 ||
             strcasecmp(name, "kotlin") == 0 ||
             strcasecmp(name, "scala") == 0 ||
-            strcasecmp(name, "groovy") == 0);
+            strcasecmp(name, "groovy") == 0 ||
+            strcasecmp(name, "margo") == 0);
 }
 
 /* Find closing delimiter for markdown formatting
