@@ -222,6 +222,7 @@ static void config_defaults(void)
     nanox_cfg.autocomplete = true;
     nanox_cfg.use_lsp = false;
     nanox_cfg.use_auto_doc_completion = true;
+    nanox_cfg.comment_asterisk = 'l';
     nanox_cfg.nonr = false;
     nanox_cfg.no_function_slot = false;
     nanox_cfg.cold_storage_timeout = 30;
@@ -304,6 +305,13 @@ static void parse_edit_option(const char *key, const char *value)
             mark_config_error();
     } else if (strcasecmp(key, "use_auto_doc_completion") == 0) {
         if (!parse_bool(value, &nanox_cfg.use_auto_doc_completion))
+            mark_config_error();
+    } else if (strcasecmp(key, "comment_asterisk") == 0) {
+        if (strcasecmp(value, "l") == 0)
+            nanox_cfg.comment_asterisk = 'l';
+        else if (strcasecmp(value, "r") == 0)
+            nanox_cfg.comment_asterisk = 'r';
+        else
             mark_config_error();
     } else if (strcasecmp(key, "cold_storage_timeout") == 0) {
         int timeout = atoi(value);

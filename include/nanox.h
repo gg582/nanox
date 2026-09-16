@@ -32,6 +32,7 @@ struct nanox_config {
     bool autocomplete;
     bool use_lsp;
     bool use_auto_doc_completion;
+    char comment_asterisk;  /* 'l' = align under first '*' of /**, 'r' = under second */
     bool nonr;
     bool no_function_slot;
     int cold_storage_timeout;

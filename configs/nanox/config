@@ -12,6 +12,14 @@ soft_tab_width=4
 autocomplete=true
 use_lsp=false
 cold_storage_timeout=30
+# C-style block comment continuation style for /** ... */
+# l = align continuation '*' under the first '*' of /** (default)
+#     /**
+#      *
+# r = align continuation '*' under the second '*' of /**
+#     /**
+#       *
+comment_asterisk=l
 
 [search]
 case_sensitive_default=false

@@ -1160,8 +1160,9 @@ int cinsert(void)
 
     /* add * for /** comment autocomplete */
     if (comment_auto_insert) {
-        /* Align * with the second * of /** (base indent + 2) */
-        linsert(2, ' ');
+        /* comment_asterisk = 'l' (default): align * under the first * of /**
+         * (base indent + 1).  'r': align under the second * (base indent + 2). */
+        linsert(nanox_cfg.comment_asterisk == 'r' ? 2 : 1, ' ');
         linsert(1, '*');
         linsert(1, ' ');
         curwp->w_doto = llength(curwp->w_dotp);

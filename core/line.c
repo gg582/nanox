@@ -276,6 +276,17 @@ int linsert_byte(int n, int c)
     }
     if (!l_unshare(lp1)) return FALSE;
     doto = curwp->w_doto;           /* Save for later.      */
+    /* Defensive clamp: a stale doto (left over from a longer line by some
+     * caller that didn't re-clamp after switching/shrinking lines) must not
+     * be trusted here -- walking to &ltext(lp1)[doto] below would run off
+     * the end of the (possibly tiny) allocation and under/over-run memory
+     * until it faults. Clamping to the line's real length makes an insert
+     * with a bogus offset land safely at the end instead of crashing. */
+    if (doto < 0)
+        doto = 0;
+    else if (doto > lp1->used)
+        doto = lp1->used;
+    curwp->w_doto = doto;
     if (lp1->used + n > lp1->size) {    /* Hard: reallocate     */
         int newsize = (lp1->used + n + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
         lp1->l_handle = my_handle_realloc(lp1->l_handle, newsize);
