@@ -108,6 +108,270 @@ static void set_indent(int target) {
     }
 }
 
+static int is_fortran_file(void) {
+    char *ext = strrchr(curbp->b_fname, '.');
+    if (!ext) return FALSE;
+    return strcasecmp(ext, ".f") == 0 || strcasecmp(ext, ".f90") == 0 ||
+           strcasecmp(ext, ".f95") == 0 || strcasecmp(ext, ".f03") == 0 ||
+           strcasecmp(ext, ".f08") == 0 || strcasecmp(ext, ".f18") == 0 ||
+           strcasecmp(ext, ".for") == 0;
+}
+
+typedef enum {
+    FORTRAN_BLOCK_NONE,
+    FORTRAN_BLOCK_DO,
+    FORTRAN_BLOCK_IF,
+    FORTRAN_BLOCK_SELECT,
+    FORTRAN_BLOCK_WHERE,
+    FORTRAN_BLOCK_FORALL,
+    FORTRAN_BLOCK_ASSOCIATE,
+    FORTRAN_BLOCK_BLOCK,
+    FORTRAN_BLOCK_CRITICAL
+} FortranBlockKind;
+
+typedef struct {
+    FortranBlockKind kind;
+    int opens;
+    int closes;
+} FortranStatement;
+
+static int fortran_skip_space(struct line *lp, int pos, int len) {
+    while (pos < len && (lgetc(lp, pos) == ' ' || lgetc(lp, pos) == '\t'))
+        pos++;
+    return pos;
+}
+
+static int fortran_read_word(struct line *lp, int pos, int len, char *word, size_t size) {
+    int start = pos;
+    size_t used = 0;
+    while (pos < len) {
+        int c = lgetc(lp, pos);
+        if (!isalnum((unsigned char)c) && c != '_') break;
+        if (used + 1 < size)
+            word[used++] = (char)tolower((unsigned char)c);
+        pos++;
+    }
+    if (size > 0) word[used] = '\0';
+    return pos > start ? pos : start;
+}
+
+static int fortran_code_length(struct line *lp) {
+    int len = llength(lp);
+    int quote = 0;
+    for (int i = 0; i < len; i++) {
+        int c = lgetc(lp, i);
+        if (quote) {
+            if (c == quote) {
+                if (i + 1 < len && lgetc(lp, i + 1) == quote)
+                    i++;
+                else
+                    quote = 0;
+            }
+        } else if (c == '!') {
+            return i;
+        } else if (c == '\'' || c == '"') {
+            quote = c;
+        }
+    }
+    return len;
+}
+
+static int fortran_statement_start(struct line *lp, int len) {
+    int pos = fortran_skip_space(lp, 0, len);
+    if (pos < len && isdigit((unsigned char)lgetc(lp, pos))) {
+        while (pos < len && isdigit((unsigned char)lgetc(lp, pos))) pos++;
+        pos = fortran_skip_space(lp, pos, len);
+    }
+
+    char word[32];
+    int end = fortran_read_word(lp, pos, len, word, sizeof(word));
+    if (end > pos) {
+        int colon = fortran_skip_space(lp, end, len);
+        if (colon < len && lgetc(lp, colon) == ':' &&
+            (colon + 1 >= len || lgetc(lp, colon + 1) != ':'))
+            return fortran_skip_space(lp, colon + 1, len);
+    }
+    return pos;
+}
+
+static FortranBlockKind fortran_block_kind(const char *word) {
+    if (strcmp(word, "do") == 0) return FORTRAN_BLOCK_DO;
+    if (strcmp(word, "if") == 0) return FORTRAN_BLOCK_IF;
+    if (strcmp(word, "select") == 0) return FORTRAN_BLOCK_SELECT;
+    if (strcmp(word, "where") == 0) return FORTRAN_BLOCK_WHERE;
+    if (strcmp(word, "forall") == 0) return FORTRAN_BLOCK_FORALL;
+    if (strcmp(word, "associate") == 0) return FORTRAN_BLOCK_ASSOCIATE;
+    if (strcmp(word, "block") == 0) return FORTRAN_BLOCK_BLOCK;
+    if (strcmp(word, "critical") == 0) return FORTRAN_BLOCK_CRITICAL;
+    return FORTRAN_BLOCK_NONE;
+}
+
+static int fortran_has_keyword(struct line *lp, int pos, int len, const char *keyword) {
+    int quote = 0;
+    while (pos < len) {
+        int c = lgetc(lp, pos);
+        if (quote) {
+            if (c == quote) {
+                if (pos + 1 < len && lgetc(lp, pos + 1) == quote)
+                    pos++;
+                else
+                    quote = 0;
+            }
+            pos++;
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+            pos++;
+            continue;
+        }
+        if (isalpha((unsigned char)c) || c == '_') {
+            char word[32];
+            int end = fortran_read_word(lp, pos, len, word, sizeof(word));
+            if (strcmp(word, keyword) == 0) return TRUE;
+            pos = end;
+            continue;
+        }
+        pos++;
+    }
+    return FALSE;
+}
+
+static int fortran_complete_header(struct line *lp, int pos, int len) {
+    pos = fortran_skip_space(lp, pos, len);
+    if (pos >= len || lgetc(lp, pos) != '(') return FALSE;
+
+    int depth = 0;
+    int quote = 0;
+    for (; pos < len; pos++) {
+        int c = lgetc(lp, pos);
+        if (quote) {
+            if (c == quote) {
+                if (pos + 1 < len && lgetc(lp, pos + 1) == quote)
+                    pos++;
+                else
+                    quote = 0;
+            }
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+        } else if (c == '(') {
+            depth++;
+        } else if (c == ')' && --depth == 0) {
+            pos = fortran_skip_space(lp, pos + 1, len);
+            if (pos < len && lgetc(lp, pos) == '&')
+                pos = fortran_skip_space(lp, pos + 1, len);
+            return pos == len;
+        }
+    }
+    return FALSE;
+}
+
+static FortranStatement fortran_classify(struct line *lp) {
+    FortranStatement result = {FORTRAN_BLOCK_NONE, FALSE, FALSE};
+    int len = fortran_code_length(lp);
+    int pos = fortran_statement_start(lp, len);
+    char first[32];
+    int end = fortran_read_word(lp, pos, len, first, sizeof(first));
+    if (end == pos) return result;
+
+    if (strcmp(first, "end") == 0) {
+        char second[32];
+        fortran_read_word(lp, fortran_skip_space(lp, end, len), len, second, sizeof(second));
+        result.kind = fortran_block_kind(second);
+        result.closes = result.kind != FORTRAN_BLOCK_NONE;
+        return result;
+    }
+    if (strncmp(first, "end", 3) == 0) {
+        result.kind = fortran_block_kind(first + 3);
+        if (result.kind != FORTRAN_BLOCK_NONE) {
+            result.closes = TRUE;
+            return result;
+        }
+    }
+
+    if (strcmp(first, "else") == 0) {
+        char second[32];
+        fortran_read_word(lp, fortran_skip_space(lp, end, len), len, second, sizeof(second));
+        result.kind = strcmp(second, "where") == 0 ? FORTRAN_BLOCK_WHERE : FORTRAN_BLOCK_IF;
+        result.opens = result.closes = TRUE;
+        return result;
+    }
+    if (strcmp(first, "elseif") == 0 || strcmp(first, "elsewhere") == 0) {
+        result.kind = first[4] == 'i' ? FORTRAN_BLOCK_IF : FORTRAN_BLOCK_WHERE;
+        result.opens = result.closes = TRUE;
+        return result;
+    }
+    if (strcmp(first, "case") == 0) {
+        result.kind = FORTRAN_BLOCK_SELECT;
+        result.opens = result.closes = TRUE;
+        return result;
+    }
+    if (strcmp(first, "type") == 0 || strcmp(first, "class") == 0 ||
+        strcmp(first, "rank") == 0) {
+        char second[32];
+        int second_start = fortran_skip_space(lp, end, len);
+        int second_end = fortran_read_word(lp, second_start, len, second, sizeof(second));
+        int is_branch = strcmp(second, "is") == 0 || strcmp(second, "default") == 0;
+        if (strcmp(first, "rank") == 0 && second_start < len && lgetc(lp, second_start) == '(')
+            is_branch = TRUE;
+        if (is_branch) {
+            result.kind = FORTRAN_BLOCK_SELECT;
+            result.opens = result.closes = TRUE;
+        } else if (second_end > second_start) {
+            return result;
+        }
+        if (is_branch) return result;
+    }
+
+    result.kind = fortran_block_kind(first);
+    if (result.kind == FORTRAN_BLOCK_DO || result.kind == FORTRAN_BLOCK_ASSOCIATE) {
+        result.opens = TRUE;
+    } else if (result.kind == FORTRAN_BLOCK_IF) {
+        result.opens = fortran_has_keyword(lp, end, len, "then");
+    } else if (result.kind == FORTRAN_BLOCK_WHERE || result.kind == FORTRAN_BLOCK_FORALL) {
+        result.opens = fortran_complete_header(lp, end, len);
+    } else if (result.kind == FORTRAN_BLOCK_BLOCK || result.kind == FORTRAN_BLOCK_CRITICAL) {
+        result.opens = fortran_skip_space(lp, end, len) == len;
+    } else {
+        result.kind = FORTRAN_BLOCK_NONE;
+    }
+
+    if (strcmp(first, "select") == 0) {
+        char second[32];
+        fortran_read_word(lp, fortran_skip_space(lp, end, len), len, second, sizeof(second));
+        if (strcmp(second, "case") == 0 || strcmp(second, "type") == 0 ||
+            strcmp(second, "rank") == 0) {
+            result.kind = FORTRAN_BLOCK_SELECT;
+            result.opens = TRUE;
+        }
+    } else if (strcmp(first, "selectcase") == 0 || strcmp(first, "selecttype") == 0 ||
+               strcmp(first, "selectrank") == 0) {
+        result.kind = FORTRAN_BLOCK_SELECT;
+        result.opens = TRUE;
+    }
+    return result;
+}
+
+static int fortran_matching_indent(struct line *lp, FortranBlockKind kind) {
+    int depth = 0;
+    struct line *scan = lback(lp);
+    while (scan != curbp->b_linep) {
+        FortranStatement statement = fortran_classify(scan);
+        if (statement.kind == kind) {
+            if (statement.closes && !statement.opens) {
+                depth++;
+            } else if (statement.opens && !statement.closes) {
+                if (depth == 0) return get_indent(scan);
+                depth--;
+            }
+        }
+        scan = lback(scan);
+    }
+    return -1;
+}
+
 static int is_closing_block(struct line *lp) {
     int i, len;
     int c;
@@ -116,6 +380,8 @@ static int is_closing_block(struct line *lp) {
     char *ext = strrchr(curbp->b_fname, '.');
 
     len = llength(lp);
+    if (is_fortran_file())
+        return fortran_classify(lp).closes;
     for (i = 0; i < len; ++i) {
         c = lgetc(lp, i);
         if (c != ' ' && c != '\t')
@@ -212,7 +478,10 @@ static void check_indent_dedent(void) {
     } else {
         /* Handle keyword-based dedenting (e.g. fi, done, end) */
         char *ext = strrchr(curbp->b_fname, '.');
-        if (ext && (strcasecmp(ext, ".sh") == 0 || strcasecmp(ext, ".bash") == 0)) {
+        if (is_fortran_file()) {
+            FortranStatement statement = fortran_classify(lp);
+            target_indent = fortran_matching_indent(lp, statement.kind);
+        } else if (ext && (strcasecmp(ext, ".sh") == 0 || strcasecmp(ext, ".bash") == 0)) {
             char word[32];
             int idx = 0;
             for (int k = i; k < len && idx < 31; k++) {
@@ -310,7 +579,7 @@ static void check_indent_dedent(void) {
         }
     }
 
-    if (target_indent < 0) {
+    if (target_indent < 0 && !is_fortran_file()) {
         /* For keywords like fi, done, esac, we scan back for matching if, do, case */
         scan_lp = lback(lp);
         while (scan_lp != curbp->b_linep) {
@@ -1151,6 +1420,13 @@ int cinsert(void)
         }
     }
 
+    int fortranf = 0;
+    if (is_fortran_file()) {
+        int tail = fortran_skip_space(lp, curwp->w_doto, llength(lp));
+        if (tail == llength(lp))
+            fortranf = fortran_classify(lp).opens;
+    }
+
     /* put in the newline */
     if (lnewline() == FALSE)
         return FALSE;
@@ -1167,8 +1443,8 @@ int cinsert(void)
         linsert(1, ' ');
         curwp->w_doto = llength(curwp->w_dotp);
     }
-    /* and one level of indentation for an open brace or preprocessor block */
-    else if (bracef || ppf) {
+    /* and one level of indentation for an open language or preprocessor block */
+    else if (bracef || ppf || fortranf) {
         int step = (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
         if (step == 8 && !nanox_cfg.soft_tab) linsert(1, '\t');
         else {
@@ -1372,7 +1648,7 @@ int indent(int f, int n)
         return FALSE;
 
     while (n--) {
-        if (curbp->b_mode & MDCMOD)
+        if ((curbp->b_mode & MDCMOD) || is_fortran_file())
             check_indent_dedent();
 
         struct line *lp = curwp->w_dotp;
@@ -1407,6 +1683,8 @@ int indent(int f, int n)
 
         if (bracef || ppf) {
             target_indent += (curbp->b_tabsize ? curbp->b_tabsize : tab_width);
+        } else if (is_fortran_file() && fortran_classify(lp).opens) {
+            target_indent += (curbp->b_tabsize ? curbp->b_tabsize : (tab_width + 1));
         }
 
         if (lnewline() == FALSE)
